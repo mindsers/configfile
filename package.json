@@ -1,0 +1,17 @@
+{
+  "name": "configfiles",
+  "version": "1.0.0",
+  "description": "Config files manager",
+  "main": "index.js",
+  "repository": "github.com:Mindsers/configfiles.git",
+  "author": "Mindsers <dev@nathanaelcherrier.com>",
+  "license": "Apache-2.0",
+  "bin": {
+    "configfiles": "./index.js"
+  },
+  "dependencies": {
+    "chalk": "^2.1.0",
+    "commander": "^2.11.0",
+    "inquirer": "^3.2.3"
+  }
+}
