@@ -2,6 +2,10 @@
 
 const program = require('commander')
 
+const { initCommand } = require('./lib/index')
+
+const optionsFilePath = `${process.env.HOME}/.configfiles`
+
 program
   .version('1.0.0')
   .description('Config files manager')
@@ -9,8 +13,7 @@ program
 program
   .command('init')
   .alias('i')
-  .action((env, options) => {
-    console.log('x init')
-  })
+  .action(initCommand(optionsFilePath))
+
 
 program.parse(process.argv)
