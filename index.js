@@ -14,6 +14,7 @@ program
   .command('init')
   .alias('i')
   .description('activate configfiles on user session. Generate parameters file.')
+  .option('-f, --force', 'force parameters file overwrite.')
   .action(initCommand(optionsFilePath))
 
 
