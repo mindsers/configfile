@@ -13,6 +13,7 @@ program
 program
   .command('init')
   .alias('i')
+  .description('activate configfiles on user session. Generate parameters file.')
   .action(initCommand(optionsFilePath))
 
 
