@@ -2,7 +2,7 @@
 
 const program = require('commander')
 
-const { initCommand } = require('./lib/index')
+const { initCommand, runCommand } = require('./lib/index')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
 
@@ -13,9 +13,15 @@ program
 program
   .command('init')
   .alias('i')
-  .description('activate configfiles on user session. Generate parameters file.')
+  .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
   .action(initCommand(optionsFilePath))
+
+program
+  .command('run <name>')
+  .alias('r')
+  .description('run custom configuration scripts.')
+  .action(runCommand())
 
 
 program.parse(process.argv)
