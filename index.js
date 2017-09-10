@@ -2,7 +2,7 @@
 
 const program = require('commander')
 
-const { initCommand, runCommand } = require('./lib/index')
+const { initCommand, runCommand, deployCommand } = require('./lib/index')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
 
@@ -22,6 +22,12 @@ program
   .alias('r')
   .description('run custom configuration scripts.')
   .action(runCommand(optionsFilePath))
+
+program
+  .command('deploy [modules...]')
+  .alias('d')
+  .description('deploy configuration files.')
+  .action(deployCommand(optionsFilePath))
 
 
 program.parse(process.argv)
