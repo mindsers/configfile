@@ -21,7 +21,7 @@ program
   .command('run <name>')
   .alias('r')
   .description('run custom configuration scripts.')
-  .action(runCommand())
+  .action(runCommand(optionsFilePath))
 
 
 program.parse(process.argv)
