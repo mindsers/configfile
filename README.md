@@ -1,5 +1,7 @@
 # configfile
 
+[![npm version](https://badge.fury.io/js/configfile.svg)](https://badge.fury.io/js/configfile)
+
 **configfile** is a command line tool that help user to manage their own configuration files.
 
 ## Data storage
