@@ -1,6 +1,6 @@
-# configfiles
+# configfile
 
-**configfiles** is a command line tool that help user to manage their own configuration files.
+**configfile** is a command line tool that help user to manage their own configuration files.
 
 ## Data storage
 
@@ -23,15 +23,15 @@ Please follow this structure:
 
 ### Initialization / configuration
 
-`configfiles init` Initialize *configfiles* on the current user session.
+`configfile init` Initialize *configfile* on the current user session.
 
 ### Deploy configuration files
 
-`configfiles deploy [moduleName...]` Deploy the configuration files for the given module name.
+`configfile deploy [moduleName...]` Deploy the configuration files for the given module name.
 
 ### Run script
 
-`configfiles run <scriptName>` Execute the script identifying by the given script name.
+`configfile run <scriptName>` Execute the script identifying by the given script name.
 
 ## License
 

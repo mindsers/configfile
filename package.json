@@ -1,5 +1,5 @@
 {
-  "name": "configfiles",
+  "name": "configfile",
   "version": "0.1.0",
   "description": "Config files manager",
   "main": "index.js",
@@ -7,7 +7,7 @@
   "author": "Mindsers <dev@nathanaelcherrier.com>",
   "license": "Apache-2.0",
   "bin": {
-    "configfiles": "./index.js"
+    "configfile": "./index.js"
   },
   "dependencies": {
     "chalk": "^2.1.0",
