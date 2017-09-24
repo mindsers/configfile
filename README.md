@@ -1,6 +1,8 @@
 # configfile
 
-[![npm version](https://badge.fury.io/js/configfile.svg)](https://badge.fury.io/js/configfile)
+[![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)]()
+[![npm](https://img.shields.io/npm/dw/configfile.svg?style=flat-square)]()
+[![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)]()
 
 **configfile** is a command line tool that help user to manage their own configuration files.
 
