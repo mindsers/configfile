@@ -1,5 +1,7 @@
 # configfile
 
+[![Join the chat at https://gitter.im/mindsers/configfile](https://badges.gitter.im/mindsers/configfile.svg)](https://gitter.im/mindsers/configfile?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 [![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)]()
 [![npm](https://img.shields.io/npm/dw/configfile.svg?style=flat-square)]()
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)]()
