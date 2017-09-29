@@ -1,7 +1,7 @@
 # configfile
 
 [![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
-[![npm](https://img.shields.io/npm/dw/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
+[![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/Mindsers/configfile/blob/master/LICENSE)
 [![Gitter](https://img.shields.io/gitter/room/mindsers/configfile.svg?style=flat-square)](https://gitter.im/mindsers/configfile)
 
