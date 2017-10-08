@@ -2,10 +2,10 @@
 
 const program = require('commander')
 
-const { initCommand, runCommand, deployCommand } = require('./lib/index')
+const { initCommand, runCommand, deployCommand } = require('./lib/commands')
 
-const { ConfigService } = require('./lib/services/config/config.service')
-const { FileService } = require('./lib/services/file/file.service')
+const { ConfigService } = require('./lib/services/config')
+const { FileService } = require('./lib/services/file')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
 
