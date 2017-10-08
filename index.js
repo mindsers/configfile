@@ -5,6 +5,11 @@ const program = require('commander')
 const { initCommand, runCommand, deployCommand } = require('./lib/index')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
+const { ConfigService } = require('./lib/services/config.service')
+const { FileService } = require('./lib/services/file.service')
+
+const configService = new ConfigService(optionsFilePath)
+const fileService = new FileService(configService)
 
 program
   .version('1.0.0')
@@ -15,7 +20,7 @@ program
   .alias('i')
   .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
-  .action(initCommand(optionsFilePath))
+  .action(initCommand(configService))
 
 program
   .command('run <name>')
