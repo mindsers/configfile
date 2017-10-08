@@ -27,7 +27,7 @@ program
   .command('run <name>')
   .alias('r')
   .description('run custom configuration scripts.')
-  .action(runCommand(optionsFilePath))
+  .action(runCommand(configService))
 
 program
   .command('deploy [modules...]')
