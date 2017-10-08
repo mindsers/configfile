@@ -4,33 +4,23 @@ const fs = require('fs')
 const { readFile, fileExist, mkdirp, symlink } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
 
-module.exports = exports = configFilename => (modules, options) => {
-  if (!fileExist(configFilename)) {
+module.exports = exports = configService => (modules, options) => {
+  if (!configService.configFileExist()) {
     log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
     return
   }
 
-  readFile(configFilename)
-    .then(data => JSON.parse(data))
-    .then(data => {
-      data.files = processModuleData(modules, data.folder_path)
-
-      return data
-    })
-    .then(data => createDirs(data.files).then(() => data))
-    .then(data => createLinks(data.files)
+  Promise.resolve()
+    .then(() => processModuleData(modules, configService.folderPath))
+    .then(files => createDirs(files))
+    .then(files => createLinks(files)
       .then(createdLinks => {
-        if (createdLinks.length < data.files.length) {
+        if (createdLinks.length < files.length) {
           throw new Error('symlink_already_exist')
         }
       })
-      .then(() => data)
+      .then(() => files)
     )
-    .then(data => {
-
-      return data
-    })
-    .then(data => console.log(JSON.stringify(data, null, 2)))
     .catch(error => {
       switch (error.message) {
         case 'symlink_already_exist':
@@ -57,7 +47,7 @@ function createLinks(files) {
   const linkPromises = files
     .map(file => symlink(file.from, file.to)
       .then(
-        () => successFulLink.push(file.to),
+        () => successFulLinks.push(file.to),
         error => {
           if (error.code !== 'EEXIST') {
             throw error
