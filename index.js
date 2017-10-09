@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 const program = require('commander')
+const fs = require('fs')
+const path = require('path')
 
 const { initCommand, runCommand, deployCommand } = require('./src/commands')
 
@@ -8,12 +10,13 @@ const { ConfigService } = require('./src/services/config')
 const { FileService } = require('./src/services/file')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
+const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json')))
 
 const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
 
 program
-  .version('1.0.0')
+  .version(packageData.version)
   .description('Config files manager')
 
 program
