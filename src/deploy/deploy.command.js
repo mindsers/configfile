@@ -1,7 +1,7 @@
 const path = require('path')
 const fs = require('fs')
 
-const { readFile, symlink, FsUtils } = require('../shared/fs.utils')
+const { FsUtils } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
@@ -58,7 +58,7 @@ function createDirs(files) {
 function createLinks(files) {
   const successFulLinks = []
   const linkPromises = files
-    .map(file => symlink(file.source, file.target)
+    .map(file => FsUtils.symlink(file.source, file.target)
       .then(
         () => successFulLinks.push(file.target),
         error => {

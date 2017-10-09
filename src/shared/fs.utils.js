@@ -43,6 +43,14 @@ class FsUtils {
     return util.promisify(fs.chmod)
   }
 
+  static get readFile() {
+    return util.promisify(fs.readFile)
+  }
+
+  static get symlink() {
+    return util.promisify(fs.symlink)
+  }
+
   static fileExist(filename = '') {
     try {
       fs.accessSync(filename)
