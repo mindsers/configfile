@@ -37,7 +37,49 @@ class FileService {
       })
   }
 
-  get modules() {}
+  get modules() {
+    const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'files'))
+
+    return folderContent
+      .map(element => {
+        const moduleSlug = element
+          .toLowerCase()
+          .replace(/ /g,'-')
+          .replace(/[^\w-]+/g,'')
+
+        return {
+          module: moduleSlug,
+          path: path.join(this.configService.folderPath, 'files', element),
+          settingsPath: path.join(this.configService.folderPath, 'files', element, 'settings.json')
+        }
+      })
+      .filter(({ path }) => fs.statSync(path).isDirectory())
+      .filter(({ settingsPath: path }) => FsUtils.fileExist(path))
+      .map(element => {
+        const path = element.settingsPath
+        const name = element.module
+
+        try {
+          const file = fs.readFileSync(path)
+          element.settings = JSON.parse(file)
+        } catch(e) {
+          log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
+          element.settings = []
+        }
+
+        return element
+      })
+      .map(element => {
+        element.settings = element.settings
+          .map(file => ({
+            source: path.resolve(element.path, file['filename']),
+            target: path.resolve(file['target-path'].replace('~', process.env.HOME)),
+            global: file.global
+          }))
+
+        return element
+      })
+  }
 
   constructor(configService) {
     this.configService = configService
