@@ -4,14 +4,25 @@ const fs = require('fs')
 const { readFile, fileExist, mkdirp, symlink } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
 
-module.exports = exports = configService => (modules, options) => {
+module.exports = exports = (configService, fileService) => (modules, options) => {
   if (!configService.configFileExist()) {
     log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
     return
   }
 
   Promise.resolve()
-    .then(() => processModuleData(modules, configService.folderPath))
+    .then(() => {
+      return fileService.modules
+        .filter(element => modules.includes(element.module))
+        .reduce((files, element) => {
+          for (const file of element.settings) {
+            files.push(file)
+          }
+
+          return files
+        }, [])
+        .filter(element => element.global)
+    })
     .then(files => createDirs(files))
     .then(files => createLinks(files)
       .then(createdLinks => {
@@ -35,7 +46,7 @@ module.exports = exports = configService => (modules, options) => {
 
 function createDirs(files) {
   const mkdirPromises = files
-    .map(file => path.dirname(file.to))
+    .map(file => path.dirname(file.target))
     .filter(dir => !fileExist(dir))
     .map(dir => mkdirp(dir))
 
@@ -45,9 +56,9 @@ function createDirs(files) {
 function createLinks(files) {
   const successFulLinks = []
   const linkPromises = files
-    .map(file => symlink(file.from, file.to)
+    .map(file => symlink(file.source, file.target)
       .then(
-        () => successFulLinks.push(file.to),
+        () => successFulLinks.push(file.target),
         error => {
           if (error.code !== 'EEXIST') {
             throw error
@@ -56,37 +67,4 @@ function createLinks(files) {
       )
     )
   return Promise.all(linkPromises).then(() => successFulLinks)
-}
-
-function processModuleData(moduleNames, folderPath) {
-  return moduleNames
-    .map(name => {
-      const addr = path.join(folderPath, 'files', name)
-
-      let settings = []
-      try {
-        const file = fs.readFileSync(path.join(addr, 'settings.json'))
-        settings = JSON.parse(file)
-      } catch(e) {
-        log({ type: 'warn', message: `Not able to load settings file for "${name}" module.` })
-      }
-
-      return { name, folder: addr, settings }
-    })
-    .filter(moduleConf => moduleConf.settings.length > 0)
-    .map(moduleConf => {
-      return moduleConf.settings
-        .filter(file => file.global)
-        .map(file => ({
-          from: path.resolve(moduleConf.folder, file.filename),
-          to: path.resolve(file['target-path'].replace('~', process.env.HOME))
-        }))
-    })
-    .reduce((files, modules) => {
-      for (const file of modules) {
-        files.push(file)
-      }
-
-      return files
-    }, [])
 }
