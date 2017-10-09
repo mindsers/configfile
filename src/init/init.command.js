@@ -4,7 +4,7 @@ const inquirer = require('inquirer')
 
 const { FsUtils } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
-const { gitClone } = require('../shared/git.utils')
+const { GitUtils } = require('../shared/git.utils')
 
 const { InitStopedByUser } = require('./init-stop-by-user.error')
 const { FolderNotEmpty } = require('../shared/folder-not-empty.error')
@@ -73,7 +73,7 @@ module.exports = exports = configService => options => {
         return
       }
 
-      return gitClone(configService.repoUrl, configService.folderPath)
+      return GitUtils.clone(configService.repoUrl, configService.folderPath)
         .then(repo => {
           log({ type: 'info', message: 'Git repository cloned successuly.' })
           return
