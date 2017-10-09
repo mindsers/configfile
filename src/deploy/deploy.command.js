@@ -17,13 +17,6 @@ module.exports = exports = fileService => (modules, options) => {
         return
       }
 
-      switch (error.message) {
-        case 'symlink_already_exist':
-          log({ type: 'warn', message: 'Unable to link some files. This files already exist.' })
-          break
-        default:
-          log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
-          console.error(error)
-      }
+      log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
     })
 }
