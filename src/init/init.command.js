@@ -3,7 +3,7 @@ const path = require('path')
 const inquirer = require('inquirer')
 
 const { FsUtils } = require('../shared/fs.utils')
-const { log } = require('../shared/log.utils')
+const { LogUtils } = require('../shared/log.utils')
 const { GitUtils } = require('../shared/git.utils')
 
 const { InitStopedByUser } = require('./init-stop-by-user.error')
@@ -53,7 +53,7 @@ module.exports = exports = configService => options => {
     .then(() => {
       const folderPath  = configService.folderPath
       if (!FsUtils.fileExist(folderPath)) {
-        log({ type: 'info', message: 'Folder does not exist. It will be created.' })
+        LogUtils.log({ type: 'info', message: 'Folder does not exist. It will be created.' })
         fs.mkdirSync(folderPath)
       }
 
@@ -69,32 +69,32 @@ module.exports = exports = configService => options => {
     })
     .then(() => {
       if (configService.repoUrl == null) {
-        log({ type: 'warn', message: 'Impossible to cloned git repository. Need repository URL.' })
+        LogUtils.log({ type: 'warn', message: 'Impossible to cloned git repository. Need repository URL.' })
         return
       }
 
       return GitUtils.clone(configService.repoUrl, configService.folderPath)
         .then(repo => {
-          log({ type: 'info', message: 'Git repository cloned successuly.' })
+          LogUtils.log({ type: 'info', message: 'Git repository cloned successuly.' })
           return
         })
     })
     .catch(error => {
       if (error instanceof InitStopedByUser) {
-        log({ message: error.message })
+        LogUtils.log({ message: error.message })
         return
       }
 
       if (error instanceof FolderNotEmpty) {
-        log({ type: 'error', message: error.message })
+        LogUtils.log({ type: 'error', message: error.message })
         return
       }
 
       if (error instanceof FileNotDirectory) {
-        log({ type: 'error', message: error.message })
+        LogUtils.log({ type: 'error', message: error.message })
         return
       }
 
-      log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
+      LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
     })
 }

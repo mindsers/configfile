@@ -3,7 +3,7 @@ const path = require('path')
 
 const { FsUtils } = require('../../shared/fs.utils')
 const { ProcessUtils } = require('../../shared/process.utils')
-const { log } = require('../../shared/log.utils')
+const { LogUtils } = require('../../shared/log.utils')
 
 const { ScriptNotExist } = require('./script-not-exist.error')
 const { BadScriptPermission } = require('./bad-script-permission.error')
@@ -63,7 +63,7 @@ class FileService {
           const file = fs.readFileSync(path)
           element.settings = JSON.parse(file)
         } catch(e) {
-          log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
+          LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
           element.settings = []
         }
 
@@ -101,10 +101,10 @@ class FileService {
     .then(() => {
       const child = ProcessUtils.execFile(script.path)
       child.stdout.on('data', data => {
-        log({ message: data.trim() })
+        LogUtils.log({ message: data.trim() })
       })
       child.stderr.on('data', data => {
-        log({ type: 'error', message: data.trim(), prefix: '' })
+        LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
       })
 
       return child.toPromise()
@@ -144,7 +144,7 @@ class FileService {
                 throw error
               }
 
-              log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
+              LogUtils.log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
             })
         })
 
