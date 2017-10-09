@@ -33,7 +33,7 @@ program
   .command('deploy [modules...]')
   .alias('d')
   .description('deploy configuration files.')
-  .action(deployCommand(configService, fileService))
+  .action(deployCommand(fileService))
 
 
 program.parse(process.argv)

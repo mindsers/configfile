@@ -4,12 +4,9 @@ const fs = require('fs')
 const { readFile, fileExist, mkdirp, symlink } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
 
-module.exports = exports = (configService, fileService) => (modules, options) => {
-  if (!configService.configFileExist()) {
-    log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
-    return
-  }
+const { ConfigurationFileNotExist } = require('../services/config')
 
+module.exports = exports = fileService => (modules, options) => {
   Promise.resolve()
     .then(() => {
       return fileService.modules
@@ -33,6 +30,11 @@ module.exports = exports = (configService, fileService) => (modules, options) =>
       .then(() => files)
     )
     .catch(error => {
+      if (error instanceof ConfigurationFileNotExist) {
+        log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        return
+      }
+
       switch (error.message) {
         case 'symlink_already_exist':
           log({ type: 'warn', message: 'Unable to link some files. This files already exist.' })
