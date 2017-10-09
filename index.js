@@ -4,10 +4,16 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { initCommand, runCommand, deployCommand } = require('./lib/index')
+const { initCommand, runCommand, deployCommand } = require('./src/commands')
+
+const { ConfigService } = require('./src/services/config')
+const { FileService } = require('./src/services/file')
 
 const optionsFilePath = `${process.env.HOME}/.configfiles`
 const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json')))
+
+const configService = new ConfigService(optionsFilePath)
+const fileService = new FileService(configService)
 
 program
   .version(packageData.version)
@@ -18,19 +24,19 @@ program
   .alias('i')
   .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
-  .action(initCommand(optionsFilePath))
+  .action(initCommand(configService))
 
 program
   .command('run <name>')
   .alias('r')
   .description('run custom configuration scripts.')
-  .action(runCommand(optionsFilePath))
+  .action(runCommand(configService, fileService))
 
 program
   .command('deploy [modules...]')
   .alias('d')
   .description('deploy configuration files.')
-  .action(deployCommand(optionsFilePath))
+  .action(deployCommand(fileService))
 
 
 program.parse(process.argv)
