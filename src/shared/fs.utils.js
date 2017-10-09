@@ -52,6 +52,30 @@ class FsUtils {
 
     return true
   }
+
+  static mkdirp(pathname = '') {
+    const pathParts = pathname.split('/')
+    const mkdir = util.promisify(fs.mkdir)
+
+    return pathParts.reduce((promise, part) => {
+      return promise
+        .then((previousPath) => {
+          const newPath = path.join(previousPath, part)
+
+          if (FsUtils.fileExist(newPath)) {
+            return newPath
+          }
+
+          return mkdir(newPath)
+            .catch(error => {
+              if (error.code !== 'EEXIST') {
+                throw new Error('dir_create_failed')
+              }
+            })
+            .then(() => newPath)
+        })
+    }, Promise.resolve(pathname[0] === '/' ? '/' : ''))
+  }
 }
 
 module.exports = exports = {

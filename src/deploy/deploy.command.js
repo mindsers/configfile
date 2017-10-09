@@ -1,7 +1,7 @@
 const path = require('path')
 const fs = require('fs')
 
-const { readFile, fileExist, mkdirp, symlink } = require('../shared/fs.utils')
+const { readFile, symlink, FsUtils } = require('../shared/fs.utils')
 const { log } = require('../shared/log.utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
@@ -49,8 +49,8 @@ module.exports = exports = fileService => (modules, options) => {
 function createDirs(files) {
   const mkdirPromises = files
     .map(file => path.dirname(file.target))
-    .filter(dir => !fileExist(dir))
-    .map(dir => mkdirp(dir))
+    .filter(dir => !FsUtils.fileExist(dir))
+    .map(dir => FsUtils.mkdirp(dir))
 
   return Promise.all(mkdirPromises).then(() => files)
 }
