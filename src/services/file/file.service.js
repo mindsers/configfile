@@ -117,6 +117,46 @@ class FileService {
       throw error
     })
   }
+
+  deployModule(moduleName, global = true) {
+    const files = this.modules
+      .filter(element => element.module === moduleName)
+      .reduce((files, element) => {
+        for (const file of element.settings) {
+          files.push(file)
+        }
+
+        return files
+      }, [])
+      .filter(element => element.global === global)
+
+    const dirCreation = files
+      .map(file => path.dirname(file.target))
+      .filter(dir => !FsUtils.fileExist(dir))
+      .map(dir => FsUtils.mkdirp(dir))
+
+    return Promise.all(dirCreation).then(() => {
+      const linkCreation = files
+        .map(file => {
+          return FsUtils.symlink(file.source, file.target)
+            .catch(error => {
+              if (error.code !== 'EEXIST') {
+                throw error
+              }
+
+              log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
+            })
+        })
+
+      return Promise.all(linkCreation)
+    })
+  }
+
+  deployModules(moduleNames, global = true) {
+    const modulesPromises = moduleNames.map(moduleName => this.deployModule(moduleName, global))
+
+    return Promise.all(modulesPromises)
+  }
 }
 
 module.exports = exports = { FileService }
