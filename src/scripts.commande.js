@@ -10,7 +10,7 @@ module.exports = exports = fileService => () => {
 
   LogUtils.log({ message: `${scripts.length} script(s) found.` })
 
-  for (const [index, { script }] of scripts.entries()) {
+  for (const { script } of scripts) {
     LogUtils.log({ message: `- ${script}` })
   }
 }
