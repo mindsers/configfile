@@ -4,7 +4,7 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { initCommand, runCommand, deployCommand } = require('./src/commands')
+const { initCommand, runCommand, deployCommand, scriptsCommand } = require('./src/commands')
 
 const { ConfigService } = require('./src/services/config')
 const { FileService } = require('./src/services/file')
@@ -25,6 +25,12 @@ program
   .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
   .action(initCommand(configService))
+
+
+program
+  .command('scripts')
+  .description('list all custom configuration scripts available.')
+  .action(scriptsCommand(fileService))
 
 program
   .command('run <name>')
