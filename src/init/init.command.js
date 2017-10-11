@@ -27,6 +27,11 @@ module.exports = exports = configService => options => {
       message: 'Repository url:',
       type: 'input',
       validate: url => URL_REGEX.test(url),
+      default: () => {
+        if (configService.configFileExist()) {
+          return configService.repoUrl
+        }
+      },
       when: data => !configService.configFileExist() || data.overwrite_file || userForceOverwrite
     },
     {
@@ -34,6 +39,11 @@ module.exports = exports = configService => options => {
       message: 'Folder path:',
       type: 'input',
       validate: path => PATH_REGEX.test(path),
+      default: () => {
+        if (configService.configFileExist()) {
+          return configService.folderPath
+        }
+      },
       when: data => !configService.configFileExist() || data.overwrite_file || userForceOverwrite
     }
   ]
