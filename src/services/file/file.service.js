@@ -72,8 +72,8 @@ class FileService {
       .map(element => {
         element.settings = element.settings
           .map(file => ({
-            source: path.resolve(element.path, file['filename']),
-            target: path.resolve(file['target-path'].replace('~', process.env.HOME)),
+            source: path.resolve(element.path, file['source_path']),
+            target: path.resolve(file['target_path'].replace('~', process.env.HOME)),
             global: file.global
           }))
 
