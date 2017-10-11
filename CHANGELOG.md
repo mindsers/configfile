@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The `scripts` command to list all custom scripts available.
 - Tha `modules` command to list all custom modules available.
 
-## Changed
+### Changed
 - The project design was reviewed. Now we use services to provide data to all commands.
 - A better error handling with `try...catch` and custom error classes.
 - New name for the main configuration file is now `.configfilerc`. Other files is stored
