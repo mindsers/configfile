@@ -31,9 +31,17 @@ Please follow this structure:
 
 `configfile init` Initialize *configfile* on the current user session.
 
-### Deploy configuration files
+### List of modules
+
+`configfile modules` Display a list of all modules available via **Configfile**
+
+### Deploy configuration files (module)
 
 `configfile deploy [moduleName...]` Deploy the configuration files for the given module name.
+
+### List of scripts
+
+`configfile scripts` Display a list of all scripts available via **Configfile**
 
 ### Run script
 

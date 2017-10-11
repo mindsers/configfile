@@ -56,6 +56,10 @@ class LogUtils {
 
     console.log(message)
   }
+
+  static addBlanckLine() {
+    console.log('')
+  }
 }
 
 module.exports = exports = {
