@@ -5,23 +5,23 @@ const { FsUtils } = require('../../shared/fs.utils')
 
 class ConfigService {
   get repoUrl() {
-    return this.get('repo_url')
+    return this.getConfig('repo_url')
   }
 
   set repoUrl(url) {
-    this.set('repo_url', url)
+    this.setConfig('repo_url', url)
   }
 
   get folderPath() {
-    return this.get('folder_path')
+    return this.getConfig('folder_path')
   }
 
   set folderPath(path) {
-    this.set('folder_path', path)
+    this.setConfig('folder_path', path)
   }
 
   get scriptExtension() {
-    const extentions = this.get('script_extensions')
+    const extentions = this.getConfig('script_extensions')
 
     if (extentions === null) {
       return ['.js', '.sh', '']
@@ -32,13 +32,17 @@ class ConfigService {
 
   set scriptExtension(extentions) {
     if (Array.isArray(extentions)) {
-      this.set('script_extensions', extentions)
+      this.setConfig('script_extensions', extentions)
     }
   }
 
   constructor(configPath = `${process.env.HOME}/.configfile`) {
     this.configPath = `${configPath}rc`
     this.configFolderPath = `${configPath}`
+
+    if (!FsUtils.fileExist(this.configFolderPath)) {
+      fs.mkdirSync(this.configFolderPath)
+    }
   }
 
   configFileExist() {
@@ -53,7 +57,7 @@ class ConfigService {
     return JSON.parse(fs.readFileSync(this.configPath))
   }
 
-  get(key) {
+  getConfig(key) {
     const configData = this.configData()
 
     if (key in configData) {
@@ -63,7 +67,7 @@ class ConfigService {
     return null
   }
 
-  set(key, value) {
+  setConfig(key, value) {
     let configData = null
 
     try {
