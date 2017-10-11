@@ -37,7 +37,8 @@ class ConfigService {
   }
 
   constructor(configPath = `${process.env.HOME}/.configfile`) {
-    this.configPath = configPath
+    this.configPath = `${configPath}rc`
+    this.configFolderPath = `${configPath}`
   }
 
   configFileExist() {
