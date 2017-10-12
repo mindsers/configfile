@@ -79,7 +79,7 @@ module.exports = exports = configService => options => {
     })
     .then(() => {
       if (configService.repoUrl == null) {
-        LogUtils.log({ type: 'warn', message: 'Impossible to cloned git repository. Need repository URL.' })
+        LogUtils.log({ type: 'warn', message: 'Unable to cloned git repository. Need repository URL.' })
         return
       }
 
