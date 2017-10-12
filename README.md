@@ -58,8 +58,3 @@ If you're using *Configfile* and want to support the development, you now have t
 ## License
 
 This project is under Apache-2.0 license. See LICENSE file.
-
-## Support on Beerpay
-Hey dude! Help me out for a couple of :beers:!
-
-[![Beerpay](https://beerpay.io/Mindsers/configfile/badge.svg?style=beer-square)](https://beerpay.io/Mindsers/configfile)  [![Beerpay](https://beerpay.io/Mindsers/configfile/make-wish.svg?style=flat-square)](https://beerpay.io/Mindsers/configfile?focus=wish)
