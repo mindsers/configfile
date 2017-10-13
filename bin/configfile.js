@@ -4,13 +4,13 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { initCommand, runCommand, deployCommand, scriptsCommand, modulesCommand } = require('./src/commands')
+const { initCommand, runCommand, deployCommand, scriptsCommand, modulesCommand } = require('../src/commands')
 
-const { ConfigService } = require('./src/services/config')
-const { FileService } = require('./src/services/file')
+const { ConfigService } = require('../src/services/config')
+const { FileService } = require('../src/services/file')
 
 const optionsFilePath = `${process.env.HOME}/.configfile`
-const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json')))
+const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
 
 const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)

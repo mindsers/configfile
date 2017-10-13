@@ -7,7 +7,7 @@
   "author": "Mindsers <dev@nathanaelcherrier.com>",
   "license": "Apache-2.0",
   "bin": {
-    "configfile": "./index.js"
+    "configfile": "./bin/configfile.js"
   },
   "dependencies": {
     "chalk": "^2.1.0",
