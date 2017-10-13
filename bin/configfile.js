@@ -26,7 +26,12 @@ program
   .option('-f, --force', 'force parameters file overwrite.')
   .action(initCommand(configService))
 
-program.command('scripts', 'list all custom configuration scripts available.')
-program.command('modules', 'list all modules available.')
+program
+  .command('scripts', 'list all custom configuration scripts available.')
+  .alias('s')
+
+program
+  .command('modules', 'list all modules available.')
+  .alias('m')
 
 program.parse(process.argv)
