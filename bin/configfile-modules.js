@@ -4,7 +4,7 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { initCommand } = require('../src/commands')
+const { deployCommand, modulesCommand } = require('../src/commands')
 
 const { ConfigService } = require('../src/services/config')
 const { FileService } = require('../src/services/file')
@@ -16,17 +16,15 @@ const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
 
 program
-  .version(packageData.version)
-  .description('Config files manager')
+  .command('list')
+  .alias('l')
+  .description('list all modules available.')
+  .action(modulesCommand(fileService))
 
 program
-  .command('init')
-  .alias('i')
-  .description('activate configfiles on user session.')
-  .option('-f, --force', 'force parameters file overwrite.')
-  .action(initCommand(configService))
-
-program.command('scripts', 'list all custom configuration scripts available.')
-program.command('modules', 'list all modules available.')
+  .command('deploy [modules...]')
+  .alias('d')
+  .description('deploy configuration files.')
+  .action(deployCommand(fileService))
 
 program.parse(process.argv)
