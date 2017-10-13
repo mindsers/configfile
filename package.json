@@ -1,9 +1,9 @@
 {
   "name": "configfile",
-  "version": "0.2.0",
-  "description": "Config files manager",
+  "version": "0.2.1",
+  "description": "Personal config files manager",
   "main": "index.js",
-  "repository": "github.com:Mindsers/configfiles.git",
+  "repository": "github.com:Mindsers/configfile.git",
   "author": "Mindsers <dev@nathanaelcherrier.com>",
   "license": "Apache-2.0",
   "bin": {
