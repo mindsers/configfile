@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.2.1] - 2017-10-13
+### Fixed
+- Replace the JS error message (non-handled error) on `scripts` and `modules` commands
+  by a user friendly error message.
+
 ## [0.2.0] - 2017-10-12
 ### Added
 - This CHANGELOG file to hopefully serve to all developers and users.
