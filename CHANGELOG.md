@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The README file to give first information on the project (installation, usage, etc.).
 
 [Unreleased]: https://github.com/Mindsers/configfile/tree/develop
+[0.2.1]: https://github.com/Mindsers/configfile/tree/0.2.1
 [0.2.0]: https://github.com/Mindsers/configfile/tree/0.2.0
 [0.1.1]: https://github.com/Mindsers/configfile/tree/0.1.1
 [0.1.0]: https://github.com/Mindsers/configfile/tree/0.1.0
