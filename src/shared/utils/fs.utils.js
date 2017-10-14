@@ -36,24 +36,22 @@ class FsUtils {
   static mkdirp(pathname = '') {
     const pathParts = pathname.split('/')
 
-    return pathParts.reduce((promise, part) => {
-      return promise
-        .then((previousPath) => {
-          const newPath = path.join(previousPath, part)
+    return pathParts.reduce((promise, part) => promise
+      .then(previousPath => {
+        const newPath = path.join(previousPath, part)
 
-          if (FsUtils.fileExist(newPath)) {
-            return newPath
-          }
+        if (FsUtils.fileExist(newPath)) {
+          return newPath
+        }
 
-          return FsUtils.mkdir(newPath)
-            .catch(error => {
-              if (error.code !== 'EEXIST') {
-                throw new Error('dir_create_failed')
-              }
-            })
-            .then(() => newPath)
-        })
-    }, Promise.resolve(pathname[0] === '/' ? '/' : ''))
+        return FsUtils.mkdir(newPath)
+          .catch(error => {
+            if (error.code !== 'EEXIST') {
+              throw new Error('dir_create_failed')
+            }
+          })
+          .then(() => newPath)
+      }), Promise.resolve(pathname[0] === '/' ? '/' : ''))
   }
 }
 

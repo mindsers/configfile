@@ -31,5 +31,4 @@ program
   .description('run custom configuration scripts.')
   .action(runCommand(configService, fileService))
 
-
 program.parse(process.argv)

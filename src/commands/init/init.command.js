@@ -58,7 +58,7 @@ module.exports = exports = configService => options => {
       configService.folderPath = folder_path
     })
     .then(() => {
-      const folderPath  = configService.folderPath
+      const folderPath = configService.folderPath
       if (!FsUtils.fileExist(folderPath)) {
         LogUtils.log({ type: 'info', message: 'Folder does not exist. It will be created.' })
         fs.mkdirSync(folderPath)
@@ -83,7 +83,6 @@ module.exports = exports = configService => options => {
       return GitUtils.clone(configService.repoUrl, configService.folderPath)
         .then(repo => {
           LogUtils.log({ type: 'info', message: 'Git repository cloned successuly.' })
-          return
         })
     })
     .catch(error => {
