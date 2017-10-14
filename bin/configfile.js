@@ -4,16 +4,14 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { initCommand } = require('../src/commands')
-
 const { ConfigService } = require('../src/services/config')
-const { FileService } = require('../src/services/file')
+
+const { initCommand } = require('../src/commands')
 
 const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
 const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
 
 const configService = new ConfigService(optionsFilePath)
-const fileService = new FileService(configService)
 
 program
   .version(packageData.version)
