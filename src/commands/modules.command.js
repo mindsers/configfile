@@ -1,6 +1,6 @@
-const { LogUtils } = require('./shared/log.utils')
+const { LogUtils } = require('../shared/log.utils')
 
-const { ConfigurationFileNotExist } = require('./services/config')
+const { ConfigurationFileNotExist } = require('../services/config')
 
 module.exports = exports = fileService => () => {
   let modules = []
