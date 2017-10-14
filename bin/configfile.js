@@ -17,7 +17,7 @@ const fileService = new FileService(configService)
 
 program
   .version(packageData.version)
-  .description('Config files manager')
+  .description('Config files manager.')
 
 program
   .command('init')
@@ -27,7 +27,7 @@ program
   .action(initCommand(configService))
 
 program
-  .command('scripts', 'list all custom configuration scripts available.')
+  .command('scripts', 'work with custom scripts available.')
   .alias('s')
 
 program

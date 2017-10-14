@@ -16,6 +16,10 @@ const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
 
 program
+  .version(packageData.version)
+  .description('Custom scripts manager.')
+
+program
   .command('list')
   .alias('l')
   .description('list all custom configuration scripts available.')
