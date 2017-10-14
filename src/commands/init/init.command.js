@@ -46,16 +46,16 @@ module.exports = exports = configService => options => {
   ]
 
   inquirer.prompt(questions)
-    .then(({ repo_url = null, folder_path, overwrite_file = true }) => {
-      if (!overwrite_file) {
+    .then(({ repo_url: repoUrl = null, folder_path: folderPath, overwrite_file: overwriteFile = true }) => {
+      if (!overwriteFile) {
         throw new InitStopedByUser('You stopped the command. Nothing has be made.')
       }
 
-      folder_path = folder_path.replace('~', process.env.HOME)
-      folder_path = path.resolve(folder_path)
+      folderPath = folderPath.replace('~', process.env.HOME)
+      folderPath = path.resolve(folderPath)
 
-      configService.repoUrl = repo_url
-      configService.folderPath = folder_path
+      configService.repoUrl = repoUrl
+      configService.folderPath = folderPath
     })
     .then(() => {
       const folderPath = configService.folderPath
