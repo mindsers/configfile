@@ -16,6 +16,10 @@ const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
 
 program
+  .version(packageData.version)
+  .description('Configuration modules manager.')
+
+program
   .command('list')
   .alias('l')
   .description('list all modules available.')

@@ -17,7 +17,7 @@ const fileService = new FileService(configService)
 
 program
   .version(packageData.version)
-  .description('Config files manager.')
+  .description('Configuration files manager.')
 
 program
   .command('init')
@@ -31,7 +31,7 @@ program
   .alias('s')
 
 program
-  .command('modules', 'list all modules available.')
+  .command('modules', 'work with modules available.')
   .alias('m')
 
 program.parse(process.argv)
