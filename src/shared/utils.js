@@ -3,7 +3,7 @@ const { GitUtils } = require('./utils/git.utils')
 const { LogUtils } = require('./utils/log.utils')
 const { ProcessUtils } = require('./utils/process.utils')
 
-exports.module = exports = {
+module.exports = exports = {
   FsUtils,
   GitUtils,
   LogUtils,

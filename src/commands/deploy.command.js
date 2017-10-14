@@ -1,8 +1,7 @@
 const path = require('path')
 const fs = require('fs')
 
-const { FsUtils } = require('../shared/fs.utils')
-const { LogUtils } = require('../shared/log.utils')
+const { FsUtils, LogUtils } = require('../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
 

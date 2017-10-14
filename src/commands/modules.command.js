@@ -1,4 +1,4 @@
-const { LogUtils } = require('../shared/log.utils')
+const { LogUtils } = require('../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
 

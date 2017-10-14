@@ -1,10 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 
-const { FsUtils } = require('../../shared/fs.utils')
-const { ProcessUtils } = require('../../shared/process.utils')
-const { LogUtils } = require('../../shared/log.utils')
-
+const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
 const { ScriptNotExist } = require('./script-not-exist.error')
 const { BadScriptPermission } = require('./bad-script-permission.error')
 
