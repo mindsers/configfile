@@ -9,8 +9,8 @@ const { runCommand, scriptsCommand } = require('../src/commands')
 const { ConfigService } = require('../src/services/config')
 const { FileService } = require('../src/services/file')
 
-const optionsFilePath = `${process.env.HOME}/.configfile`
 const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
+const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
 
 const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
@@ -30,5 +30,6 @@ program
   .alias('r')
   .description('run custom configuration scripts.')
   .action(runCommand(configService, fileService))
+
 
 program.parse(process.argv)
