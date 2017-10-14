@@ -27,25 +27,11 @@ Please follow this structure:
 
 ## Usage
 
-### Initialization / configuration
-
-`configfile init` Initialize *configfile* on the current user session.
-
-### List of modules
-
-`configfile modules` Display a list of all modules available via *Configfile*.
-
-### Deploy configuration files (module)
-
-`configfile deploy [moduleName...]` Deploy the configuration files for the given module name.
-
-### List of scripts
-
-`configfile scripts` Display a list of all scripts available via *Configfile*.
-
-### Run script
-
-`configfile run <scriptName>` Execute the script identifying by the given script name.
+- `configfile init` or `configfile i`: Initialize *configfile* on the current user session.
+- `configfile modules list` or `configfile m l`: Display a list of all modules available via *Configfile*.
+- `configfile modules deploy [moduleName...]` or `configfile m d [moduleName...]`: Deploy the configuration files for the given module name.
+- `configfile scripts` or `configfile s`: Display a list of all scripts available via *Configfile*.
+- `configfile scripts run <scriptName>` or `configfile s r <scriptName>`: Execute the script identifying by the given script name.
 
 ## Support
 

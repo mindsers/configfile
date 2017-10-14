@@ -1,7 +1,7 @@
 const fs = require('fs')
 
 const { ConfigurationFileNotExist } = require('./config-file-not-exist.error')
-const { FsUtils } = require('../../shared/fs.utils')
+const { FsUtils } = require('../../shared/utils')
 
 class ConfigService {
   get repoUrl() {
