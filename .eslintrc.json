@@ -5,25 +5,30 @@
     "node": true
   },
   "rules": {
-    "getter-return": ["error", { "allowImplicit": true }],
-    "no-compare-neg-zero": "error",
-    "space-before-function-paren": ["error", {
-      "anonymous": "always",
-      "named": "never",
-      "asyncArrow": "always"
-    }],
-    "no-var": "error",
     "arrow-body-style": ["error", "as-needed"],
     "arrow-parens": ["error", "as-needed"],
     "arrow-spacing": "error",
-    "generator-star-spacing": ["error", {"before": true, "after": false}],
+    "default-case": "error",
+    "guard-for-in": "error",
+    "generator-star-spacing": ["error", { "before": true, "after": false }],
+    "getter-return": ["error", { "allowImplicit": true }],
+    "no-compare-neg-zero": "error",
     "no-confusing-arrow": "error",
+    "no-else-return": "error",
+    "no-empty": "error",
+    "no-implicit-coercion": "error",
+    "no-useless-return": "error",
+    "no-redeclare": "error",
+    "no-var": "error",
     "prefer-arrow-callback": "error",
     "prefer-const": "error",
     "prefer-rest-params": "error",
     "prefer-spread": "error",
     "prefer-template": "error",
-    "no-unneeded-ternary": "error",
-    "no-else-return": "error"
+    "space-before-function-paren": ["error", {
+      "anonymous": "always",
+      "named": "never",
+      "asyncArrow": "always"
+    }]
   }
 }
