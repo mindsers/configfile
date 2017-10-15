@@ -27,7 +27,7 @@ class LogUtils {
         prefixColor: x => color.bgWhite(color.black(x)),
         messageColor: x => color.gray(x)
       },
-      success:{
+      success: {
         loggerFunction: (...x) => console.info(...x),
         prefixDefault: ' Done ',
         prefixColor: x => color.bgGreen(color.black(x)),
