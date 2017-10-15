@@ -13,8 +13,9 @@
     "configfile": "./bin/configfile.js"
   },
   "scripts": {
+    "test:unit": "ava tests/**/*.js",
     "test:lint": "eslint bin src",
-    "test": "yarn test:lint"
+    "test": "yarn test:lint && yarn test:unit"
   },
   "dependencies": {
     "chalk": "^2.1.0",
