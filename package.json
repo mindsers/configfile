@@ -13,9 +13,10 @@
     "configfile": "./bin/configfile.js"
   },
   "scripts": {
+    "test:unit:coverage": "nyc yarn test:unit",
     "test:unit": "ava tests/**/*.js",
     "test:lint": "eslint bin src tests",
-    "test": "yarn test:lint && yarn test:unit"
+    "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
     "chalk": "^2.1.0",
