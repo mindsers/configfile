@@ -14,7 +14,7 @@
   },
   "scripts": {
     "test:unit": "ava tests/**/*.js",
-    "test:lint": "eslint bin src",
+    "test:lint": "eslint bin src tests",
     "test": "yarn test:lint && yarn test:unit"
   },
   "dependencies": {
