@@ -38,10 +38,6 @@ test('ConfigService#configData should throw an error when main configuration fil
   t.throws(() => configService.configData(), ConfigurationFileNotExist)
 })
 
-test('ConfigService#configData should throw an error when main configuration file exist', t => {
-  t.throws(() => configService.configData(), ConfigurationFileNotExist)
-})
-
 test.todo('ConfigService#scriptExtension should return default value when it is not specified in file')
 test.todo('ConfigService#scriptExtension should return existing value')
 test.todo('ConfigService#scriptExtension should check is an array before update')
