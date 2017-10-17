@@ -89,3 +89,13 @@ test('ConfigService#repoUrl should update value', t => {
   const data = JSON.parse(fs.readFileSync(configService.configPath))
   t.is(data['repo_url'], 'http://google.com')
 })
+
+test('ConfigService#getConfig should return the value for the given key', t => {
+  fs.writeFileSync(configService.configPath, JSON.stringify({ 'key': 'value' }))
+  t.is(configService.getConfig('key'), 'value')
+})
+
+test('ConfigService#getConfig should return the value for the given key', t => {
+  fs.writeFileSync(configService.configPath, JSON.stringify({ 'notkey': 'value' }))
+  t.is(configService.getConfig('key'), null)
+})
