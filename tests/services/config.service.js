@@ -5,6 +5,7 @@ import rimraf from 'rimraf'
 import { spy } from 'sinon'
 
 import { ConfigService, ConfigurationFileNotExist } from '../../src/services/config'
+import { FsUtils } from '../../src/shared/utils'
 
 const tmpData = path.join(__dirname, './env-config')
 let configService
@@ -95,7 +96,28 @@ test('ConfigService#getConfig should return the value for the given key', t => {
   t.is(configService.getConfig('key'), 'value')
 })
 
-test('ConfigService#getConfig should return the value for the given key', t => {
+test('ConfigService#getConfig should return null when the given key does not exist', t => {
   fs.writeFileSync(configService.configPath, JSON.stringify({ 'notkey': 'value' }))
   t.is(configService.getConfig('key'), null)
+})
+
+test('ConfigService#setConfig should update value in file', t => {
+  fs.writeFileSync(configService.configPath, JSON.stringify({ 'notkey': 'value' }))
+  configService.setConfig('notkey', 'notvalue')
+
+  const data = JSON.parse(fs.readFileSync(configService.configPath))
+  t.is(data['notkey'], 'notvalue')
+})
+
+test('ConfigService#setConfig should create file if not exist', t => {
+  if (!FsUtils.fileExist(configService.configPath)) {
+    configService.setConfig('key', 'krakow')
+
+    const data = JSON.parse(fs.readFileSync(configService.configPath))
+    t.is(data['key'], 'krakow')
+
+    return
+  }
+
+  t.fail(`File ${configService.configPath} should not exist.`)
 })
