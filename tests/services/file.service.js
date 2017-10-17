@@ -1,4 +1,21 @@
-import test from 'ava'
+import test, { beforeEach, afterEach } from 'ava'
+import { stub } from 'sinon'
+
+import { FileService } from '../../src/services/file'
+
+let fileService
+let configService
+beforeEach('init service', t => {
+  configService = stub({
+    get folderPath() { return false },
+    get scriptExtension() { return false }
+  })
+  fileService = new FileService(configService)
+})
+
+afterEach('restore spies', t => {
+  configService.restore()
+})
 
 test.todo('FileService#scripts should return name and path of valid script')
 test.todo('FileService#modules should return name and path of valid modules')
