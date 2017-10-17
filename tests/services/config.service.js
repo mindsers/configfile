@@ -2,6 +2,7 @@ import test, { beforeEach, afterEach } from 'ava'
 import fs from 'fs'
 import path from 'path'
 import rimraf from 'rimraf'
+import { spy } from 'sinon'
 
 import { ConfigService, ConfigurationFileNotExist } from '../../src/services/config'
 
@@ -51,11 +52,16 @@ test('ConfigService#scriptExtension should return existing value', t => {
 test('ConfigService#scriptExtension should check is an array before update', t => {
   fs.writeFileSync(configService.configPath, JSON.stringify({}))
 
+  spy(Array, 'isArray')
+
   configService.scriptExtension = 3
   t.not(configService.scriptExtension, 3)
+  t.true(Array.isArray.calledOnce)
 
   configService.scriptExtension = ['.ts']
   t.deepEqual(configService.scriptExtension, ['.ts'])
+
+  Array.isArray.restore()
 })
 
 test('ConfigService#folderPath should return existing value', t => {
