@@ -17,11 +17,13 @@ beforeEach('init temp files for tests', t => {
 
   fs.writeFileSync(path.join(tmpData, 'scripts/test1.sh'), '')
   fs.writeFileSync(path.join(tmpData, 'scripts/test2.js'), '')
+  fs.writeFileSync(path.join(tmpData, 'scripts/test3'), '')
+  fs.writeFileSync(path.join(tmpData, 'scripts/"tEsts 28.js"'), '')
 
   fs.mkdirSync(path.join(tmpData, 'files/module1'))
   fs.mkdirSync(path.join(tmpData, 'files/"module 2"'))
   fs.mkdirSync(path.join(tmpData, 'files/badmodule'))
-  fs.writeFileSync(path.join(tmpData, 'files/"module 2"/settings.json'), '[]')
+  fs.writeFileSync(path.join(tmpData, 'files/"moDule 2"/settings.json'), '[]')
   fs.writeFileSync(path.join(tmpData, 'files/module1/settings.json'), '[]')
 })
 
@@ -42,8 +44,8 @@ test('FileService#scripts should return name and path of valid scripts', t => {
   t.is(fileService.scripts.filter(el => ('path' in el)).length, 1)
 
   configService.scriptExtension = ['.js', '.sh', '.flg']
-  t.deepEqual(fileService.scripts.map(el => el.script), ['test1', 'test2'])
-  t.is(fileService.scripts.filter(el => ('path' in el)).length, 2)
+  t.deepEqual(fileService.scripts.map(el => el.script), ['tests-28', 'test1', 'test2'])
+  t.is(fileService.scripts.filter(el => ('path' in el)).length, 3)
 })
 
 test('FileService#modules should return name and path of valid modules', t => {
