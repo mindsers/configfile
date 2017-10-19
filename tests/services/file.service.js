@@ -23,7 +23,7 @@ beforeEach('init temp files for tests', t => {
   fs.mkdirSync(path.join(tmpData, 'files/module1'))
   fs.mkdirSync(path.join(tmpData, 'files/"module 2"'))
   fs.mkdirSync(path.join(tmpData, 'files/badmodule'))
-  fs.writeFileSync(path.join(tmpData, 'files/"moDule 2"/settings.json'), '[]')
+  fs.writeFileSync(path.join(tmpData, 'files/"moDule 2"/settings.json'), '[{"source_path":"","target_path":""}]')
   fs.writeFileSync(path.join(tmpData, 'files/module1/settings.json'), '[]')
 })
 
@@ -53,7 +53,18 @@ test('FileService#modules should return name and path of valid modules', t => {
   t.is(fileService.modules.filter(el => ('path' in el)).length, 2)
 })
 
-test.todo('FileService#modules should return target and source of each file in modules')
+test('FileService#modules should return target and source of each file in modules', t => {
+  const modules = fileService.modules
+
+  t.plan(modules.reduce((length, module) => { length += module.settings.length; return length }, 0))
+
+  for (const module of modules) {
+    for (const file of module.settings) {
+      t.is(('target' in file) && ('source' in file), true)
+    }
+  }
+})
+
 test.todo('FileService#runScript should call chmod')
 test.todo('FileService#runScript should call execFile')
 test.todo(`FileService#runScript should rethrows BadScriptPermission when 'EACCESS' error is thrown`)
