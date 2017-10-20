@@ -1,6 +1,6 @@
-## How to contribute to Configfile
+# How to contribute to Configfile
 
-#### **Did you find a bug?**
+## Did you find a bug?
 
 * **Ensure the bug was not already reported** by searching on GitHub under [Issues][Issues].
 
@@ -8,7 +8,7 @@
 
 * If possible, use the relevant bug report templates to create the issue.
 
-#### **Did you write a patch that fixes a bug?**
+## Did you write a patch that fixes a bug?
 
 * Write new unit test(s) that match the bug case to limit future regression.
 
@@ -18,25 +18,25 @@
 
 * Before submitting, please ensure your code follow the code convention.
 
-#### **Did you fix whitespace, format code, or make a purely cosmetic patch?**
+## Did you fix whitespace, format code, or make a purely cosmetic patch?
 
 * Your changes must follow the coding convention.
 
 * Please ensure that your changes does not include regression.
 
-#### **Do you intend to add a new feature or change an existing one?**
+## Do you intend to add a new feature or change an existing one?
 
 * Please ask first ([open an issue][Issues] or [talk about it on gitter][gitter]) before embarking on any significant pull request (e.g. implementing features, refactoring code), otherwise you risk spending a lot of time working on something that the project's developers might not want to merge into the project.
 
 * Please adhere to the coding conventions used in this project (indentation, accurate comments, etc.) and any other requirements (such as test coverage, documentation).
 
-#### **Do you have questions about the source code?**
+## Do you have questions about the source code?
 
 * Ask any question about how to use Configfile in the [gitter channel][gitter] or on [Stack Overflow](https://stackoverflow.com).
 
-#### **Do you want to contribute to the Configfile documentation?**
+## Do you want to contribute to the Configfile documentation?
 
-Documentation is stored in the project source code.
+Documentation file are stored in the project source code.
 
 * Please refer to "Do you intend to add a new feature or change an existing one?" section.
 
