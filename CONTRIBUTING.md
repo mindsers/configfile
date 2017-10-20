@@ -28,13 +28,13 @@ Changes that are cosmetic in nature and do not add anything substantial to the s
 
 #### **Do you intend to add a new feature or change an existing one?**
 
-* Please ask first ([open an issue][Issues]) before embarking on any significant pull request (e.g. implementing features, refactoring code, porting to a different language), otherwise you risk spending a lot of time working on something that the project's developers might not want to merge into the project.
+* Please ask first ([open an issue][Issues] or [talk about it on gitter][gitter]) before embarking on any significant pull request (e.g. implementing features, refactoring code), otherwise you risk spending a lot of time working on something that the project's developers might not want to merge into the project.
 
 * Please adhere to the coding conventions used in this project (indentation, accurate comments, etc.) and any other requirements (such as test coverage).
 
 #### **Do you have questions about the source code?**
 
-* Ask any question about how to use Configfile in the [gitter](https://gitter.im/mindsers/configfile) or on [Stack Overflow](https://stackoverflow.com).
+* Ask any question about how to use Configfile in the [gitter channel][gitter] or on [Stack Overflow](https://stackoverflow.com).
 
 #### **Do you want to contribute to the Configfile documentation?**
 
@@ -44,3 +44,4 @@ Changes that are cosmetic in nature and do not add anything substantial to the s
 Thanks!
 
 [Issues]: https://github.com/Mindsers/configfile/issues
+[gitter]: https://gitter.im/mindsers/configfile
