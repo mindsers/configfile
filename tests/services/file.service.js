@@ -4,6 +4,7 @@ import path from 'path'
 import rimraf from 'rimraf'
 
 import { FileService } from '../../src/services/file'
+import { ScriptNotExist } from '../../src/services/file'
 
 const tmpData = path.join(__dirname, './env-file')
 
@@ -65,6 +66,14 @@ test('FileService#modules should return target and source of each file in module
   }
 })
 
-test.todo('FileService#runScript should call chmod')
-test.todo('FileService#runScript should call execFile')
-test.todo(`FileService#runScript should rethrows BadScriptPermission when 'EACCESS' error is thrown`)
+test(`FileService#runScript should throw ScriptNotExist when script name is invalid`, t => {
+  t.plan(1)
+
+  return fileService.runScript('zdjkqh')
+    .then(() => {
+      t.fail('Execution must failed when script name is invalid.')
+    })
+    .catch(e => {
+      t.true(e instanceof ScriptNotExist)
+    })
+})
