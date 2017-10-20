@@ -13,8 +13,10 @@
     "configfile": "./bin/configfile.js"
   },
   "scripts": {
-    "test:lint": "eslint bin src",
-    "test": "yarn test:lint"
+    "test:unit:coverage": "nyc yarn test:unit",
+    "test:unit": "ava tests/**/*.js",
+    "test:lint": "eslint bin src tests",
+    "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
     "chalk": "^2.1.0",
@@ -23,11 +25,15 @@
     "inquirer": "^3.2.3"
   },
   "devDependencies": {
+    "ava": "^0.22.0",
     "eslint": "^4.9.0",
     "eslint-config-standard": "^10.2.1",
     "eslint-plugin-import": "^2.7.0",
     "eslint-plugin-node": "^5.2.0",
     "eslint-plugin-promise": "^3.6.0",
-    "eslint-plugin-standard": "^3.0.1"
+    "eslint-plugin-standard": "^3.0.1",
+    "nyc": "^11.2.1",
+    "rimraf": "^2.6.2",
+    "sinon": "^4.0.1"
   }
 }
