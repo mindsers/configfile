@@ -23,12 +23,12 @@ class FileService {
         const [scriptName] = element.split('.')
         const scriptSlug = scriptName
           .toLowerCase()
-          .replace(/ /g,'-')
-          .replace(/[^\w-]+/g,'')
+          .replace(/ /g, '-')
+          .replace(/[^\w-]+/g, '')
 
         return {
           script: scriptSlug,
-          file : element,
+          file: element,
           path: path.join(this.configService.folderPath, 'scripts', element)
         }
       })
@@ -41,8 +41,8 @@ class FileService {
       .map(element => {
         const moduleSlug = element
           .toLowerCase()
-          .replace(/ /g,'-')
-          .replace(/[^\w-]+/g,'')
+          .replace(/ /g, '-')
+          .replace(/[^\w-]+/g, '')
 
         return {
           module: moduleSlug,
@@ -59,7 +59,7 @@ class FileService {
         try {
           const file = fs.readFileSync(path)
           element.settings = JSON.parse(file)
-        } catch(e) {
+        } catch (e) {
           LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
           element.settings = []
         }
@@ -95,24 +95,24 @@ class FileService {
     }
 
     return FsUtils.chmod(script.path, '0700')
-    .then(() => {
-      const child = ProcessUtils.execFile(script.path)
-      child.stdout.on('data', data => {
-        LogUtils.log({ message: data.trim() })
-      })
-      child.stderr.on('data', data => {
-        LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
-      })
+      .then(() => {
+        const child = ProcessUtils.execFile(script.path)
+        child.stdout.on('data', data => {
+          LogUtils.log({ message: data.trim() })
+        })
+        child.stderr.on('data', data => {
+          LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
+        })
 
-      return child.toPromise()
-    })
-    .catch(error => {
-      if (error.code === 'EACCES') {
-        throw new BadScriptPermission(scriptName)
-      }
+        return child.toPromise()
+      })
+      .catch(error => {
+        if (error.code === 'EACCES') {
+          throw new BadScriptPermission(scriptName)
+        }
 
-      throw error
-    })
+        throw error
+      })
   }
 
   deployModule(moduleName, global = true) {
@@ -134,16 +134,14 @@ class FileService {
 
     return Promise.all(dirCreation).then(() => {
       const linkCreation = files
-        .map(file => {
-          return FsUtils.symlink(file.source, file.target)
-            .catch(error => {
-              if (error.code !== 'EEXIST') {
-                throw error
-              }
+        .map(file => FsUtils.symlink(file.source, file.target)
+          .catch(error => {
+            if (error.code !== 'EEXIST') {
+              throw error
+            }
 
-              LogUtils.log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
-            })
-        })
+            LogUtils.log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
+          }))
 
       return Promise.all(linkCreation)
     })

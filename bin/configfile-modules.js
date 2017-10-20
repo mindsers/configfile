@@ -31,5 +31,4 @@ program
   .description('deploy configuration files.')
   .action(deployCommand(fileService))
 
-
 program.parse(process.argv)
