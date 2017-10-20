@@ -30,7 +30,7 @@ Changes that are cosmetic in nature and do not add anything substantial to the s
 
 * Please ask first ([open an issue][Issues] or [talk about it on gitter][gitter]) before embarking on any significant pull request (e.g. implementing features, refactoring code), otherwise you risk spending a lot of time working on something that the project's developers might not want to merge into the project.
 
-* Please adhere to the coding conventions used in this project (indentation, accurate comments, etc.) and any other requirements (such as test coverage).
+* Please adhere to the coding conventions used in this project (indentation, accurate comments, etc.) and any other requirements (such as test coverage, documentation).
 
 #### **Do you have questions about the source code?**
 
@@ -38,7 +38,9 @@ Changes that are cosmetic in nature and do not add anything substantial to the s
 
 #### **Do you want to contribute to the Configfile documentation?**
 
-* Please read [Contributing to the Rails Documentation]().
+Documentation is stored in the project source code.
+
+* Please refer to "Do you intend to add a new feature or change an existing one?" section.
 
 
 Thanks!
