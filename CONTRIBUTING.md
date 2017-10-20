@@ -1,4 +1,4 @@
-## How to contribute to Ruby on Rails
+## How to contribute to Configfile
 
 #### **Did you find a bug?**
 
@@ -19,8 +19,6 @@
 * Before submitting, please ensure your code follow the code convention.
 
 #### **Did you fix whitespace, format code, or make a purely cosmetic patch?**
-
-Changes that are cosmetic in nature and do not add anything substantial to the stability, functionality, or testability of Rails can be accepted:
 
 * Your changes must follow the coding convention.
 
