@@ -10,7 +10,7 @@
 
 ## Data storage
 
-This tool **does not store** configuration files for you. A git repo is needed to store your configuration files.
+This tool **does not store** configuration files for you. A git repo ([dotfiles](https://github.com/topics/dotfiles)) is needed to store your configuration files.
 
 Please follow this structure:
 
