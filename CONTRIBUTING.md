@@ -107,8 +107,6 @@ All the rules are listed in `.eslinrc.json` on the root directory.
 
 * Reference issues and pull requests liberally after the first line.
 
-* When only changing documentation, include [ci skip] in the commit description.
-
 
 [Issues]: https://github.com/Mindsers/configfile/issues
 [gitter]: https://gitter.im/mindsers/configfile
