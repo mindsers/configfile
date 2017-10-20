@@ -33,6 +33,10 @@ Please follow this structure:
 - `configfile scripts` or `configfile s`: Display a list of all scripts available via *Configfile*.
 - `configfile scripts run <scriptName>` or `configfile s r <scriptName>`: Execute the script identifying by the given script name.
 
+## Contribution
+
+Contributions to the source code of *Configfile* are welcomed and greatly appreciated. For help on how to contribute in this project, please refer to [How to contribute to Configfile](https://github.com/Mindsers/configfile/blob/develop/CONTRIBUTING.md).
+
 ## Support
 
 *Configfile* is licensed under an Apache-2.0 license, which means that it's completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
