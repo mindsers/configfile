@@ -3,8 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import rimraf from 'rimraf'
 
-import { FileService } from '../../src/services/file'
-import { ScriptNotExist } from '../../src/services/file'
+import { FileService, ScriptNotExist } from '../../../src/services/file'
 
 const tmpData = path.join(__dirname, './env-file')
 
@@ -40,7 +39,7 @@ afterEach.always('clean temp files', t => {
   rimraf.sync(tmpData)
 })
 
-test('FileService#scripts should return name and path of valid scripts', t => {
+test('.scripts should return name and path of valid scripts', t => {
   t.deepEqual(fileService.scripts.map(el => el.script), ['test1'])
   t.is(fileService.scripts.filter(el => ('path' in el)).length, 1)
 
@@ -49,12 +48,12 @@ test('FileService#scripts should return name and path of valid scripts', t => {
   t.is(fileService.scripts.filter(el => ('path' in el)).length, 3)
 })
 
-test('FileService#modules should return name and path of valid modules', t => {
+test('.modules should return name and path of valid modules', t => {
   t.deepEqual(fileService.modules.map(el => el.module), ['module-2', 'module1'])
   t.is(fileService.modules.filter(el => ('path' in el)).length, 2)
 })
 
-test('FileService#modules should return target and source of each file in modules', t => {
+test('.modules should return target and source of each file in modules', t => {
   const modules = fileService.modules
 
   t.plan(modules.reduce((length, module) => { length += module.settings.length; return length }, 0))
@@ -66,7 +65,7 @@ test('FileService#modules should return target and source of each file in module
   }
 })
 
-test(`FileService#runScript should throw ScriptNotExist when script name is invalid`, t => {
+test(`.runScript should throw ScriptNotExist when script name is invalid`, t => {
   t.plan(1)
 
   return fileService.runScript('zdjkqh')
