@@ -10,7 +10,7 @@
 
 ## Data storage
 
-This tool **does not store** configuration files for you. A git repo is needed to store your configuration files.
+This tool **does not store** configuration files for you. A git repo ([dotfiles](https://github.com/topics/dotfiles)) is needed to store your configuration files.
 
 Please follow this structure:
 
@@ -32,6 +32,10 @@ Please follow this structure:
 - `configfile modules deploy [moduleName...]` or `configfile m d [moduleName...]`: Deploy the configuration files for the given module name.
 - `configfile scripts` or `configfile s`: Display a list of all scripts available via *Configfile*.
 - `configfile scripts run <scriptName>` or `configfile s r <scriptName>`: Execute the script identifying by the given script name.
+
+## Contribution
+
+Contributions to the source code of *Configfile* are welcomed and greatly appreciated. For help on how to contribute in this project, please refer to [How to contribute to Configfile](https://github.com/Mindsers/configfile/blob/develop/CONTRIBUTING.md).
 
 ## Support
 
