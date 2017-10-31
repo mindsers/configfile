@@ -23,6 +23,10 @@ class FsUtils {
     return util.promisify(fs.mkdir)
   }
 
+  static get rename() {
+    return util.promisify(fs.rename)
+  }
+
   static fileExist(filename = '') {
     try {
       fs.accessSync(filename)
