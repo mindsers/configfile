@@ -134,7 +134,13 @@ class FileService {
 
     return Promise.all(dirCreation).then(() => {
       const linkCreation = files
-        .map(file => FsUtils.symlink(file.source, file.target)
+        .map(file => Promise.resolve()
+          .then(_ => {
+            if (FsUtils.fileExist(file.target)) {
+              return FsUtils.rename(file.target, `${file.target}.old`)
+            }
+          })
+          .then(_ => FsUtils.symlink(file.source, file.target))
           .catch(error => {
             if (error.code !== 'EEXIST') {
               throw error
