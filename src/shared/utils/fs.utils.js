@@ -29,7 +29,7 @@ class FsUtils {
 
   static fileExist(filename = '') {
     try {
-      fs.accessSync(filename)
+      fs.lstatSync(filename)
     } catch (e) {
       return false
     }
