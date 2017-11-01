@@ -150,7 +150,11 @@ class FileService {
               return FsUtils.rename(file.target, `${file.target}.old`)
             }
           })
-          .catch(error => console.log(error))
+          .catch(error => {
+            if (error.code !== 'ENOENT') { // No file exist at file.target
+              throw error
+            }
+          })
           .then(_ => FsUtils.symlink(file.source, file.target))
           .catch(error => {
             if (error.code !== 'EEXIST') {
