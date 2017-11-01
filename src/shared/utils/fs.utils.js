@@ -27,9 +27,13 @@ class FsUtils {
     return util.promisify(fs.rename)
   }
 
-  static fileExist(filename = '') {
+  static fileExist(filename = '', followLink = true) {
     try {
-      fs.lstatSync(filename)
+      if (followLink) {
+        fs.accessSync(filename)
+      } else {
+        fs.lstatSync(filename)
+      }
     } catch (e) {
       return false
     }
