@@ -136,7 +136,7 @@ class FileService {
       const linkCreation = files
         .map(file => Promise.resolve()
           .then(_ => {
-            if (FsUtils.fileExist(file.target)) {
+            if (FsUtils.fileExist(file.target, false)) {
               return FsUtils.rename(file.target, `${file.target}.old`)
             }
           })
