@@ -30,6 +30,7 @@ Please follow this structure:
 - `configfile init` or `configfile i`: Initialize *configfile* on the current user session.
 - `configfile modules list` or `configfile m l`: Display a list of all modules available via *Configfile*.
 - `configfile modules deploy [moduleName...]` or `configfile m d [moduleName...]`: Deploy the configuration files for the given module name.
+    - `-l, --local` deploy authorized file to the current directory.
 - `configfile scripts` or `configfile s`: Display a list of all scripts available via *Configfile*.
 - `configfile scripts run <scriptName>` or `configfile s r <scriptName>`: Execute the script identifying by the given script name.
 
