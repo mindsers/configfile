@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 - A contribution guide (CONTRIBUTING.md) to help new contributors.
+- The local deployment of configuration file. (`-l` on `modules deploy`)
 
 ### Changed
 - Adopte a git like command style: `configfile run` => `configfile scritps run`.

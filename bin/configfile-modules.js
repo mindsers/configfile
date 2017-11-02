@@ -29,6 +29,7 @@ program
   .command('deploy [modules...]')
   .alias('d')
   .description('deploy configuration files.')
+  .option('-l, --local', 'deploy only local files of the module(s) in the current folder')
   .action(deployCommand(fileService))
 
 program.parse(process.argv)
