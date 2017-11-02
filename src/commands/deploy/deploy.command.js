@@ -82,6 +82,11 @@ module.exports = exports = fileService => (modules, options) => {
         return
       }
 
+      if (error instanceof DeployStopedByUser) {
+        LogUtils.log({ message: `${error.message} No modules to deploy.` })
+        return
+      }
+
       LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
     })
 }
