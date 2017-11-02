@@ -119,7 +119,7 @@ class FileService {
     const deployPrommise = Promise.resolve()
 
     if (isGlobalFile) {
-      throw new TypeError('Unable to deploy global file as a local one.')
+      deployPrommise.then(_ => { throw new TypeError('Unable to deploy global file as a local one.') })
     }
 
     const dirname = path.dirname(target)
