@@ -1,6 +1,9 @@
+const inquirer = require('inquirer')
+
 const { LogUtils } = require('../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
+const { TargetFileAlreadyExist } = require('../services/file')
 
 module.exports = exports = fileService => (modules, options) => {
   const localDeployment = options.local || false
@@ -19,13 +22,23 @@ module.exports = exports = fileService => (modules, options) => {
         }, [])
         .filter(element => element.global === !localDeployment)
 
-      // fileService.deployModules(modules, !localDeployment)
       return Promise.all(files.map(file => {
         if (file.global) {
           return fileService.deployGlobalFile(file)
         }
 
         return fileService.deployLocalFile(file)
+          .catch(error => {
+            if (error instanceof TargetFileAlreadyExist) {
+              return inquirer
+                .prompt([{ name: 'overwrite_file', message: `File ${file.target} already exist. Do you want to overwrite it ?`, type: 'confirm' }])
+                .then(({ overwrite_file: overwriteFile }) => {
+                  if (overwriteFile) {
+                    return fileService.deployLocalFile(file, true)
+                  }
+                })
+            }
+          })
       }))
     })
     .then(_ => LogUtils.log({ type: 'success', message: `Deployment task is finished.` }))
