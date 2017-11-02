@@ -4,6 +4,7 @@ const { LogUtils } = require('../../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../../services/config')
 const { TargetFileAlreadyExist } = require('../../services/file')
+const { DeployStopedByUser } = require('./deploy-stop-by-user.error')
 
 module.exports = exports = fileService => (modules, options) => {
   const localDeployment = options.local || false
@@ -20,7 +21,7 @@ module.exports = exports = fileService => (modules, options) => {
         }])
           .then(({ all_module: deployAllModule }) => {
             if (!deployAllModule) {
-              throw new Error('user stop')
+              throw new DeployStopedByUser()
             }
 
             modulesToDeploy = fileService.modules.map(el => el.module)
