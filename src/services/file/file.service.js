@@ -134,13 +134,20 @@ class FileService {
 
     return Promise.all(dirCreation).then(() => {
       const linkCreation = files
-        .map(file => FsUtils.symlink(file.source, file.target)
+        .map(file => Promise.resolve()
+          .then(_ => {
+            if (global) {
+              return FsUtils.symlink(file.source, file.target)
+            }
+
+            return FsUtils.copyFile(file.source, file.target)
+          })
           .catch(error => {
             if (error.code !== 'EEXIST') {
               throw error
             }
 
-            LogUtils.log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
+            LogUtils.log({ type: 'warn', message: `Unable to deploy "${file.source}" => "${file.target}".` })
           }))
 
       return Promise.all(linkCreation)
