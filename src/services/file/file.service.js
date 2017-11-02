@@ -115,6 +115,45 @@ class FileService {
       })
   }
 
+  deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
+    const deployPrommise = Promise.resolve()
+
+    if (isGlobalFile) {
+      throw new TypeError('Unable to deploy global file as a local one.')
+    }
+
+    const dirname = path.dirname(target)
+    if (FsUtils.fileExist(dirname)) {
+      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
+    }
+
+    deployPrommise
+      .then(_ => FsUtils.lstat(target))
+      .catch(error => {
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
+
+        return null // No file exist at target. No stats data to provide
+      })
+      .then(fileStats => {
+        if (fileStats != null && force === false) {
+          throw new Error('file exist')
+        }
+
+        return FsUtils.copyFile(source, target)
+      })
+      .catch(error => {
+        if (error.code !== 'EEXIST') {
+          throw error
+        }
+
+        LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
+      })
+
+    return deployPrommise
+  }
+
   deployModule(moduleName, global = true) {
     const files = this.modules
       .filter(element => element.module === moduleName)
