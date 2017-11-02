@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Adopte a git like command style: `configfile run` => `configfile scritps run`.
 - Create a "saved version" if preexisting file exist when user deploy a module.
+- No indicate the modules to deploy cause the deployment of all available modules. User authorization is required.
 
 ## [0.2.1] - 2017-10-13
 ### Fixed
