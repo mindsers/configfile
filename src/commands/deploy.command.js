@@ -7,12 +7,30 @@ const { TargetFileAlreadyExist } = require('../services/file')
 
 module.exports = exports = fileService => (modules, options) => {
   const localDeployment = options.local || false
+  let modulesToDeploy = modules
 
   Promise.resolve()
-    .then(_ => LogUtils.log({ type: 'info', message: `Deployment (${modules.join(', ')}) start.` }))
+    .then(_ => {
+      if (modules.length <= 0) {
+        return inquirer.prompt([{
+          type: 'confirm',
+          message: 'No modules was passed in parameter. Do you want to deploy all available modules ?',
+          name: 'all_module',
+          default: false
+        }])
+          .then(({ all_module: deployAllModule }) => {
+            if (!deployAllModule) {
+              throw new Error('user stop')
+            }
+
+            modulesToDeploy = fileService.modules.map(el => el.module)
+          })
+      }
+    })
+    .then(_ => LogUtils.log({ type: 'info', message: `Deployment (${modulesToDeploy.join(', ')}) start.` }))
     .then(_ => {
       const files = fileService.modules
-        .filter(element => modules.includes(element.module))
+        .filter(element => modulesToDeploy.includes(element.module))
         .reduce((files, element) => {
           for (const file of element.settings) {
             files.push(file)
