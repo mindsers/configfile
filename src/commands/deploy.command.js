@@ -32,7 +32,6 @@ module.exports = exports = fileService => (modules, options) => {
           .catch(error => {
             if (error instanceof TargetFileAlreadyExist) {
               failedFiles.push(file)
-              console.log('1')
               return
             }
 
@@ -63,7 +62,7 @@ module.exports = exports = fileService => (modules, options) => {
         LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
         return
       }
-      console.log(error)
+
       LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
     })
 }
