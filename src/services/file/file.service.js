@@ -4,6 +4,7 @@ const path = require('path')
 const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
 const { ScriptNotExist } = require('./script-not-exist.error')
 const { BadScriptPermission } = require('./bad-script-permission.error')
+const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
 
 class FileService {
   get scripts() {
@@ -138,7 +139,7 @@ class FileService {
       })
       .then(fileStats => {
         if (fileStats != null && force === false) {
-          throw new Error('file exist')
+          throw new TargetFileAlreadyExist(target)
         }
 
         return FsUtils.copyFile(source, target)
