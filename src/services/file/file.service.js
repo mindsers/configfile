@@ -154,6 +154,51 @@ class FileService {
     return deployPrommise
   }
 
+  deployGlobalFile({ source, target, global: isGlobalFile }, force = false) {
+    const deployPrommise = Promise.resolve()
+
+    if (!isGlobalFile) {
+      deployPrommise.then(_ => { throw new TypeError('Unable to deploy local file as a global one.') })
+    }
+
+    const dirname = path.dirname(target)
+    if (!FsUtils.fileExist(dirname)) {
+      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
+    }
+
+    deployPrommise
+      .then(_ => FsUtils.lstat(target))
+      .then(targetStat => {
+        if (targetStat.isSymbolicLink()) {
+          return FsUtils.readlink(target)
+            .then(linkSource => {
+              if (linkSource === source) {
+                return FsUtils.unlink(target)
+              }
+            })
+        }
+
+        if (targetStat.isFile() || targetStat.isDirectory()) {
+          return FsUtils.rename(target, `${target}.old`)
+        }
+      })
+      .catch(error => {
+        if (error.code !== 'ENOENT') { // No file exist at file.target
+          throw error
+        }
+      })
+      .then(_ => FsUtils.symlink(source, target))
+      .catch(error => {
+        if (error.code !== 'EEXIST') {
+          throw error
+        }
+
+        LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
+      })
+
+    return deployPrommise
+  }
+
   deployModule(moduleName, global = true) {
     const files = this.modules
       .filter(element => element.module === moduleName)
