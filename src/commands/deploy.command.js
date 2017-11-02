@@ -22,7 +22,8 @@ module.exports = exports = fileService => (modules, options) => {
         }, [])
         .filter(element => element.global === !localDeployment)
 
-      return Promise.all(files.map(file => {
+      const failedFiles = []
+      const deployPromises = files.map(file => {
         if (file.global) {
           return fileService.deployGlobalFile(file)
         }
@@ -30,16 +31,31 @@ module.exports = exports = fileService => (modules, options) => {
         return fileService.deployLocalFile(file)
           .catch(error => {
             if (error instanceof TargetFileAlreadyExist) {
-              return inquirer
-                .prompt([{ name: 'overwrite_file', message: `File ${file.target} already exist. Do you want to overwrite it ?`, type: 'confirm' }])
+              failedFiles.push(file)
+              console.log('1')
+              return
+            }
+
+            throw error
+          })
+      })
+
+      return Promise.all(deployPromises)
+        .then(_ => { // User choices to relaunch deployment
+          if (failedFiles.length <= 0) {
+            return
+          }
+
+          return failedFiles
+            .reduce((queue, file) => queue
+              .then(_ => inquirer
+                .prompt([{ name: 'overwrite_file', message: `File ${file.target} already exist. Do you want to overwrite it ?`, type: 'confirm', default: false }])
                 .then(({ overwrite_file: overwriteFile }) => {
                   if (overwriteFile) {
                     return fileService.deployLocalFile(file, true)
                   }
-                })
-            }
-          })
-      }))
+                })), Promise.resolve())
+        })
     })
     .then(_ => LogUtils.log({ type: 'success', message: `Deployment task is finished.` }))
     .catch(error => {
@@ -47,7 +63,7 @@ module.exports = exports = fileService => (modules, options) => {
         LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
         return
       }
-
+      console.log(error)
       LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
     })
 }
