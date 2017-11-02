@@ -1,9 +1,9 @@
 const inquirer = require('inquirer')
 
-const { LogUtils } = require('../shared/utils')
+const { LogUtils } = require('../../shared/utils')
 
-const { ConfigurationFileNotExist } = require('../services/config')
-const { TargetFileAlreadyExist } = require('../services/file')
+const { ConfigurationFileNotExist } = require('../../services/config')
+const { TargetFileAlreadyExist } = require('../../services/file')
 
 module.exports = exports = fileService => (modules, options) => {
   const localDeployment = options.local || false
