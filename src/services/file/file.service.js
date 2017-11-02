@@ -154,7 +154,7 @@ class FileService {
     return deployPrommise
   }
 
-  deployGlobalFile({ source, target, global: isGlobalFile }, force = false) {
+  deployGlobalFile({ source, target, global: isGlobalFile }) {
     const deployPrommise = Promise.resolve()
 
     if (!isGlobalFile) {
