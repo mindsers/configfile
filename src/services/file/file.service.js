@@ -123,7 +123,7 @@ class FileService {
     }
 
     const dirname = path.dirname(target)
-    if (FsUtils.fileExist(dirname)) {
+    if (!FsUtils.fileExist(dirname)) {
       deployPrommise.then(_ => FsUtils.mkdirp(dirname))
     }
 
