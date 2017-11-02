@@ -11,6 +11,10 @@ class FsUtils {
     return util.promisify(fs.readFile)
   }
 
+  static get copyFile() {
+    return util.promisify(fs.copyFile)
+  }
+
   static get symlink() {
     return util.promisify(fs.symlink)
   }
