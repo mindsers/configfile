@@ -135,6 +135,28 @@ class FileService {
     return Promise.all(dirCreation).then(() => {
       const linkCreation = files
         .map(file => Promise.resolve()
+          .then(_ => FsUtils.lstat(file.target))
+          .then(targetStat => {
+            if (global) {
+              if (targetStat.isSymbolicLink()) {
+                return FsUtils.readlink(file.target)
+                  .then(source => {
+                    if (source === file.source) {
+                      return FsUtils.unlink(file.target)
+                    }
+                  })
+              }
+
+              if (targetStat.isFile() || targetStat.isDirectory()) {
+                return FsUtils.rename(file.target, `${file.target}.old`)
+              }
+            }
+          })
+          .catch(error => {
+            if (error.code !== 'ENOENT') { // No file exist at file.target
+              throw error
+            }
+          })
           .then(_ => {
             if (global) {
               return FsUtils.symlink(file.source, file.target)

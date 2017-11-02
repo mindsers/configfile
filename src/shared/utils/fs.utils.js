@@ -27,9 +27,29 @@ class FsUtils {
     return util.promisify(fs.mkdir)
   }
 
-  static fileExist(filename = '') {
+  static get rename() {
+    return util.promisify(fs.rename)
+  }
+
+  static get lstat() {
+    return util.promisify(fs.lstat)
+  }
+
+  static get readlink() {
+    return util.promisify(fs.readlink)
+  }
+
+  static get unlink() {
+    return util.promisify(fs.unlink)
+  }
+
+  static fileExist(filename = '', followLink = true) {
     try {
-      fs.accessSync(filename)
+      if (followLink) {
+        fs.accessSync(filename)
+      } else {
+        fs.lstatSync(filename)
+      }
     } catch (e) {
       return false
     }
