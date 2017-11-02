@@ -127,7 +127,7 @@ class FileService {
       deployPrommise.then(_ => FsUtils.mkdirp(dirname))
     }
 
-    deployPrommise
+    return deployPrommise
       .then(_ => FsUtils.lstat(target))
       .catch(error => {
         if (error.code !== 'ENOENT') {
@@ -150,8 +150,6 @@ class FileService {
 
         LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
       })
-
-    return deployPrommise
   }
 
   deployGlobalFile({ source, target, global: isGlobalFile }) {
@@ -166,7 +164,7 @@ class FileService {
       deployPrommise.then(_ => FsUtils.mkdirp(dirname))
     }
 
-    deployPrommise
+    return deployPrommise
       .then(_ => FsUtils.lstat(target))
       .then(targetStat => {
         if (targetStat.isSymbolicLink()) {
@@ -195,8 +193,6 @@ class FileService {
 
         LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
       })
-
-    return deployPrommise
   }
 
   deployModule(moduleName, global = true) {
