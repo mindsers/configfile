@@ -14,7 +14,7 @@ module.exports = exports = fileService => (modules, options) => {
       const files = fileService.modules
         .filter(element => modules.includes(element.module))
         .reduce((files, element) => {
-          for (const file of element.settings) {
+          for (const file of element.files) {
             files.push(file)
           }
 
