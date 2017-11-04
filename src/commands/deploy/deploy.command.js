@@ -1,18 +1,37 @@
 const inquirer = require('inquirer')
 
-const { LogUtils } = require('../shared/utils')
+const { LogUtils } = require('../../shared/utils')
 
-const { ConfigurationFileNotExist } = require('../services/config')
-const { TargetFileAlreadyExist } = require('../services/file')
+const { ConfigurationFileNotExist } = require('../../services/config')
+const { TargetFileAlreadyExist } = require('../../services/file')
+const { DeployStopedByUser } = require('./deploy-stop-by-user.error')
 
 module.exports = exports = fileService => (modules, options) => {
   const localDeployment = options.local || false
+  let modulesToDeploy = modules
 
   Promise.resolve()
-    .then(_ => LogUtils.log({ type: 'info', message: `Deployment (${modules.join(', ')}) start.` }))
+    .then(_ => {
+      if (modules.length <= 0) {
+        return inquirer.prompt([{
+          type: 'confirm',
+          message: 'No modules was passed in parameter. Do you want to deploy all available modules ?',
+          name: 'all_module',
+          default: false
+        }])
+          .then(({ all_module: deployAllModule }) => {
+            if (!deployAllModule) {
+              throw new DeployStopedByUser()
+            }
+
+            modulesToDeploy = fileService.modules.map(el => el.module)
+          })
+      }
+    })
+    .then(_ => LogUtils.log({ type: 'info', message: `Deployment (${modulesToDeploy.join(', ')}) start.` }))
     .then(_ => {
       const files = fileService.modules
-        .filter(element => modules.includes(element.module))
+        .filter(element => modulesToDeploy.includes(element.module))
         .reduce((files, element) => {
           for (const file of element.files) {
             files.push(file)
@@ -60,6 +79,11 @@ module.exports = exports = fileService => (modules, options) => {
     .catch(error => {
       if (error instanceof ConfigurationFileNotExist) {
         LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        return
+      }
+
+      if (error instanceof DeployStopedByUser) {
+        LogUtils.log({ message: `${error.message} No modules to deploy.` })
         return
       }
 
