@@ -59,16 +59,18 @@ class FileService {
 
         try {
           const file = fs.readFileSync(path)
-          element.settings = JSON.parse(file)
+          const data = JSON.parse(file)
+
+          element.files = data.files
         } catch (e) {
           LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
-          element.settings = []
+          element.files = []
         }
 
         return element
       })
       .map(element => {
-        element.settings = element.settings
+        element.files = element.files
           .map(file => ({
             source: path.resolve(element.path, file['source_path']),
             target: path.resolve(file['target_path'].replace('~', process.env.HOME)),

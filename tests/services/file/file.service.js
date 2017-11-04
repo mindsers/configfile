@@ -23,8 +23,8 @@ beforeEach('init temp files for tests', t => {
   fs.mkdirSync(path.join(tmpData, 'files/module1'))
   fs.mkdirSync(path.join(tmpData, 'files/"module 2"'))
   fs.mkdirSync(path.join(tmpData, 'files/badmodule'))
-  fs.writeFileSync(path.join(tmpData, 'files/"moDule 2"/settings.json'), '[{"source_path":"","target_path":""}]')
-  fs.writeFileSync(path.join(tmpData, 'files/module1/settings.json'), '[]')
+  fs.writeFileSync(path.join(tmpData, 'files/"moDule 2"/settings.json'), '{"files":[{"source_path":"","target_path":""}]}')
+  fs.writeFileSync(path.join(tmpData, 'files/module1/settings.json'), '{"files":[]}')
 })
 
 beforeEach('init service', t => {
@@ -56,10 +56,10 @@ test('.modules should return name and path of valid modules', t => {
 test('.modules should return target and source of each file in modules', t => {
   const modules = fileService.modules
 
-  t.plan(modules.reduce((length, module) => { length += module.settings.length; return length }, 0))
+  t.plan(modules.reduce((length, module) => { length += module.files.length; return length }, 0))
 
   for (const module of modules) {
-    for (const file of module.settings) {
+    for (const file of module.files) {
       t.is(('target' in file) && ('source' in file), true)
     }
   }
