@@ -83,9 +83,6 @@ class FileService {
 
   constructor(configService) {
     this.configService = configService
-
-    this._scripts = []
-    this._modules = []
   }
 
   runScript(scriptName) {
