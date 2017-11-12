@@ -25,6 +25,7 @@
     "inquirer": "^3.2.3"
   },
   "devDependencies": {
+    "@types/node": "^8.0.51",
     "ava": "^0.22.0",
     "eslint": "^4.9.0",
     "eslint-config-standard": "^10.2.1",
