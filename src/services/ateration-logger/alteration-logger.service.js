@@ -33,7 +33,11 @@ class AlterationLoggerService {
     fs.unlinkSync(this.alterationFilePath(moduleName))
   }
 
-  addAlteration(moduleName, path, type) {
+  addAlteration(moduleName, path, type = 'created') {
+    if (!['created', 'renamed'].includes(type)) {
+      return Promise.reject(new Error('Bad type'))
+    }
+
     return this
       .alterationFile(moduleName)
       .catch(error => {
@@ -46,10 +50,12 @@ class AlterationLoggerService {
           .then(_ => [])
       })
       .then(alterations => {
-        alterations.push({
-          path,
-          type
-        })
+        if (alterations.filter(alteration => alteration.path === path).length < 1) {
+          alterations.push({
+            path,
+            type
+          })
+        }
 
         return FsUtils.writeFile(this.alterationFilePath(moduleName), JSON.stringify(alterations, null, 4))
       })
