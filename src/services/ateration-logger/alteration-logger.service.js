@@ -19,6 +19,12 @@ class AlterationLoggerService {
     return `${this.dataPath}/${moduleName}.json`
   }
 
+  alterationFile(moduleName) {
+    return FsUtils
+      .readFile(this.alterationFilePath(moduleName))
+      .then(data => JSON.parse(data))
+  }
+
   resetAlterations(moduleName) {
     if (!FsUtils.fileExist(this.alterationFilePath(moduleName))) {
       return
@@ -28,7 +34,25 @@ class AlterationLoggerService {
   }
 
   addAlteration(moduleName, path, type) {
-    fs.writeFileSync(this.alterationFilePath(moduleName), JSON.stringify({}, null, 4))
+    return this
+      .alterationFile(moduleName)
+      .catch(error => {
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
+
+        return FsUtils
+          .writeFile(this.alterationFilePath(moduleName), JSON.stringify([]))
+          .then(_ => [])
+      })
+      .then(alterations => {
+        alterations.push({
+          path,
+          type
+        })
+
+        return FsUtils.writeFile(this.alterationFilePath(moduleName), JSON.stringify(alterations, null, 4))
+      })
   }
 }
 
