@@ -30,7 +30,7 @@ Please follow this structure:
 To install *Configfile*, you need to use NPM or Yarn.
 
 ```bash
-npm install -g configfile@latest
+yarn global add configfile@latest
 ```
 
 ## Usage
