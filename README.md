@@ -25,6 +25,14 @@ Please follow this structure:
     /scriptfile.sh
 ```
 
+## Installation
+
+To install *Configfile*, you need to use NPM or Yarn.
+
+```bash
+npm install -g configfile@latest
+```
+
 ## Usage
 
 - `configfile init` or `configfile i`: Initialize *configfile* on the current user session.
