@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.0] - 2017-11-15
 ### Added
 - A contribution guide (CONTRIBUTING.md) to help new contributors.
 - The local deployment of configuration file. (`-l` on `modules deploy`)
@@ -44,6 +46,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The README file to give first information on the project (installation, usage, etc.).
 
 [Unreleased]: https://github.com/Mindsers/configfile/tree/develop
+[0.3.0]: https://github.com/Mindsers/configfile/tree/0.3.0
 [0.2.1]: https://github.com/Mindsers/configfile/tree/0.2.1
 [0.2.0]: https://github.com/Mindsers/configfile/tree/0.2.0
 [0.1.1]: https://github.com/Mindsers/configfile/tree/0.1.1
