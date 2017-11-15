@@ -1,6 +1,4 @@
-const path = require('path')
-
-const { LogUtils } = require('../shared/log.utils')
+const { LogUtils } = require('../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
 const { ScriptNotExist, BadScriptPermission } = require('../services/file')

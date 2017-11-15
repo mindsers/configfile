@@ -1,8 +1,8 @@
-const child_process = require('child_process')
+const childProcess = require('child_process')
 
 class ProcessUtils {
   static execFile(filename) {
-    const child = child_process.execFile(filename)
+    const child = childProcess.execFile(filename)
 
     return {
       stdout: child.stdout,

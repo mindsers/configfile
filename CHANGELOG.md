@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.3.0] - 2017-11-15
+### Added
+- A contribution guide (CONTRIBUTING.md) to help new contributors.
+- The local deployment of configuration file. (`-l` on `modules deploy`)
+
+### Changed
+- Adopte a git like command style: `configfile run` => `configfile scritps run`.
+- Create a "saved version" if preexisting file exist when user deploy a module.
+- Do not indentify the modules to deploy cause the deployment of all available modules. User authorization is required.
+
 ## [0.2.1] - 2017-10-13
 ### Fixed
 - Replace the JS error message (non-handled error) on `scripts` and `modules` commands
@@ -36,6 +46,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The README file to give first information on the project (installation, usage, etc.).
 
 [Unreleased]: https://github.com/Mindsers/configfile/tree/develop
+[0.3.0]: https://github.com/Mindsers/configfile/tree/0.3.0
 [0.2.1]: https://github.com/Mindsers/configfile/tree/0.2.1
 [0.2.0]: https://github.com/Mindsers/configfile/tree/0.2.0
 [0.1.1]: https://github.com/Mindsers/configfile/tree/0.1.1

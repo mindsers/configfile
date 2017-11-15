@@ -1,18 +1,39 @@
 {
   "name": "configfile",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Personal config files manager",
   "main": "index.js",
   "repository": "github.com:Mindsers/configfile.git",
   "author": "Mindsers <dev@nathanaelcherrier.com>",
   "license": "Apache-2.0",
+  "config": {
+    "optionsFilePath": "~/.configfile"
+  },
   "bin": {
-    "configfile": "./index.js"
+    "configfile": "./bin/configfile.js"
+  },
+  "scripts": {
+    "test:unit:coverage": "nyc yarn test:unit",
+    "test:unit": "ava tests/**/*.js",
+    "test:lint": "eslint bin src tests",
+    "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
     "chalk": "^2.1.0",
     "commander": "^2.11.0",
     "gift": "^0.10.0",
     "inquirer": "^3.2.3"
+  },
+  "devDependencies": {
+    "ava": "^0.22.0",
+    "eslint": "^4.9.0",
+    "eslint-config-standard": "^10.2.1",
+    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-node": "^5.2.0",
+    "eslint-plugin-promise": "^3.6.0",
+    "eslint-plugin-standard": "^3.0.1",
+    "nyc": "^11.2.1",
+    "rimraf": "^2.6.2",
+    "sinon": "^4.0.1"
   }
 }

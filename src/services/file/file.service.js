@@ -1,12 +1,10 @@
 const fs = require('fs')
 const path = require('path')
 
-const { FsUtils } = require('../../shared/fs.utils')
-const { ProcessUtils } = require('../../shared/process.utils')
-const { LogUtils } = require('../../shared/log.utils')
-
+const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
 const { ScriptNotExist } = require('./script-not-exist.error')
 const { BadScriptPermission } = require('./bad-script-permission.error')
+const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
 
 class FileService {
   get scripts() {
@@ -26,12 +24,12 @@ class FileService {
         const [scriptName] = element.split('.')
         const scriptSlug = scriptName
           .toLowerCase()
-          .replace(/ /g,'-')
-          .replace(/[^\w-]+/g,'')
+          .replace(/ /g, '-')
+          .replace(/[^\w-]+/g, '')
 
         return {
           script: scriptSlug,
-          file : element,
+          file: element,
           path: path.join(this.configService.folderPath, 'scripts', element)
         }
       })
@@ -44,8 +42,8 @@ class FileService {
       .map(element => {
         const moduleSlug = element
           .toLowerCase()
-          .replace(/ /g,'-')
-          .replace(/[^\w-]+/g,'')
+          .replace(/ /g, '-')
+          .replace(/[^\w-]+/g, '')
 
         return {
           module: moduleSlug,
@@ -61,16 +59,18 @@ class FileService {
 
         try {
           const file = fs.readFileSync(path)
-          element.settings = JSON.parse(file)
-        } catch(e) {
+          const data = JSON.parse(file)
+
+          element.files = data.files
+        } catch (e) {
           LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
-          element.settings = []
+          element.files = []
         }
 
         return element
       })
       .map(element => {
-        element.settings = element.settings
+        element.files = element.files
           .map(file => ({
             source: path.resolve(element.path, file['source_path']),
             target: path.resolve(file['target_path'].replace('~', process.env.HOME)),
@@ -98,64 +98,104 @@ class FileService {
     }
 
     return FsUtils.chmod(script.path, '0700')
-    .then(() => {
-      const child = ProcessUtils.execFile(script.path)
-      child.stdout.on('data', data => {
-        LogUtils.log({ message: data.trim() })
-      })
-      child.stderr.on('data', data => {
-        LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
-      })
-
-      return child.toPromise()
-    })
-    .catch(error => {
-      if (error.code === 'EACCES') {
-        throw new BadScriptPermission(scriptName)
-      }
-
-      throw error
-    })
-  }
-
-  deployModule(moduleName, global = true) {
-    const files = this.modules
-      .filter(element => element.module === moduleName)
-      .reduce((files, element) => {
-        for (const file of element.settings) {
-          files.push(file)
-        }
-
-        return files
-      }, [])
-      .filter(element => element.global === global)
-
-    const dirCreation = files
-      .map(file => path.dirname(file.target))
-      .filter(dir => !FsUtils.fileExist(dir))
-      .map(dir => FsUtils.mkdirp(dir))
-
-    return Promise.all(dirCreation).then(() => {
-      const linkCreation = files
-        .map(file => {
-          return FsUtils.symlink(file.source, file.target)
-            .catch(error => {
-              if (error.code !== 'EEXIST') {
-                throw error
-              }
-
-              LogUtils.log({ type: 'warn', message: `Unable to link "${file.source}" => "${file.target}".` })
-            })
+      .then(() => {
+        const child = ProcessUtils.execFile(script.path)
+        child.stdout.on('data', data => {
+          LogUtils.log({ message: data.trim() })
+        })
+        child.stderr.on('data', data => {
+          LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
         })
 
-      return Promise.all(linkCreation)
-    })
+        return child.toPromise()
+      })
+      .catch(error => {
+        if (error.code === 'EACCES') {
+          throw new BadScriptPermission(scriptName)
+        }
+
+        throw error
+      })
   }
 
-  deployModules(moduleNames, global = true) {
-    const modulesPromises = moduleNames.map(moduleName => this.deployModule(moduleName, global))
+  deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
+    const deployPrommise = Promise.resolve()
 
-    return Promise.all(modulesPromises)
+    if (isGlobalFile) {
+      deployPrommise.then(_ => { throw new TypeError('Unable to deploy global file as a local one.') })
+    }
+
+    const dirname = path.dirname(target)
+    if (!FsUtils.fileExist(dirname)) {
+      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
+    }
+
+    return deployPrommise
+      .then(_ => FsUtils.lstat(target))
+      .catch(error => {
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
+
+        return null // No file exist at target. No stats data to provide
+      })
+      .then(fileStats => {
+        if (fileStats != null && force === false) {
+          throw new TargetFileAlreadyExist(target)
+        }
+
+        return FsUtils.copyFile(source, target)
+      })
+      .catch(error => {
+        if (error.code !== 'EEXIST') {
+          throw error
+        }
+
+        LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
+      })
+  }
+
+  deployGlobalFile({ source, target, global: isGlobalFile }) {
+    const deployPrommise = Promise.resolve()
+
+    if (!isGlobalFile) {
+      deployPrommise.then(_ => { throw new TypeError('Unable to deploy local file as a global one.') })
+    }
+
+    const dirname = path.dirname(target)
+    if (!FsUtils.fileExist(dirname)) {
+      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
+    }
+
+    return deployPrommise
+      .then(_ => FsUtils.lstat(target))
+      .then(targetStat => {
+        if (targetStat.isSymbolicLink()) {
+          return FsUtils.readlink(target)
+            .then(linkSource => {
+              if (linkSource === source) {
+                return FsUtils.unlink(target)
+              }
+            })
+        }
+
+        if (targetStat.isFile() || targetStat.isDirectory()) {
+          return FsUtils.rename(target, `${target}.old`)
+        }
+      })
+      .catch(error => {
+        if (error.code !== 'ENOENT') { // No file exist at file.target
+          throw error
+        }
+      })
+      .then(_ => FsUtils.symlink(source, target))
+      .catch(error => {
+        if (error.code !== 'EEXIST') {
+          throw error
+        }
+
+        LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
+      })
   }
 }
 
