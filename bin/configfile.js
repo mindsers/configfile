@@ -4,7 +4,7 @@ const program = require('commander')
 const fs = require('fs')
 const path = require('path')
 
-const { ConfigService } = require('../src/services/config')
+const { ConfigService } = require('../src/services')
 
 const { initCommand } = require('../src/commands')
 
