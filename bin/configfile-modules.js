@@ -5,9 +5,7 @@ const fs = require('fs')
 const path = require('path')
 
 const { deployCommand, modulesCommand } = require('../src/commands')
-
-const { ConfigService } = require('../src/services/config')
-const { FileService } = require('../src/services/file')
+const { ConfigService, FileService } = require('../src/services/config')
 
 const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
 const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
