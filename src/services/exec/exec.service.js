@@ -1,6 +1,6 @@
-const { FsUtils, ProcessUtils, LogUtils } = require('../shared/utils')
-const { ScriptNotExist } = require('./file/script-not-exist.error')
-const { BadScriptPermission } = require('./file/bad-script-permission.error')
+const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
+const { ScriptNotExist } = require('./script-not-exist.error')
+const { BadScriptPermission } = require('./bad-script-permission.error')
 
 class ExecService {
   async runScript(script) {
