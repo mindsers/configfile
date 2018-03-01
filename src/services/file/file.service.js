@@ -1,9 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 
-const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
-const { ScriptNotExist } = require('./script-not-exist.error')
-const { BadScriptPermission } = require('./bad-script-permission.error')
+const { FsUtils, LogUtils } = require('../../shared/utils')
 const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
 
 class FileService {
@@ -85,34 +83,10 @@ class FileService {
     this.configService = configService
   }
 
-  runScript(scriptName) {
-    const script = this.scripts
+  scriptByName(scriptName) {
+    return this.scripts
       .filter(({ script: name }) => name === scriptName)
       .shift()
-
-    if (script == null) {
-      return Promise.reject(new ScriptNotExist(scriptName))
-    }
-
-    return FsUtils.chmod(script.path, '0700')
-      .then(() => {
-        const child = ProcessUtils.execFile(script.path)
-        child.stdout.on('data', data => {
-          LogUtils.log({ message: data.trim() })
-        })
-        child.stderr.on('data', data => {
-          LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
-        })
-
-        return child.toPromise()
-      })
-      .catch(error => {
-        if (error.code === 'EACCES') {
-          throw new BadScriptPermission(scriptName)
-        }
-
-        throw error
-      })
   }
 
   deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
