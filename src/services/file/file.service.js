@@ -2,7 +2,6 @@ const fs = require('fs')
 const path = require('path')
 
 const { FsUtils, LogUtils } = require('../../shared/utils')
-const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
 
 class FileService {
   get scripts() {
@@ -87,86 +86,6 @@ class FileService {
     return this.scripts
       .filter(({ script: name }) => name === scriptName)
       .shift()
-  }
-
-  deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
-    const deployPrommise = Promise.resolve()
-
-    if (isGlobalFile) {
-      deployPrommise.then(_ => { throw new TypeError('Unable to deploy global file as a local one.') })
-    }
-
-    const dirname = path.dirname(target)
-    if (!FsUtils.fileExist(dirname)) {
-      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
-    }
-
-    return deployPrommise
-      .then(_ => FsUtils.lstat(target))
-      .catch(error => {
-        if (error.code !== 'ENOENT') {
-          throw error
-        }
-
-        return null // No file exist at target. No stats data to provide
-      })
-      .then(fileStats => {
-        if (fileStats != null && force === false) {
-          throw new TargetFileAlreadyExist(target)
-        }
-
-        return FsUtils.copyFile(source, target)
-      })
-      .catch(error => {
-        if (error.code !== 'EEXIST') {
-          throw error
-        }
-
-        LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
-      })
-  }
-
-  deployGlobalFile({ source, target, global: isGlobalFile }) {
-    const deployPrommise = Promise.resolve()
-
-    if (!isGlobalFile) {
-      deployPrommise.then(_ => { throw new TypeError('Unable to deploy local file as a global one.') })
-    }
-
-    const dirname = path.dirname(target)
-    if (!FsUtils.fileExist(dirname)) {
-      deployPrommise.then(_ => FsUtils.mkdirp(dirname))
-    }
-
-    return deployPrommise
-      .then(_ => FsUtils.lstat(target))
-      .then(targetStat => {
-        if (targetStat.isSymbolicLink()) {
-          return FsUtils.readlink(target)
-            .then(linkSource => {
-              if (linkSource === source) {
-                return FsUtils.unlink(target)
-              }
-            })
-        }
-
-        if (targetStat.isFile() || targetStat.isDirectory()) {
-          return FsUtils.rename(target, `${target}.old`)
-        }
-      })
-      .catch(error => {
-        if (error.code !== 'ENOENT') { // No file exist at file.target
-          throw error
-        }
-      })
-      .then(_ => FsUtils.symlink(source, target))
-      .catch(error => {
-        if (error.code !== 'EEXIST') {
-          throw error
-        }
-
-        LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
-      })
   }
 }
 
