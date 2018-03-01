@@ -5,13 +5,14 @@ const fs = require('fs')
 const path = require('path')
 
 const { deployCommand, modulesCommand } = require('../src/commands')
-const { ConfigService, FileService } = require('../src/services/config')
+const { ConfigService, FileService, DeployService } = require('../src/services')
 
 const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
 const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
 
 const configService = new ConfigService(optionsFilePath)
 const fileService = new FileService(configService)
+const deployService = new DeployService()
 
 program
   .version(packageData.version)
@@ -28,6 +29,6 @@ program
   .alias('d')
   .description('deploy configuration files.')
   .option('-l, --local', 'deploy only local files of the module(s) in the current folder')
-  .action(deployCommand(fileService))
+  .action(deployCommand(fileService, deployService))
 
 program.parse(process.argv)
