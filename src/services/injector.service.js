@@ -15,7 +15,7 @@ class InjectorService {
     this.data.push({
       useClass,
       params: params.map(param => {
-        if (param.useValue != null) {
+        if (param.useValue != null || param.useClass != null) {
           return param
         }
 
