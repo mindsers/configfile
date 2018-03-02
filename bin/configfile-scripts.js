@@ -1,33 +1,28 @@
 #!/usr/bin/env node
 
 const program = require('commander')
-const fs = require('fs')
-const path = require('path')
+
+const config = require('../src/configuration')
 
 const { runCommand, scriptsCommand } = require('../src/commands')
-const { ExecService, FileService, ConfigService } = require('../src/services')
+const { ExecService, FileService, InjectorService } = require('../src/services')
 
-const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
-const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
-
-const configService = new ConfigService(optionsFilePath)
-const fileService = new FileService(configService)
-const execService = new ExecService()
+const injector = InjectorService.getMainInstance()
 
 program
-  .version(packageData.version)
+  .version(config.package.version)
   .description('Custom scripts manager.')
 
 program
   .command('list')
   .alias('l')
   .description('list all custom configuration scripts available.')
-  .action(scriptsCommand(fileService))
+  .action(scriptsCommand(injector.get(FileService)))
 
 program
   .command('run <name>')
   .alias('r')
   .description('run custom configuration scripts.')
-  .action(runCommand(execService, fileService))
+  .action(runCommand(injector.get(ExecService), injector.get(FileService)))
 
 program.parse(process.argv)
