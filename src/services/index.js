@@ -4,6 +4,7 @@ const file = require('./file.service')
 const exec = require('./exec')
 const deploy = require('./deploy')
 const injector = require('./injector.service')
+const eventManager = require('./event-manager')
 
 module.exports = exports = {
   ...alteration,
@@ -11,5 +12,6 @@ module.exports = exports = {
   ...file,
   ...exec,
   ...deploy,
-  ...injector
+  ...injector,
+  ...eventManager
 }
