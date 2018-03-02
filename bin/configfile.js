@@ -1,20 +1,16 @@
 #!/usr/bin/env node
 
 const program = require('commander')
-const fs = require('fs')
-const path = require('path')
 
-const { ConfigService } = require('../src/services')
+const config = require('../src/configuration')
 
+const { ConfigService, InjectorService } = require('../src/services')
 const { initCommand } = require('../src/commands')
 
-const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
-const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
-
-const configService = new ConfigService(optionsFilePath)
+const injector = InjectorService.getMainInstance()
 
 program
-  .version(packageData.version)
+  .version(config.package.version)
   .description('Configuration files manager.')
 
 program
@@ -22,7 +18,7 @@ program
   .alias('i')
   .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
-  .action(initCommand(configService))
+  .action(initCommand(injector.get(ConfigService)))
 
 program
   .command('scripts', 'work with custom scripts available.')
