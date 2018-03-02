@@ -3,6 +3,18 @@ class InjectorService {
     this.data = []
   }
 
+  static getMainInstance() {
+    const previousInstance = InjectorService.instances.find(instance => instance instanceof InjectorService)
+
+    if (previousInstance != null) {
+      return previousInstance
+    }
+
+    InjectorService.instances.push(new InjectorService())
+
+    return InjectorService.getMainInstance()
+  }
+
   provide(useClass, params = []) {
     const alreadyExist = this.data
       .filter(service => service.useClass === useClass)
@@ -51,18 +63,6 @@ class InjectorService {
     }
 
     return null
-  }
-
-  static getMainInstance() {
-    const previousInstance = InjectorService.instances.find(instance => instance instanceof InjectorService)
-
-    if (previousInstance != null) {
-      return previousInstance
-    }
-
-    InjectorService.instances.push(new InjectorService())
-
-    return InjectorService.getMainInstance()
   }
 }
 
