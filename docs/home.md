@@ -1,13 +1,13 @@
-# Configfiles
+# Configfile
 
-Configfiles is a command line interface application to help developer manages their development setup.
+Configfile is a command line interface application to help developer manages their development setup.
 
 ## Getting Started
 
-To install Configfiles:
+To install Configfile:
 
 ```bash
-npm install -g configfiles@latest
+npm install -g configfile@latest
 ```
 
 Generating first configuration:
@@ -28,10 +28,10 @@ npm test
 
 ### Additional commands
 
-- [configfiles modules list]()
-- [configfiles modules deploy]()
-- [configfiles scripts list]()
-- [configfiles scripts run]()
+- [configfile modules list]()
+- [configfile modules deploy]()
+- [configfile scripts list]()
+- [configfile scripts run]()
 
 ## Configfiles Configuration
 
