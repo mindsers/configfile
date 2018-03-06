@@ -1,7 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 
-const { FsUtils, LogUtils } = require('../../shared/utils')
+const { FsUtils, LogUtils } = require('../shared/utils')
 
 class FileService {
   get scripts() {

@@ -1,4 +1,4 @@
-const alteration = require('./alteration-logger.service')
+const alteration = require('./alteration.service')
 const config = require('./config')
 const file = require('./file.service')
 const exec = require('./exec')
