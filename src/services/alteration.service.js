@@ -1,18 +1,21 @@
 const fs = require('fs')
 
-const { FsUtils } = require('../../shared/utils')
+const { FsUtils } = require('../shared/utils')
 
-class AlterationLoggerService {
+class AlterationService {
   get dataPath() {
     return `${this.configService.configFolderPath}/alterations`
   }
 
-  constructor(configService) {
+  constructor(configService, eventManager) {
     this.configService = configService
+    this.eventManager = eventManager
 
     if (!FsUtils.fileExist(this.dataPath)) {
       fs.mkdirSync(this.dataPath)
     }
+
+    this._registerEvent()
   }
 
   alterationFilePath(moduleName) {
@@ -60,6 +63,16 @@ class AlterationLoggerService {
         return FsUtils.writeFile(this.alterationFilePath(moduleName), JSON.stringify(alterations, null, 4))
       })
   }
+
+  _registerEvent() {
+    this.eventManager.register('deploy.created', this, '_onCreate')
+    this.eventManager.register('deploy.renamed', this, '_onRename')
+    this.eventManager.register('deploy.removed', this, '_onRemove')
+  }
+
+  _onCreate(path) { console.log(`deploy.created : ${path}`) }
+  _onRename(infos) { console.log(`deploy.renamed : ${infos.new}`) }
+  _onRemove(infos) { console.log(`deploy.removed : ${infos}`) }
 }
 
-module.exports = exports = { AlterationLoggerService }
+module.exports = exports = { AlterationService }

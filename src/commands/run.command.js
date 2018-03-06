@@ -1,7 +1,7 @@
 const { LogUtils } = require('../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../services/config')
-const { ScriptNotExist, BadScriptPermission } = require('../services/file')
+const { ScriptNotExist, BadScriptPermission } = require('../services')
 
 module.exports = exports = (execService, fileService) => async (scriptName, options) => {
   LogUtils.log({ type: 'info', message: `Running "${scriptName}" script.` })

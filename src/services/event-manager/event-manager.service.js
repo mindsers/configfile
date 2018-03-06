@@ -5,7 +5,7 @@ class EventManagerService {
     this.observers = []
   }
 
-  register(eventName, instance, methodName = 'subcribe') {
+  register(eventName, instance, methodName = 'subscribe') {
     if (instance[methodName] == null) {
       throw new MethodDoesNotExist(instance.constructor.name, methodName)
     }

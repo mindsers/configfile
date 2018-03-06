@@ -3,7 +3,7 @@ const inquirer = require('inquirer')
 const { LogUtils } = require('../../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../../services/config')
-const { TargetFileAlreadyExist } = require('../../services/file')
+const { TargetFileAlreadyExist } = require('../../services')
 const { DeployStopedByUser } = require('./deploy-stop-by-user.error')
 
 module.exports = exports = (fileService, deployService) => (modules, options) => {
