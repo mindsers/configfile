@@ -61,7 +61,7 @@ class FileService {
           const file = fs.readFileSync(path)
           const data = JSON.parse(file)
 
-          element.files = data.files
+          element.files = data
         } catch (e) {
           LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
           element.files = []
