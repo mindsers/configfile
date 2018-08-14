@@ -52,8 +52,7 @@ Contributions to the source code of *Configfile* are welcomed and greatly apprec
 
 If you're using *Configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
 
-<a href="https://www.patreon.com/bePatron?u=9715649" data-patreon-widget-type="become-patron-button">Become a Patron!</a>
-<script async src="https://c6.patreon.com/becomePatronButton.bundle.js"></script>
+[![Become a Patron!](https://c5.patreon.com/external/logo/become_a_patron_button.png)](https://www.patreon.com/bePatron?u=9715649)
 
 ## License
 
