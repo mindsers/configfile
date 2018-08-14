@@ -54,6 +54,10 @@ If you're using *Configfile* and want to support the development, you now have t
 
 [![Become a Patron!](https://c5.patreon.com/external/logo/become_a_patron_button.png)](https://www.patreon.com/bePatron?u=9715649)
 
+For help on how to support Configfile, please refer to [The awesome people who support Configfile](https://github.com/Mindsers/configfile/blob/develop/SPONSORS.md).
+
+<!-- ### Premium sponsors -->
+
 ## License
 
 This project is under Apache-2.0 license. See LICENSE file.
