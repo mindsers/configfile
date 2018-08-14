@@ -48,7 +48,7 @@ Contributions to the source code of *Configfile* are welcomed and greatly apprec
 
 ## Support
 
-*Configfile* is licensed under an Apache-2.0 license, which means that it's completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
+*Configfile* is licensed under an Apache-2.0 license, which means that it's a  completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
 
 If you're using *Configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
 
