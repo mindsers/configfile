@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/Mindsers/configfile/blob/master/LICENSE)
 [![Patreon](https://img.shields.io/badge/support-patreon-F96854.svg?logo=patreon&style=flat-square)](https://www.patreon.com/bePatron?u=9715649)
-[![Gitter](https://img.shields.io/gitter/room/mindsers/configfile.svg?style=flat-square)](https://gitter.im/mindsers/configfile)
+[![Discord](https://img.shields.io/badge/chat-discord-7289DA.svg?logo=discord&logoColor=7289DA&style=flat-square)](https://discord.gg/Tfv4ueX)
 
 *configfile* is a command line tool that help user to manage their own configuration files.
 
