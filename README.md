@@ -50,9 +50,10 @@ Contributions to the source code of *Configfile* are welcomed and greatly apprec
 
 *Configfile* is licensed under an Apache-2.0 license, which means that it's completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
 
-If you're using *Configfile* and want to support the development, you now have the chance! Head over to Beerpay, and donate a beer or two!
+If you're using *Configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
 
-[![Beerpay](https://beerpay.io/Mindsers/configfile/badge.svg)](https://beerpay.io/Mindsers/configfile)
+<a href="https://www.patreon.com/bePatron?u=9715649" data-patreon-widget-type="become-patron-button">Become a Patron!</a>
+<script async src="https://c6.patreon.com/becomePatronButton.bundle.js"></script>
 
 ## License
 
