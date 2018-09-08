@@ -7,9 +7,6 @@ const { FolderNotEmpty, FileNotDirectory } = require('../../shared/errors')
 
 const { InitStopedByUser } = require('./init-stop-by-user.error')
 
-const URL_REGEX = /(?:git|ssh|https?|git@[-\w.]+):(\/\/)?(.*?)(\.git)(\/?|#[-\d\w._]+?)$/
-const PATH_REGEX = /^(?:(?:~|\.{1,2})?\/)+(?:[a-zA-Z.\-_]+\/?)*$/
-
 module.exports = exports = configService => options => {
   const userForceOverwrite = options.force || false
   const questions = [
@@ -23,7 +20,7 @@ module.exports = exports = configService => options => {
       name: 'repo_url',
       message: 'Repository url:',
       type: 'input',
-      validate: url => URL_REGEX.test(url),
+      validate: url => GitUtils.isGitUrl(url),
       default: () => {
         if (configService.configFileExist()) {
           return configService.repoUrl
@@ -35,7 +32,7 @@ module.exports = exports = configService => options => {
       name: 'folder_path',
       message: 'Folder path:',
       type: 'input',
-      validate: path => PATH_REGEX.test(path),
+      validate: path => FsUtils.isFilePath(path),
       default: () => {
         if (configService.configFileExist()) {
           return configService.folderPath
