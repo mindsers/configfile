@@ -1,5 +1,7 @@
 const git = require('gift')
 
+const URL_REGEX = /(?:git|ssh|https?|git@[-\w.]+):(\/\/)?(.*?)(\.git)(\/?|#[-\d\w._]+?)$/
+
 class GitUtils {
   static clone(repoUrl, repoPath) {
     return new Promise((resolve, reject) => {
@@ -12,6 +14,10 @@ class GitUtils {
         resolve(repo)
       })
     })
+  }
+
+  static isGitUrl(text) {
+    return URL_REGEX.test(text)
   }
 }
 
