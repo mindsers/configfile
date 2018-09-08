@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Changed
 - Fix Git url verification in `init` command.
+### Added
+- Add new contrubitor to SPONSORS.md
 
 ## [0.3.1] - 2018-08-05
 ### Fixed
