@@ -5,8 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- Fix Git url verification in `init` command.
+### Added
+- Add new contrubitor to SPONSORS.md
+
+### Fixed
+- Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
 
 ## [0.3.1] - 2018-08-05
 ### Fixed
