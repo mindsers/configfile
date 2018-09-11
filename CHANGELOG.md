@@ -8,14 +8,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Add new contrubitor to SPONSORS.md
 
+### Fixed
+- Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
+
 ## [0.3.1] - 2018-08-05
 ### Fixed
-- Fix module data collection
+- Fix module data collection.
 
 ## [0.3.0] - 2017-11-15
 ### Added
 - A contribution guide (CONTRIBUTING.md) to help new contributors.
-- The local deployment of configuration file. (`-l` on `modules deploy`)
+- The local deployment of configuration file. (`-l` on `modules deploy`).
 
 ### Changed
 - Adopte a git like command style: `configfile run` => `configfile scritps run`.

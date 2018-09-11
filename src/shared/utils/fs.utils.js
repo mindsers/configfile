@@ -2,7 +2,13 @@ const fs = require('fs')
 const util = require('util')
 const path = require('path')
 
+const PATH_REGEX = /^(?:(?:~|\.{1,2})?\/)+(?:[a-zA-Z.\-_]+\/?)*$/
+
 class FsUtils {
+  static isFilePath(text) {
+    return PATH_REGEX.test(text)
+  }
+
   static get chmod() {
     return util.promisify(fs.chmod)
   }
