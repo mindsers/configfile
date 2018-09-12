@@ -3,7 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import rimraf from 'rimraf'
 
-import { FileService, ScriptNotExist } from '../../../src/services/file'
+import { FileService } from '../../src/services/file.service'
+import { ScriptNotExist } from '../../src/services/exec'
 
 const tmpData = path.join(__dirname, './env-file')
 
