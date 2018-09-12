@@ -3,8 +3,8 @@
 [![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/Mindsers/configfile/blob/master/LICENSE)
-[![Beerpay](https://beerpay.io/Mindsers/configfile/badge.svg?style=flat-square)](https://beerpay.io/Mindsers/configfile)
-[![Gitter](https://img.shields.io/gitter/room/mindsers/configfile.svg?style=flat-square)](https://gitter.im/mindsers/configfile)
+[![Patreon](https://img.shields.io/badge/support-patreon-F96854.svg?logo=patreon&style=flat-square)](https://www.patreon.com/bePatron?u=9715649)
+[![Discord](https://img.shields.io/badge/chat-discord-7289DA.svg?logo=discord&logoColor=7289DA&style=flat-square)](https://discord.gg/Tfv4ueX)
 
 *configfile* is a command line tool that help user to manage their own configuration files.
 
@@ -48,11 +48,15 @@ Contributions to the source code of *Configfile* are welcomed and greatly apprec
 
 ## Support
 
-*Configfile* is licensed under an Apache-2.0 license, which means that it's completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
+*Configfile* is licensed under an Apache-2.0 license, which means that it's a  completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
 
-If you're using *Configfile* and want to support the development, you now have the chance! Head over to Beerpay, and donate a beer or two!
+If you're using *Configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
 
-[![Beerpay](https://beerpay.io/Mindsers/configfile/badge.svg)](https://beerpay.io/Mindsers/configfile)
+[![Become a Patron!](https://c5.patreon.com/external/logo/become_a_patron_button.png)](https://www.patreon.com/bePatron?u=9715649)
+
+For help on how to support Configfile, please refer to [The awesome people who support Configfile](https://github.com/Mindsers/configfile/blob/develop/SPONSORS.md).
+
+<!-- ### Premium sponsors -->
 
 ## License
 

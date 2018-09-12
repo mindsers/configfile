@@ -1,6 +1,6 @@
 {
   "name": "configfile",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Personal config files manager",
   "main": "index.js",
   "repository": "github.com:Mindsers/configfile.git",
