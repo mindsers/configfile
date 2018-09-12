@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { ScriptNotExist } from '../../../src/services/file'
+import { ScriptNotExist } from '../../../src/services/exec'
 
 test('should have Error as parent.', t => {
   const error = new ScriptNotExist()
