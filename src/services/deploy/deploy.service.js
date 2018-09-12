@@ -4,10 +4,6 @@ const { FsUtils, LogUtils } = require('../../shared/utils')
 const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
 
 class DeployService {
-  constructor(eventManager) {
-    this.eventManager = eventManager
-  }
-
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
     if (isGlobalFile) {
       throw new TypeError('Unable to deploy global file as a local one.')
@@ -52,7 +48,6 @@ class DeployService {
     const dirname = path.dirname(target)
     if (!FsUtils.fileExist(dirname)) {
       await FsUtils.mkdirp(dirname)
-      this.eventManager.emit('deploy.created', dirname)
     }
 
     try {
@@ -62,13 +57,11 @@ class DeployService {
 
         if (linkSource === source) {
           await FsUtils.unlink(target)
-          this.eventManager.emit('deploy.removed', target)
         }
       }
 
       if (targetStat.isFile() || targetStat.isDirectory()) {
         await FsUtils.rename(target, `${target}.old`)
-        this.eventManager.emit('deploy.renamed', { old: target, new: `${target}.old` })
       }
     } catch (error) {
       if (error.code !== 'ENOENT') { // No file exist at file.target
@@ -78,7 +71,6 @@ class DeployService {
 
     try {
       await FsUtils.symlink(source, target)
-      this.eventManager.emit('deploy.created', target)
     } catch (error) {
       if (error.code !== 'EEXIST') {
         throw error
