@@ -1,6 +1,6 @@
 import test from 'ava'
 
-import { BadScriptPermission } from '../../../src/services/file'
+import { BadScriptPermission } from '../../../src/services/exec/bad-script-permission.error'
 
 test('should have Error as parent.', t => {
   const error = new BadScriptPermission()

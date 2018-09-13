@@ -3,10 +3,10 @@ const inquirer = require('inquirer')
 const { LogUtils } = require('../../shared/utils')
 
 const { ConfigurationFileNotExist } = require('../../services/config')
-const { TargetFileAlreadyExist } = require('../../services/file')
+const { TargetFileAlreadyExist } = require('../../services')
 const { DeployStopedByUser } = require('./deploy-stop-by-user.error')
 
-module.exports = exports = fileService => (modules, options) => {
+module.exports = exports = (fileService, deployService) => (modules, options) => {
   const localDeployment = options.local || false
   let modulesToDeploy = modules
 
@@ -44,10 +44,10 @@ module.exports = exports = fileService => (modules, options) => {
       const failedFiles = []
       const deployPromises = files.map(file => {
         if (file.global) {
-          return fileService.deployGlobalFile(file)
+          return deployService.deployGlobalFile(file)
         }
 
-        return fileService.deployLocalFile(file)
+        return deployService.deployLocalFile(file)
           .catch(error => {
             if (error instanceof TargetFileAlreadyExist) {
               failedFiles.push(file)

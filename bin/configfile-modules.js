@@ -1,35 +1,29 @@
 #!/usr/bin/env node
 
 const program = require('commander')
-const fs = require('fs')
-const path = require('path')
+
+const config = require('../src/configuration')
 
 const { deployCommand, modulesCommand } = require('../src/commands')
+const { FileService, DeployService, InjectorService } = require('../src/services')
 
-const { ConfigService } = require('../src/services/config')
-const { FileService } = require('../src/services/file')
-
-const packageData = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')))
-const optionsFilePath = packageData.config.optionsFilePath.replace('~', process.env.HOME)
-
-const configService = new ConfigService(optionsFilePath)
-const fileService = new FileService(configService)
+const injector = InjectorService.getMainInstance()
 
 program
-  .version(packageData.version)
+  .version(config.package.version)
   .description('Configuration modules manager.')
 
 program
   .command('list')
   .alias('l')
   .description('list all modules available.')
-  .action(modulesCommand(fileService))
+  .action(modulesCommand(injector.get(FileService)))
 
 program
   .command('deploy [modules...]')
   .alias('d')
   .description('deploy configuration files.')
   .option('-l, --local', 'deploy only local files of the module(s) in the current folder')
-  .action(deployCommand(fileService))
+  .action(deployCommand(injector.get(FileService), injector.get(DeployService)))
 
 program.parse(process.argv)
