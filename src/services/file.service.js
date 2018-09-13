@@ -5,6 +5,35 @@ const { FsUtils, LogUtils } = require('../shared/utils')
 
 class FileService {
   get scripts() {
+    if (this._scripts.length < 1) {
+      this._scripts = this.getScripts()
+    }
+
+    return this._scripts
+  }
+
+  get modules() {
+    if (this._modules.length < 1) {
+      this._modules = this.getModules()
+    }
+
+    return this._modules
+  }
+
+  constructor(configService) {
+    this.configService = configService
+
+    this._modules = []
+    this._scripts = []
+  }
+
+  scriptByName(scriptName) {
+    return this.scripts
+      .filter(({ script: name }) => name === scriptName)
+      .shift()
+  }
+
+  getScripts() {
     const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'scripts'))
     const authorizedExtensions = this.configService.scriptExtension
 
@@ -32,7 +61,7 @@ class FileService {
       })
   }
 
-  get modules() {
+  getModules() {
     const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'files'))
 
     return folderContent
@@ -76,16 +105,6 @@ class FileService {
 
         return element
       })
-  }
-
-  constructor(configService) {
-    this.configService = configService
-  }
-
-  scriptByName(scriptName) {
-    return this.scripts
-      .filter(({ script: name }) => name === scriptName)
-      .shift()
   }
 }
 
