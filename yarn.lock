@@ -4705,6 +4705,11 @@ y18n@^3.2.1:
   resolved "https://registry.yarnpkg.com/y18n/-/y18n-3.2.1.tgz#6d15fba884c08679c0d77e88e7759e811e07fa41"
   integrity sha1-bRX7qITAhnnA136I53WegR4H+kE=
 
+yabf@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/yabf/-/yabf-2.0.0.tgz#0cede59d65eec44813841ce2ee5b417e7b06f3cd"
+  integrity sha512-TmgWe+ay+H1Y/3vY2f16SKZM3mQC22U64+Bw6UpK+pUveJBLN0RAzNUwt75kVJ/8YE7QD3Z0ClEEhDWg3n0E1Q==
+
 yallist@^2.1.2:
   version "2.1.2"
   resolved "https://registry.yarnpkg.com/yallist/-/yallist-2.1.2.tgz#1c11f9218f076089a47dd512f93c6699a6a81d52"

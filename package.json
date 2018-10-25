@@ -22,7 +22,8 @@
     "chalk": "^2.4.1",
     "commander": "^2.19.0",
     "gift": "^0.10.2",
-    "inquirer": "^6.2.0"
+    "inquirer": "^6.2.0",
+    "yabf": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^10.12.0",
