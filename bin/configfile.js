@@ -5,11 +5,15 @@
 //   .description('Configuration files manager.')
 
 const { TermApplication, Command, InitCommand, ConfigService } = require('../src')
+const { getOptionsFilePath, getPackageData } = require('../src/shared/utils')
 
 ;(() => {
   const cli = TermApplication.createInstance()
+  const pkg = getPackageData()
 
-  cli.provide(ConfigService)
+  cli.version = pkg.version
+
+  cli.provide(ConfigService, [{ useValue: getOptionsFilePath() }])
 
   cli.register(InitCommand, [ConfigService])
   cli.register(class extends Command { // modules namespace
