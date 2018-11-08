@@ -1,28 +1,21 @@
 #!/usr/bin/env node
 
-const program = require('commander')
+// const config = require('../src/configuration')
 
-const config = require('../src/configuration')
+// program
+//   .version(config.package.version)
+//   .description('Custom scripts manager.')
 
-const { runCommand, scriptsCommand } = require('../src/commands')
-const { ExecService, FileService, InjectorService } = require('../src/services')
+const { FileService, ExecService, TermApplication, ScriptsListCommand, ScriptsRunCommand } = require('../src')
 
-const injector = InjectorService.getMainInstance()
+;(() => {
+  const cli = TermApplication.createInstance()
 
-program
-  .version(config.package.version)
-  .description('Custom scripts manager.')
+  cli.register(ScriptsRunCommand, [ExecService, FileService])
+  cli.register(ScriptsListCommand, [FileService])
 
-program
-  .command('list')
-  .alias('l')
-  .description('list all custom configuration scripts available.')
-  .action(scriptsCommand(injector.get(FileService)))
+  cli.provide(FileService)
+  cli.provide(ExecService)
 
-program
-  .command('run <name>')
-  .alias('r')
-  .description('run custom configuration scripts.')
-  .action(runCommand(injector.get(ExecService), injector.get(FileService)))
-
-program.parse(process.argv)
+  cli.start()
+})()
