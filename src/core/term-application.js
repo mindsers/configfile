@@ -5,6 +5,14 @@ import { Command } from './command'
 import { LogUtils } from '../shared/utils'
 
 export class TermApplication extends AbstractApplication {
+  get version() {
+    return this._version || '0.0.0'
+  }
+
+  set version(semanticVersion) {
+    this._version = semanticVersion
+  }
+
   buildInstructions() {
     return [
       { provide: TermApplication, dependencies: [] }
