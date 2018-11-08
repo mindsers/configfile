@@ -1,29 +1,19 @@
 #!/usr/bin/env node
 
-const program = require('commander')
+// program
+//   .version(config.package.version)
+//   .description('Configuration modules manager.')
 
-const config = require('../src/configuration')
+const { FileService, TermApplication, ModulesListCommand, ModulesDeployCommand, DeployService } = require('../src')
 
-const { deployCommand, modulesCommand } = require('../src/commands')
-const { FileService, DeployService, InjectorService } = require('../src/services')
+;(() => {
+  const cli = TermApplication.createInstance()
 
-const injector = InjectorService.getMainInstance()
+  cli.register(ModulesListCommand, [FileService])
+  cli.register(ModulesDeployCommand, [FileService, DeployService])
 
-program
-  .version(config.package.version)
-  .description('Configuration modules manager.')
+  cli.provide(FileService)
+  cli.provide(DeployService)
 
-program
-  .command('list')
-  .alias('l')
-  .description('list all modules available.')
-  .action(modulesCommand(injector.get(FileService)))
-
-program
-  .command('deploy [modules...]')
-  .alias('d')
-  .description('deploy configuration files.')
-  .option('-l, --local', 'deploy only local files of the module(s) in the current folder')
-  .action(deployCommand(injector.get(FileService), injector.get(DeployService)))
-
-program.parse(process.argv)
+  cli.start()
+})()
