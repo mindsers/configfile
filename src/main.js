@@ -1,13 +1,7 @@
-import { TermApplication } from './core/term-application'
-import { ScriptsListCommand } from './commands/scripts-list.command'
-import { FileService } from './services/file.service'
+export * from './core/term-application'
 
-(() => {
-  const app = TermApplication.createInstance()
+export * from './commands/scripts-list.command'
+export * from './commands/scripts-run.command'
 
-  app.register(ScriptsListCommand, [FileService])
-
-  app.provide(FileService)
-
-  app.start()
-})()
+export * from './services/file.service'
+export * from './services/exec'
