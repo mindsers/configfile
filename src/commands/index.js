@@ -1,13 +1,5 @@
-const initCommand = require('./init/init.command')
-const runCommand = require('./run.command')
-const deployCommand = require('./deploy/deploy.command')
-const scriptsCommand = require('./scripts.command')
-const modulesCommand = require('./modules.command')
-
-module.exports = exports = {
-  initCommand,
-  runCommand,
-  deployCommand,
-  scriptsCommand,
-  modulesCommand
-}
+export * from './init.command'
+export * from './modules-deploy.command'
+export * from './modules-list.command'
+export * from './scripts-list.command'
+export * from './scripts-run.command'
