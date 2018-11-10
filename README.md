@@ -36,6 +36,7 @@ yarn global add configfile@latest
 ## Usage
 
 - `configfile init` or `configfile i`: Initialize *configfile* on the current user session.
+    - `-f, --force` force current configuration to be overwritten.
 - `configfile modules list` or `configfile m l`: Display a list of all modules available via *Configfile*.
 - `configfile modules deploy [moduleName...]` or `configfile m d [moduleName...]`: Deploy the configuration files for the given module name.
     - `-l, --local` deploy authorized file to the current directory.
