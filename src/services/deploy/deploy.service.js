@@ -1,9 +1,9 @@
-const path = require('path')
+import path from 'path'
 
-const { FsUtils, LogUtils } = require('../../shared/utils')
-const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
+import { FsUtils, LogUtils } from '../../shared/utils'
+import { TargetFileAlreadyExist } from './target-file-already-exist.error'
 
-class DeployService {
+export class DeployService {
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
     if (isGlobalFile) {
       throw new TypeError('Unable to deploy global file as a local one.')
@@ -80,5 +80,3 @@ class DeployService {
     }
   }
 }
-
-module.exports = exports = { DeployService }
