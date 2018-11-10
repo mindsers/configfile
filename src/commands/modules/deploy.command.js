@@ -1,10 +1,10 @@
 import inquirer from 'inquirer'
 
-import { Command } from '../../core/command'
-import { ConfigurationFileNotExist } from '../../services/config'
+import { Command } from '../../core'
+import { ConfigurationFileNotExist, TargetFileAlreadyExist } from '../../shared/errors'
 import { LogUtils } from '../../shared/utils'
+
 import { DeployStopedByUser } from './deploy-stop-by-user.error'
-import { TargetFileAlreadyExist } from '../../services'
 
 export class DeployModuleCommand extends Command {
   get commandName() {

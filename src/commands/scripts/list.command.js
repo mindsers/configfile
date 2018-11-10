@@ -1,5 +1,5 @@
-import { Command } from '../../core/command'
-import { ConfigurationFileNotExist } from '../../services/config'
+import { Command } from '../../core'
+import { ConfigurationFileNotExist } from '../../shared/errors'
 import { LogUtils } from '../../shared/utils'
 
 export class ListScriptsCommand extends Command {
