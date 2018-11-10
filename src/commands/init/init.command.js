@@ -2,10 +2,10 @@ import inquirer from 'inquirer'
 import fs from 'fs'
 import path from 'path'
 
-import { Command } from '../core/command'
-import { LogUtils, FsUtils, GitUtils } from '../shared/utils'
-import { InitStopedByUser } from '../commands/init/init-stop-by-user.error'
-import { FileNotDirectory, FolderNotEmpty } from '../shared/errors'
+import { Command } from '../../core/command'
+import { LogUtils, FsUtils, GitUtils } from '../../shared/utils'
+import { InitStopedByUser } from './init-stop-by-user.error'
+import { FileNotDirectory, FolderNotEmpty } from '../../shared/errors'
 
 export class InitCommand extends Command {
   get commandName() {
