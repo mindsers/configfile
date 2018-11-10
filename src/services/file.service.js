@@ -1,9 +1,9 @@
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
 
-const { FsUtils, LogUtils } = require('../shared/utils')
+import { FsUtils, LogUtils } from '../shared/utils'
 
-class FileService {
+export class FileService {
   get scripts() {
     const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'scripts'))
     const authorizedExtensions = this.configService.scriptExtension
@@ -88,5 +88,3 @@ class FileService {
       .shift()
   }
 }
-
-module.exports = exports = { FileService }

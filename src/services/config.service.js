@@ -1,9 +1,9 @@
-const fs = require('fs')
+import fs from 'fs'
 
-const { ConfigurationFileNotExist } = require('./config-file-not-exist.error')
-const { FsUtils } = require('../../shared/utils')
+import { ConfigurationFileNotExist } from '../shared/errors'
+import { FsUtils } from '../shared/utils'
 
-class ConfigService {
+export class ConfigService {
   get repoUrl() {
     return this.getConfig('repo_url')
   }
@@ -85,5 +85,3 @@ class ConfigService {
     fs.writeFileSync(this.configPath, JSON.stringify(configData, null, 4))
   }
 }
-
-module.exports = exports = { ConfigService }

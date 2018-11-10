@@ -1,29 +1,31 @@
 #!/usr/bin/env node
 
-const program = require('commander')
+const {
+  FileService,
+  TermApplication,
+  ListModulesCommand,
+  DeployModuleCommand,
+  DeployService,
+  ConfigService,
+  OPTION_PATH_FILE_TOKEN,
+  getOptionsFilePath,
+  getPackageData
+} = require('../src')
 
-const config = require('../src/configuration')
+;(() => {
+  const cli = TermApplication.createInstance()
+  const pkg = getPackageData()
 
-const { deployCommand, modulesCommand } = require('../src/commands')
-const { FileService, DeployService, InjectorService } = require('../src/services')
+  cli.version = pkg.version
+  cli.description = 'Configuration modules manager.'
 
-const injector = InjectorService.getMainInstance()
+  cli.register(ListModulesCommand, [FileService])
+  cli.register(DeployModuleCommand, [FileService, DeployService])
 
-program
-  .version(config.package.version)
-  .description('Configuration modules manager.')
+  cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
+  cli.provide(FileService, [ConfigService])
+  cli.provide(DeployService)
+  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
-program
-  .command('list')
-  .alias('l')
-  .description('list all modules available.')
-  .action(modulesCommand(injector.get(FileService)))
-
-program
-  .command('deploy [modules...]')
-  .alias('d')
-  .description('deploy configuration files.')
-  .option('-l, --local', 'deploy only local files of the module(s) in the current folder')
-  .action(deployCommand(injector.get(FileService), injector.get(DeployService)))
-
-program.parse(process.argv)
+  cli.start()
+})()

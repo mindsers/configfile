@@ -1,10 +1,10 @@
-const fs = require('fs')
-const util = require('util')
-const path = require('path')
+import fs from 'fs'
+import util from 'util'
+import path from 'path'
 
 const PATH_REGEX = /^(?:(?:~|\.{1,2})?\/)+(?:[a-zA-Z.\-_]+\/?)*$/
 
-class FsUtils {
+export class FsUtils {
   static isFilePath(text) {
     return PATH_REGEX.test(text)
   }
@@ -84,5 +84,3 @@ class FsUtils {
       }), Promise.resolve(pathname[0] === '/' ? '/' : ''))
   }
 }
-
-module.exports = exports = { FsUtils }
