@@ -1,8 +1,8 @@
-const { FsUtils, ProcessUtils, LogUtils } = require('../../shared/utils')
-const { ScriptNotExist } = require('./script-not-exist.error')
-const { BadScriptPermission } = require('./bad-script-permission.error')
+import { FsUtils, ProcessUtils, LogUtils } from '../../shared/utils'
+import { ScriptNotExist } from './script-not-exist.error'
+import { BadScriptPermission } from './bad-script-permission.error'
 
-class ExecService {
+export class ExecService {
   async runScript(script) {
     if (script == null) {
       throw new ScriptNotExist(script.script)
@@ -30,5 +30,3 @@ class ExecService {
     }
   }
 }
-
-module.exports = exports = { ExecService }

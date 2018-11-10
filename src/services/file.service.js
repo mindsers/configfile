@@ -1,9 +1,9 @@
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
 
-const { FsUtils, LogUtils } = require('../shared/utils')
+import { FsUtils, LogUtils } from '../shared/utils'
 
-class FileService {
+export class FileService {
   get scripts() {
     if (this._scripts.length < 1) {
       this._scripts = this.getScripts()
@@ -107,5 +107,3 @@ class FileService {
       })
   }
 }
-
-module.exports = exports = { FileService }
