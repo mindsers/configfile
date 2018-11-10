@@ -68,7 +68,9 @@ export class TermApplication extends AbstractApplication {
 
       if ('run' in controller && typeof controller.run === 'function') {
         const action = controller.run.bind(controller)
-        command.action(this._wrapActions(action))
+        const wrappedAction = this._wrapActions(action)
+
+        command.action(wrappedAction)
       }
     }
 
