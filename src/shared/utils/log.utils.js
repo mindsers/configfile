@@ -1,6 +1,6 @@
-const color = require('chalk')
+import color from 'chalk'
 
-class LogUtils {
+export class LogUtils {
   static get loggerOptions() {
     return {
       error: {
@@ -60,8 +60,4 @@ class LogUtils {
   static addBlanckLine() {
     console.log('')
   }
-}
-
-module.exports = exports = {
-  LogUtils
 }

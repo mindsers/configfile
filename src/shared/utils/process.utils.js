@@ -1,6 +1,6 @@
-const childProcess = require('child_process')
+import childProcess from 'child_process'
 
-class ProcessUtils {
+export class ProcessUtils {
   static execFile(filename) {
     const child = childProcess.execFile(filename)
 
@@ -14,5 +14,3 @@ class ProcessUtils {
     }
   }
 }
-
-module.exports = exports = { ProcessUtils }
