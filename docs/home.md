@@ -8,12 +8,14 @@ To install Configfile:
 
 ```bash
 npm install -g configfile@latest
+# or
+yarn global add configfile@latest
 ```
 
 Generating first configuration:
 
 ```bash
-configfiles init
+configfile init
 ```
 
 It is an interactive command. Answer questions.
@@ -23,7 +25,7 @@ It is an interactive command. Answer questions.
 Unit test will be available via:
 
 ```bash
-npm test
+yarn test
 ```
 
 ### Additional commands
