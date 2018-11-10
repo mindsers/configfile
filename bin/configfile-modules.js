@@ -3,8 +3,8 @@
 const {
   FileService,
   TermApplication,
-  ModulesListCommand,
-  ModulesDeployCommand,
+  ListModulesCommand,
+  DeployModuleCommand,
   DeployService,
   ConfigService,
   OPTION_PATH_FILE_TOKEN,
@@ -19,8 +19,8 @@ const {
   cli.version = pkg.version
   cli.description = 'Configuration modules manager.'
 
-  cli.register(ModulesListCommand, [FileService])
-  cli.register(ModulesDeployCommand, [FileService, DeployService])
+  cli.register(ListModulesCommand, [FileService])
+  cli.register(DeployModuleCommand, [FileService, DeployService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
   cli.provide(FileService, [ConfigService])

@@ -4,8 +4,8 @@ const {
   FileService,
   ExecService,
   TermApplication,
-  ScriptsListCommand,
-  ScriptsRunCommand,
+  ListScriptsCommand,
+  RunScriptCommand,
   ConfigService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
@@ -19,8 +19,8 @@ const {
   cli.version = pkg.version
   cli.description = 'Custom scripts manager.'
 
-  cli.register(ScriptsRunCommand, [ExecService, FileService])
-  cli.register(ScriptsListCommand, [FileService])
+  cli.register(RunScriptCommand, [ExecService, FileService])
+  cli.register(ListScriptsCommand, [FileService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
   cli.provide(FileService, [ConfigService])

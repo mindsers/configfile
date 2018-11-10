@@ -1,8 +1,8 @@
-import { Command } from '../core/command'
-import { ConfigurationFileNotExist } from '../services/config'
-import { LogUtils } from '../shared/utils'
+import { Command } from '../../core/command'
+import { ConfigurationFileNotExist } from '../../services/config'
+import { LogUtils } from '../../shared/utils'
 
-export class ScriptsListCommand extends Command {
+export class ListScriptsCommand extends Command {
   get commandName() {
     return 'list'
   }
