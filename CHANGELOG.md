@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Add new contrubitor to SPONSORS.md
 
+### Changed
+- Use [Yabf](https://github.com/Mindsers/yabf) as base to build the next configfile.
+
 ### Fixed
 - Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
 
