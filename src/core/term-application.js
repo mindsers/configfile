@@ -13,6 +13,14 @@ export class TermApplication extends AbstractApplication {
     this._version = semanticVersion
   }
 
+  get description() {
+    return this._desc
+  }
+
+  set description(text) {
+    this._desc = text
+  }
+
   buildInstructions() {
     return [
       { provide: TermApplication, dependencies: [] }
@@ -34,6 +42,10 @@ export class TermApplication extends AbstractApplication {
       LogUtils.log({ type: 'error', message: `Application failed to initialize` })
       return
     }
+
+    program
+      .version(this.version)
+      .description(this.description)
 
     for (const commandClass of this.commands) {
       const controller = this.injectorService.get(commandClass)

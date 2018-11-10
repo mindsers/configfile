@@ -7,3 +7,6 @@ export * from './services/file.service'
 export * from './services/exec/exec.service'
 export * from './services/deploy/deploy.service'
 export * from './services/config/config.service'
+
+export * from './shared/utils'
+export * from './shared/config'
