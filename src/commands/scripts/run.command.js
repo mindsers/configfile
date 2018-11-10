@@ -1,8 +1,6 @@
-import { Command } from '../../core/command'
-import { ConfigurationFileNotExist } from '../../services/config'
+import { Command } from '../../core'
+import { ConfigurationFileNotExist, BadScriptPermission, ScriptNotExist } from '../../shared/errors'
 import { LogUtils } from '../../shared/utils'
-import { BadScriptPermission } from '../../services/exec/bad-script-permission.error'
-import { ScriptNotExist } from '../../services/exec/script-not-exist.error'
 
 export class RunScriptCommand extends Command {
   get commandName() {

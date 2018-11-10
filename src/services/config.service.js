@@ -1,7 +1,7 @@
 import fs from 'fs'
 
-import { ConfigurationFileNotExist } from './config-file-not-exist.error'
-import { FsUtils } from '../../shared/utils'
+import { ConfigurationFileNotExist } from '../shared/errors'
+import { FsUtils } from '../shared/utils'
 
 export class ConfigService {
   get repoUrl() {

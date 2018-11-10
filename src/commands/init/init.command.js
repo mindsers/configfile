@@ -4,8 +4,9 @@ import path from 'path'
 
 import { Command } from '../../core/command'
 import { LogUtils, FsUtils, GitUtils } from '../../shared/utils'
-import { InitStopedByUser } from './init-stop-by-user.error'
 import { FileNotDirectory, FolderNotEmpty } from '../../shared/errors'
+
+import { InitStopedByUser } from './init-stop-by-user.error'
 
 export class InitCommand extends Command {
   get commandName() {

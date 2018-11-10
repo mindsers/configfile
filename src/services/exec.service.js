@@ -1,6 +1,5 @@
-import { FsUtils, ProcessUtils, LogUtils } from '../../shared/utils'
-import { ScriptNotExist } from './script-not-exist.error'
-import { BadScriptPermission } from './bad-script-permission.error'
+import { FsUtils, ProcessUtils, LogUtils } from '../shared/utils'
+import { ScriptNotExist, BadScriptPermission } from '../shared/errors'
 
 export class ExecService {
   async runScript(script) {

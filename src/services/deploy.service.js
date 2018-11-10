@@ -1,7 +1,7 @@
 import path from 'path'
 
-import { FsUtils, LogUtils } from '../../shared/utils'
-import { TargetFileAlreadyExist } from './target-file-already-exist.error'
+import { FsUtils, LogUtils } from '../shared/utils'
+import { TargetFileAlreadyExist } from '../shared/errors'
 
 export class DeployService {
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
