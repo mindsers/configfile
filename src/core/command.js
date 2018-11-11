@@ -14,4 +14,6 @@ export class Command {
   get options() {
     return []
   }
+
+  // optional run() method which contains the action logic
 }
