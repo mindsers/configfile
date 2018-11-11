@@ -32,88 +32,89 @@ export class DeployModuleCommand extends Command {
     this.deployService = deployService
   }
 
-  run(modules, options) {
+  async run(modules, options) {
     const localDeployment = options.local || false
     let modulesToDeploy = modules
 
-    Promise.resolve()
-      .then(_ => {
-        if (modules.length <= 0) {
-          return inquirer.prompt([{
-            type: 'confirm',
-            message: 'No modules was passed in parameter. Do you want to deploy all available modules ?',
-            name: 'all_module',
-            default: false
-          }])
-            .then(({ all_module: deployAllModule }) => {
-              if (!deployAllModule) {
-                throw new DeployStopedByUser()
-              }
+    try {
+      modulesToDeploy = await this._getModuleListToDeploy(modules)
+    } catch (error) {
+      if (error instanceof ConfigurationFileNotExist) {
+        LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        return
+      }
 
-              modulesToDeploy = this.fileService.modules.map(el => el.module)
-            })
+      if (error instanceof DeployStopedByUser) {
+        LogUtils.log({ message: `${error.message} No modules to deploy.` })
+        return
+      }
+    }
+
+    LogUtils.log({ type: 'info', message: `Deployment (${modulesToDeploy.join(', ')}) start.` })
+    await this._deployModules(modulesToDeploy, localDeployment)
+    LogUtils.log({ type: 'success', message: `Deployment task is finished.` })
+  }
+
+  async _deployModules(modulesToDeploy, localDeployment) {
+    const files = this.fileService.modules
+      .filter(element => modulesToDeploy.includes(element.module))
+      .reduce((files, element) => {
+        for (const file of element.files) {
+          files.push(file)
         }
-      })
-      .then(_ => LogUtils.log({ type: 'info', message: `Deployment (${modulesToDeploy.join(', ')}) start.` }))
-      .then(_ => {
-        const files = this.fileService.modules
-          .filter(element => modulesToDeploy.includes(element.module))
-          .reduce((files, element) => {
-            for (const file of element.files) {
-              files.push(file)
-            }
+        return files
+      }, [])
+      .filter(element => element.global === !localDeployment)
 
-            return files
-          }, [])
-          .filter(element => element.global === !localDeployment)
+    const failedFiles = []
+    for (const file of files) {
+      try {
+        if (file.global) {
+          await this.deployService.deployGlobalFile(file)
+          continue
+        }
 
-        const failedFiles = []
-        const deployPromises = files.map(file => {
-          if (file.global) {
-            return this.deployService.deployGlobalFile(file)
-          }
-
-          return this.deployService.deployLocalFile(file)
-            .catch(error => {
-              if (error instanceof TargetFileAlreadyExist) {
-                failedFiles.push(file)
-                return
-              }
-
-              throw error
-            })
-        })
-
-        return Promise.all(deployPromises)
-          .then(_ => { // User choices to relaunch deployment
-            if (failedFiles.length <= 0) {
-              return
-            }
-
-            return failedFiles
-              .reduce((queue, file) => queue
-                .then(_ => inquirer
-                  .prompt([{ name: 'overwrite_file', message: `File ${file.target} already exist. Do you want to overwrite it ?`, type: 'confirm', default: false }])
-                  .then(({ overwrite_file: overwriteFile }) => {
-                    if (overwriteFile) {
-                      return this.fileService.deployLocalFile(file, true)
-                    }
-                  })), Promise.resolve())
-          })
-      })
-      .then(_ => LogUtils.log({ type: 'success', message: `Deployment task is finished.` }))
-      .catch(error => {
-        if (error instanceof ConfigurationFileNotExist) {
-          LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        await this.deployService.deployLocalFile(file)
+      } catch (error) {
+        if (error instanceof TargetFileAlreadyExist) {
+          failedFiles.push(file)
           return
         }
 
-        if (error instanceof DeployStopedByUser) {
-          LogUtils.log({ message: `${error.message} No modules to deploy.` })
-          return
-        }
+        throw error
+      }
+    }
 
-        LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
-      })
+    for (const file of failedFiles) {
+      const { overwrite_file: overwriteFile } = await inquirer.prompt([{
+        name: 'overwrite_file',
+        message: `File ${file.target} already exist. Do you want to overwrite it ?`,
+        type: 'confirm',
+        default: false
+      }])
+
+      if (overwriteFile) {
+        await this.fileService.deployLocalFile(file, true)
+      }
+    }
+  }
+
+  async _getModuleListToDeploy(modules = []) {
+    if (modules.length <= 0) {
+      const { all_module: deployAllModule } = await inquirer.prompt([{
+        type: 'confirm',
+        message: 'No modules was passed in parameter. Do you want to deploy all available modules ?',
+        name: 'all_module',
+        default: false
+      }])
+
+      if (!deployAllModule) {
+        throw new DeployStopedByUser()
+      }
+
+      return this.fileService.modules.map(el => el.module)
+    }
+
+    return modules
   }
 }
