@@ -67,10 +67,23 @@ export class TermApplication extends AbstractApplication {
       }
 
       if ('run' in controller && typeof controller.run === 'function') {
-        command.action(controller.run.bind(controller))
+        const action = controller.run.bind(controller)
+        const wrappedAction = this._wrapActions(action)
+
+        command.action(wrappedAction)
       }
     }
 
     program.parse(process.argv)
+  }
+
+  _wrapActions(action) {
+    return (...args) => {
+      try {
+        return action(...args)
+      } catch (error) {
+        LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
+      }
+    }
   }
 }

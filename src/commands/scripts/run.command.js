@@ -47,7 +47,7 @@ export class RunScriptCommand extends Command {
         return
       }
 
-      LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
+      throw error
     }
   }
 }
