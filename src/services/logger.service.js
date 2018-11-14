@@ -71,6 +71,7 @@ export class LoggerService {
       }, [''])
 
     return center
+      .toString()
       .split('\n')
       .reduce((aggr, line) => [...aggr, ...getLinesFromLine(line)], [])
       .map(line => `${line}${(new Array(dataMaxLength).fill('\u00A0').join(''))}`.slice(0, dataMaxLength))
