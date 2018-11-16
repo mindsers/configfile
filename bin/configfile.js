@@ -9,8 +9,6 @@ const {
   getOptionsFilePath,
   getPackageData,
   LoggerService,
-  APP_LOG_LEVEL,
-  APP_LOG_LEVEL_TOKEN,
   MessageService
 } = require('../src');
 
@@ -22,11 +20,8 @@ const {
   cli.description = 'Configuration files manager.'
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
-  cli.provide({ identity: APP_LOG_LEVEL_TOKEN, useValue: APP_LOG_LEVEL })
 
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
-  cli.provide(LoggerService, [APP_LOG_LEVEL_TOKEN])
-  cli.provide(MessageService)
 
   cli.register(InitCommand, [ConfigService, LoggerService, MessageService])
   cli.register(class extends Command { // modules namespace

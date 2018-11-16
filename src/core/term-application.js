@@ -1,7 +1,8 @@
 import { AbstractApplication } from 'yabf'
 import program from 'commander'
 
-import { MessageService } from '../services'
+import { MessageService, LoggerService } from '../services'
+import { APP_LOG_LEVEL, APP_LOG_LEVEL_TOKEN } from '../shared/config'
 
 import { Command } from './command'
 
@@ -22,21 +23,27 @@ export class TermApplication extends AbstractApplication {
     this._desc = text
   }
 
-  constructor(injector, messageService) {
+  constructor(injector, messageService, loggerService) {
     super(injector)
 
     this.messageService = messageService
+    this.loggerService = loggerService
   }
 
   buildInstructions() {
     return [
-      { provide: TermApplication, dependencies: [MessageService] },
-      { provide: MessageService, dependencies: [] }
+      { provide: TermApplication, dependencies: [MessageService, LoggerService] },
+      { provide: MessageService, dependencies: [] },
+      { provide: { identity: APP_LOG_LEVEL_TOKEN, useValue: APP_LOG_LEVEL } },
+      { provide: LoggerService, dependencies: [APP_LOG_LEVEL_TOKEN] }
     ]
   }
 
   register(command, deps = []) {
+    this.loggerService.log(`Register new command ${command.prototype.constructor.name}`)
+
     if (!(command.prototype instanceof Command)) {
+      this.loggerService.debug(`${command} is not a valid command`)
       return null
     }
 
@@ -46,7 +53,7 @@ export class TermApplication extends AbstractApplication {
 
   start() {
     if (!Array.isArray(this.commands) || this.commands.length < 1) {
-      this.messageService.print(`No command found in Term Application`)
+      this.loggerService.debug(`No command found in Term Application`)
       this.messageService.printError('Application failed to initialize')
       return
     }
@@ -82,6 +89,8 @@ export class TermApplication extends AbstractApplication {
       }
     }
 
+    this.loggerService.log(`Program start`)
+    this.loggerService.debug(`Program launched with ${JSON.stringify(process.argv)}`)
     program.parse(process.argv)
   }
 
@@ -90,6 +99,7 @@ export class TermApplication extends AbstractApplication {
       try {
         action(...args)
       } catch (error) {
+        this.loggerService.debug(`Program failed by error : ${error.message}`)
         this.messageService.printError('Fail', 'An error occured.')
       }
     }
