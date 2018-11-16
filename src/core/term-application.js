@@ -1,8 +1,10 @@
 import { AbstractApplication } from 'yabf'
 import program from 'commander'
 
-import { Command } from './command'
 import { LogUtils } from '../shared/utils'
+import { MessageService } from '../services'
+
+import { Command } from './command'
 
 export class TermApplication extends AbstractApplication {
   get version() {
@@ -21,9 +23,16 @@ export class TermApplication extends AbstractApplication {
     this._desc = text
   }
 
+  constructor(injector, messageService) {
+    super(injector)
+
+    this.messageService = messageService
+  }
+
   buildInstructions() {
     return [
-      { provide: TermApplication, dependencies: [] }
+      { provide: TermApplication, dependencies: [MessageService] },
+      { provide: MessageService, dependencies: [] }
     ]
   }
 
@@ -39,7 +48,8 @@ export class TermApplication extends AbstractApplication {
   start() {
     if (!Array.isArray(this.commands) || this.commands.length < 1) {
       LogUtils.log({ message: `No command found in Term Application` })
-      LogUtils.log({ type: 'error', message: `Application failed to initialize` })
+
+      this.messageService.printError('Application failed to initialize')
       return
     }
 
@@ -80,9 +90,9 @@ export class TermApplication extends AbstractApplication {
   _wrapActions(action) {
     return (...args) => {
       try {
-        return action(...args)
+        action(...args)
       } catch (error) {
-        LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
+        this.messageService.printError('Fail', 'An error occured.')
       }
     }
   }
