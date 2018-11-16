@@ -69,10 +69,10 @@ export class MessageService {
 
   _useBuilder(stylePrefix, styleText, defaultPrefix) {
     return (prefix, ...texts) => {
-      let fullText = styleText(prefix)
+      let fullText = `${styleText(prefix)}\n`
 
       if (defaultPrefix != null) {
-        fullText = `${stylePrefix(` ${defaultPrefix} `)} ${fullText}\n`
+        fullText = `${stylePrefix(` ${defaultPrefix} `)} ${fullText}`
       }
 
       if (texts.length > 0) {
