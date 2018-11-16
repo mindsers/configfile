@@ -24,8 +24,8 @@ const {
   cli.register(ListScriptsCommand, [FileService, MessageService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
-  cli.provide(FileService, [ConfigService])
-  cli.provide(ExecService)
+  cli.provide(FileService, [ConfigService, MessageService])
+  cli.provide(ExecService, [MessageService])
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()

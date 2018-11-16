@@ -24,8 +24,8 @@ const {
   cli.register(DeployModuleCommand, [FileService, DeployService, MessageService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
-  cli.provide(FileService, [ConfigService])
-  cli.provide(DeployService)
+  cli.provide(FileService, [ConfigService, MessageService])
+  cli.provide(DeployService, [MessageService])
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()
