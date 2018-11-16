@@ -9,7 +9,8 @@ const {
   ConfigService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
-  getPackageData
+  getPackageData,
+  MessageService
 } = require('../src')
 
 ;(() => {
@@ -19,8 +20,8 @@ const {
   cli.version = pkg.version
   cli.description = 'Configuration modules manager.'
 
-  cli.register(ListModulesCommand, [FileService])
-  cli.register(DeployModuleCommand, [FileService, DeployService])
+  cli.register(ListModulesCommand, [FileService, MessageService])
+  cli.register(DeployModuleCommand, [FileService, DeployService, MessageService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
   cli.provide(FileService, [ConfigService])
