@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 
 import { Command } from '../../core/command'
-import { LogUtils, FsUtils, GitUtils } from '../../shared/utils'
+import { FsUtils, GitUtils } from '../../shared/utils'
 import { FileNotDirectory, FolderNotEmpty } from '../../shared/errors'
 
 import { InitStopedByUser } from './init-stop-by-user.error'
@@ -27,11 +27,12 @@ export class InitCommand extends Command {
     ]
   }
 
-  constructor(configService, loggerService) {
+  constructor(configService, loggerService, messageService) {
     super()
 
     this.configService = configService
     this.logger = loggerService
+    this.messageService = messageService
   }
 
   async run(options) {
@@ -44,9 +45,7 @@ export class InitCommand extends Command {
 
       if (error instanceof InitStopedByUser) {
         this.logger.debug('Error is an instance of InitStopedByUser')
-        this.logger.error(error.message)
-
-        LogUtils.log({ message: error.message })
+        this.messageService.printError(error.message)
         return
       }
     }
@@ -58,13 +57,13 @@ export class InitCommand extends Command {
 
       if (error instanceof FolderNotEmpty) {
         this.logger.debug('Error is an instance of FolderNotEmpty')
-        LogUtils.log({ type: 'error', message: error.message })
+        this.messageService.printError(error.message)
         return
       }
 
       if (error instanceof FileNotDirectory) {
         this.logger.debug('Error is an instance of FileNotDirectory')
-        LogUtils.log({ type: 'error', message: error.message })
+        this.messageService.printError(error.message)
         return
       }
     }
@@ -130,7 +129,7 @@ export class InitCommand extends Command {
     const folderPath = this.configService.folderPath
     if (!FsUtils.fileExist(folderPath)) {
       this.logger.debug(`Folder ${folderPath} doesn't exist.`)
-      LogUtils.log({ type: 'info', message: 'Folder does not exist. It will be created.' })
+      this.messageService.printInfo('Folder does not exist. It will be created.')
       fs.mkdirSync(folderPath)
     }
 
@@ -151,13 +150,13 @@ export class InitCommand extends Command {
     this.logger.log(`Clone git repo - Start`)
     if (this.configService.repoUrl == null) {
       this.logger.debug(`No URL provided to allow to clone the repo`)
-      LogUtils.log({ type: 'warn', message: 'Unable to cloned git repository. Need repository URL.' })
+      this.messageService.printWarn('Unable to cloned git repository. Need repository URL.')
       return
     }
 
     try {
       await GitUtils.clone(this.configService.repoUrl, this.configService.folderPath)
-      LogUtils.log({ type: 'info', message: 'Git repository cloned successuly.' })
+      this.messageService.printInfo('Git repository cloned successuly.')
     } catch (error) {
       this.logger.debug(error.message)
       throw error

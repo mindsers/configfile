@@ -10,7 +10,8 @@ const {
   getPackageData,
   LoggerService,
   APP_LOG_LEVEL,
-  APP_LOG_LEVEL_TOKEN
+  APP_LOG_LEVEL_TOKEN,
+  MessageService
 } = require('../src');
 
 (() => {
@@ -25,8 +26,9 @@ const {
 
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
   cli.provide(LoggerService, [APP_LOG_LEVEL_TOKEN])
+  cli.provide(MessageService)
 
-  cli.register(InitCommand, [ConfigService, LoggerService])
+  cli.register(InitCommand, [ConfigService, LoggerService, MessageService])
   cli.register(class extends Command { // modules namespace
     get commandName() {
       return 'modules'
