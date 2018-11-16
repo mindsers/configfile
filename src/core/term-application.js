@@ -1,7 +1,6 @@
 import { AbstractApplication } from 'yabf'
 import program from 'commander'
 
-import { LogUtils } from '../shared/utils'
 import { MessageService } from '../services'
 
 import { Command } from './command'
@@ -47,8 +46,7 @@ export class TermApplication extends AbstractApplication {
 
   start() {
     if (!Array.isArray(this.commands) || this.commands.length < 1) {
-      LogUtils.log({ message: `No command found in Term Application` })
-
+      this.messageService.print(`No command found in Term Application`)
       this.messageService.printError('Application failed to initialize')
       return
     }
