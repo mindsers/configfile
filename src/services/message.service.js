@@ -59,14 +59,6 @@ export class MessageService {
     this.print('')
   }
 
-  printRawText(text) {
-    this.stdout.write(text)
-  }
-
-  printRawError(text) {
-    this.stderr.write(text)
-  }
-
   _useBuilder(stylePrefix, styleText, defaultPrefix) {
     return (prefix, ...texts) => {
       let fullText = `${styleText(prefix)}\n`
