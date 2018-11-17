@@ -33,7 +33,7 @@ export class LoggerService {
 
   _getPrefixDate() {
     const date = new Date()
-    const addPrefix = (num, zero) => `${(new Array(zero).fill(0).join())}${num}`.slice(-1 * zero)
+    const addPrefix = (num, zero) => `${(new Array(zero).fill(0).join(''))}${num}`.slice(-1 * zero)
 
     const year = addPrefix(date.getFullYear(), 4)
     const month = addPrefix(date.getMonth() + 1, 2)
