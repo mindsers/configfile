@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 - Add new contrubitor to SPONSORS.md
+- Configfile will emit log to make debug easier ([!57](https://github.com/Mindsers/configfile/pull/57))
 
 ### Changed
 - Use [Yabf](https://github.com/Mindsers/yabf) as base to build the next configfile.
