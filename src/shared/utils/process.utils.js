@@ -2,7 +2,7 @@ import childProcess from 'child_process'
 
 export class ProcessUtils {
   static execFile(filename) {
-    const child = childProcess.execFile(filename)
+    const child = childProcess.spawn(filename, [], { stdio: 'inherit' })
 
     return {
       stdout: child.stdout,
