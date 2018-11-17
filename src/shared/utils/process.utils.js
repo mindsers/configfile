@@ -1,16 +1,12 @@
-import childProcess from 'child_process'
+import { spawn } from 'child_process'
 
 export class ProcessUtils {
-  static execFile(filename) {
-    const child = childProcess.spawn(filename, [], { stdio: 'inherit' })
+  static spawn(filename) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(filename, [], { stdio: 'inherit' })
 
-    return {
-      stdout: child.stdout,
-      stderr: child.stderr,
-      toPromise: () => new Promise((resolve, reject) => {
-        child.addListener('error', reject)
-        child.addListener('exit', resolve)
-      })
-    }
+      child.addListener('error', reject)
+      child.addListener('exit', resolve)
+    })
   }
 }
