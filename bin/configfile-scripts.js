@@ -25,7 +25,7 @@ const {
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
   cli.provide(FileService, [ConfigService, MessageService])
-  cli.provide(ExecService, [MessageService])
+  cli.provide(ExecService)
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()
