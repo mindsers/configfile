@@ -1,28 +1,32 @@
 #!/usr/bin/env node
 
-const program = require('commander')
+const {
+  FileService,
+  ExecService,
+  TermApplication,
+  ListScriptsCommand,
+  RunScriptCommand,
+  ConfigService,
+  OPTION_PATH_FILE_TOKEN,
+  getOptionsFilePath,
+  getPackageData,
+  MessageService
+} = require('../src')
 
-const config = require('../src/configuration')
+;(() => {
+  const cli = TermApplication.createInstance()
+  const pkg = getPackageData()
 
-const { runCommand, scriptsCommand } = require('../src/commands')
-const { ExecService, FileService, InjectorService } = require('../src/services')
+  cli.version = pkg.version
+  cli.description = 'Custom scripts manager.'
 
-const injector = InjectorService.getMainInstance()
+  cli.register(RunScriptCommand, [ExecService, FileService, MessageService])
+  cli.register(ListScriptsCommand, [FileService, MessageService])
 
-program
-  .version(config.package.version)
-  .description('Custom scripts manager.')
+  cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
+  cli.provide(FileService, [ConfigService, MessageService])
+  cli.provide(ExecService)
+  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
-program
-  .command('list')
-  .alias('l')
-  .description('list all custom configuration scripts available.')
-  .action(scriptsCommand(injector.get(FileService)))
-
-program
-  .command('run <name>')
-  .alias('r')
-  .description('run custom configuration scripts.')
-  .action(runCommand(injector.get(ExecService), injector.get(FileService)))
-
-program.parse(process.argv)
+  cli.start()
+})()

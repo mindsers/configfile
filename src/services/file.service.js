@@ -1,9 +1,9 @@
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
 
-const { FsUtils, LogUtils } = require('../shared/utils')
+import { FsUtils } from '../shared/utils'
 
-class FileService {
+export class FileService {
   get scripts() {
     if (this._scripts.length < 1) {
       this._scripts = this.getScripts()
@@ -20,8 +20,9 @@ class FileService {
     return this._modules
   }
 
-  constructor(configService) {
+  constructor(configService, messageService) {
     this.configService = configService
+    this.messageService = messageService
 
     this._modules = []
     this._scripts = []
@@ -89,7 +90,7 @@ class FileService {
 
           element.files = data.files
         } catch (e) {
-          LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
+          this.messageService.printWarning(`Unable to load settings file for "${name}" module.`)
           element.files = []
         }
 
@@ -107,5 +108,3 @@ class FileService {
       })
   }
 }
-
-module.exports = exports = { FileService }

@@ -1,31 +1,56 @@
 #!/usr/bin/env node
 
-const program = require('commander')
+const {
+  TermApplication,
+  Command,
+  InitCommand,
+  ConfigService,
+  OPTION_PATH_FILE_TOKEN,
+  getOptionsFilePath,
+  getPackageData,
+  LoggerService,
+  MessageService
+} = require('../src');
 
-const config = require('../src/configuration')
+(() => {
+  const cli = TermApplication.createInstance()
+  const pkg = getPackageData()
 
-const { ConfigService, InjectorService } = require('../src/services')
-const { initCommand } = require('../src/commands')
+  cli.version = pkg.version
+  cli.description = 'Configuration files manager.'
 
-const injector = InjectorService.getMainInstance()
+  cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
 
-program
-  .version(config.package.version)
-  .description('Configuration files manager.')
+  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
-program
-  .command('init')
-  .alias('i')
-  .description('activate configfiles on user session.')
-  .option('-f, --force', 'force parameters file overwrite.')
-  .action(initCommand(injector.get(ConfigService)))
+  cli.register(InitCommand, [ConfigService, LoggerService, MessageService])
+  cli.register(class extends Command { // modules namespace
+    get commandName() {
+      return 'modules'
+    }
 
-program
-  .command('scripts', 'work with custom scripts available.')
-  .alias('s')
+    get alias() {
+      return 'm'
+    }
 
-program
-  .command('modules', 'work with modules available.')
-  .alias('m')
+    get description() {
+      return 'work with modules available.'
+    }
+  })
 
-program.parse(process.argv)
+  cli.register(class extends Command { // scripts namespace
+    get commandName() {
+      return 'scripts'
+    }
+
+    get alias() {
+      return 's'
+    }
+
+    get description() {
+      return 'work with custom scripts available.'
+    }
+  })
+
+  cli.start()
+})()

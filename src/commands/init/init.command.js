@@ -1,103 +1,165 @@
-const fs = require('fs')
-const path = require('path')
-const inquirer = require('inquirer')
+import inquirer from 'inquirer'
+import fs from 'fs'
+import path from 'path'
 
-const { FsUtils, LogUtils, GitUtils } = require('../../shared/utils')
-const { FolderNotEmpty, FileNotDirectory } = require('../../shared/errors')
+import { Command } from '../../core/command'
+import { FsUtils, GitUtils } from '../../shared/utils'
+import { FileNotDirectory, FolderNotEmpty } from '../../shared/errors'
 
-const { InitStopedByUser } = require('./init-stop-by-user.error')
+import { InitStopedByUser } from './init-stop-by-user.error'
 
-module.exports = exports = configService => options => {
-  const userForceOverwrite = options.force || false
-  const questions = [
-    {
-      name: 'overwrite_file',
-      message: 'A configuration file already exist. Do you want to continue ?',
-      type: 'confirm',
-      when: () => configService.configFileExist() && !userForceOverwrite
-    },
-    {
-      name: 'repo_url',
-      message: 'Repository url:',
-      type: 'input',
-      validate: url => GitUtils.isGitUrl(url),
-      default: () => {
-        if (configService.configFileExist()) {
-          return configService.repoUrl
-        }
-      },
-      when: data => !configService.configFileExist() || data.overwrite_file || userForceOverwrite
-    },
-    {
-      name: 'folder_path',
-      message: 'Folder path:',
-      type: 'input',
-      validate: path => FsUtils.isFilePath(path),
-      default: () => {
-        if (configService.configFileExist()) {
-          return configService.folderPath
-        }
-      },
-      when: data => !configService.configFileExist() || data.overwrite_file || userForceOverwrite
-    }
-  ]
+export class InitCommand extends Command {
+  get commandName() {
+    return 'init'
+  }
 
-  inquirer.prompt(questions)
-    .then(({ repo_url: repoUrl = null, folder_path: folderPath, overwrite_file: overwriteFile = true }) => {
-      if (!overwriteFile) {
-        throw new InitStopedByUser('You stopped the command. Nothing has be made.')
-      }
+  get alias() {
+    return 'i'
+  }
 
-      folderPath = folderPath.replace('~', process.env.HOME)
-      folderPath = path.resolve(folderPath)
+  get description() {
+    return 'activate configfiles on user session.'
+  }
 
-      configService.repoUrl = repoUrl
-      configService.folderPath = folderPath
-    })
-    .then(() => {
-      const folderPath = configService.folderPath
-      if (!FsUtils.fileExist(folderPath)) {
-        LogUtils.log({ type: 'info', message: 'Folder does not exist. It will be created.' })
-        fs.mkdirSync(folderPath)
-      }
+  get options() {
+    return [
+      ['-f, --force', 'force parameters file overwrite.']
+    ]
+  }
 
-      const isDirectory = fs.statSync(folderPath).isDirectory()
-      if (!isDirectory) {
-        throw new FileNotDirectory()
-      }
+  constructor(configService, loggerService, messageService) {
+    super()
 
-      const folderIsEmpty = fs.readdirSync(folderPath).length < 1
-      if (!folderIsEmpty) {
-        throw new FolderNotEmpty()
-      }
-    })
-    .then(() => {
-      if (configService.repoUrl == null) {
-        LogUtils.log({ type: 'warn', message: 'Unable to cloned git repository. Need repository URL.' })
-        return
-      }
+    this.configService = configService
+    this.logger = loggerService
+    this.messageService = messageService
+  }
 
-      return GitUtils.clone(configService.repoUrl, configService.folderPath)
-        .then(repo => {
-          LogUtils.log({ type: 'info', message: 'Git repository cloned successuly.' })
-        })
-    })
-    .catch(error => {
+  async run(options) {
+    this.logger.log('Init command started')
+
+    try {
+      await this._getUserData(options)
+    } catch (error) {
+      this.logger.debug('Error in _getUserData')
+
       if (error instanceof InitStopedByUser) {
-        LogUtils.log({ message: error.message })
+        this.logger.debug('Error is an instance of InitStopedByUser')
+        this.messageService.printError(error.message)
         return
       }
+    }
+
+    try {
+      this._checkFileSystem()
+    } catch (error) {
+      this.logger.debug('Error in _checkFileSystem')
 
       if (error instanceof FolderNotEmpty) {
-        LogUtils.log({ type: 'error', message: error.message })
+        this.logger.debug('Error is an instance of FolderNotEmpty')
+        this.messageService.printError(error.message)
         return
       }
 
       if (error instanceof FileNotDirectory) {
-        LogUtils.log({ type: 'error', message: error.message })
+        this.logger.debug('Error is an instance of FileNotDirectory')
+        this.messageService.printError(error.message)
         return
       }
+    }
 
-      LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
-    })
+    this._cloneGitRepo()
+  }
+
+  async _getUserData(commandOptions) {
+    this.logger.log('Start asking people informations for installing configuration file')
+    const userForceOverwrite = commandOptions.force || false
+
+    const questions = [
+      {
+        name: 'overwrite_file',
+        message: 'A configuration file already exist. Do you want to continue ?',
+        type: 'confirm',
+        when: () => this.configService.configFileExist() && !userForceOverwrite
+      },
+      {
+        name: 'repo_url',
+        message: 'Repository url:',
+        type: 'input',
+        validate: url => GitUtils.isGitUrl(url),
+        default: () => {
+          if (this.configService.configFileExist()) {
+            return this.configService.repoUrl
+          }
+        },
+        when: data => !this.configService.configFileExist() || data.overwrite_file || userForceOverwrite
+      },
+      {
+        name: 'folder_path',
+        message: 'Folder path:',
+        type: 'input',
+        validate: path => FsUtils.isFilePath(path),
+        default: () => {
+          if (this.configService.configFileExist()) {
+            return this.configService.folderPath
+          }
+        },
+        when: data => !this.configService.configFileExist() || data.overwrite_file || userForceOverwrite
+      }
+    ]
+
+    const { repo_url: REPO_URL = null, folder_path: FOLDER_PATH, overwrite_file: OVERWRITE_FILE = true } = await inquirer.prompt(questions)
+
+    if (!OVERWRITE_FILE) {
+      this.logger.debug('User stop the command execution. A file already exist. No override allowed.')
+      throw new InitStopedByUser('You stopped the command. Nothing has be made.')
+    }
+
+    let folderPath = FOLDER_PATH.replace('~', process.env.HOME)
+    folderPath = path.resolve(folderPath)
+
+    this.logger.log('Save validated user answers in config service')
+    this.configService.repoUrl = REPO_URL
+    this.configService.folderPath = folderPath
+  }
+
+  _checkFileSystem() {
+    this.logger.log('Check file system - Start')
+
+    const folderPath = this.configService.folderPath
+    if (!FsUtils.fileExist(folderPath)) {
+      this.logger.debug(`Folder ${folderPath} doesn't exist.`)
+      this.messageService.printInfo('Folder does not exist. It will be created.')
+      fs.mkdirSync(folderPath)
+    }
+
+    const isDirectory = fs.statSync(folderPath).isDirectory()
+    if (!isDirectory) {
+      this.logger.debug(`Folder ${folderPath} is not a folder.`)
+      throw new FileNotDirectory()
+    }
+
+    const folderIsEmpty = fs.readdirSync(folderPath).length < 1
+    if (!folderIsEmpty) {
+      this.logger.debug(`Folder ${folderPath} isn't empty.`)
+      throw new FolderNotEmpty()
+    }
+  }
+
+  async _cloneGitRepo() {
+    this.logger.log(`Clone git repo - Start`)
+    if (this.configService.repoUrl == null) {
+      this.logger.debug(`No URL provided to allow to clone the repo`)
+      this.messageService.printWarn('Unable to cloned git repository. Need repository URL.')
+      return
+    }
+
+    try {
+      await GitUtils.clone(this.configService.repoUrl, this.configService.folderPath)
+      this.messageService.printInfo('Git repository cloned successuly.')
+    } catch (error) {
+      this.logger.debug(error.message)
+      throw error
+    }
+  }
 }

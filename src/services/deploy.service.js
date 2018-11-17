@@ -1,9 +1,13 @@
-const path = require('path')
+import path from 'path'
 
-const { FsUtils, LogUtils } = require('../../shared/utils')
-const { TargetFileAlreadyExist } = require('./target-file-already-exist.error')
+import { FsUtils } from '../shared/utils'
+import { TargetFileAlreadyExist } from '../shared/errors'
 
-class DeployService {
+export class DeployService {
+  constructor(messageService) {
+    this.messageService = messageService
+  }
+
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
     if (isGlobalFile) {
       throw new TypeError('Unable to deploy global file as a local one.')
@@ -36,7 +40,7 @@ class DeployService {
         throw error
       }
 
-      LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
+      this.messageService.printWarning(`Unable to make a local copy ("${source}" => "${target}").`)
     }
   }
 
@@ -76,9 +80,7 @@ class DeployService {
         throw error
       }
 
-      LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
+      this.messageService.printWarning(`Unable to link "${source}" => "${target}".`)
     }
   }
 }
-
-module.exports = exports = { DeployService }

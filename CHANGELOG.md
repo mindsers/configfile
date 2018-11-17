@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 - Add new contrubitor to SPONSORS.md
+- Configfile will emit log to make debug easier ([!57](https://github.com/Mindsers/configfile/pull/57))
+
+### Changed
+- Use [Yabf](https://github.com/Mindsers/yabf) as base to build the next configfile.
 
 ### Fixed
 - Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
+- Script standard outputs are correctly displayed ([!57](https://github.com/Mindsers/configfile/pull/57), [#13](https://github.com/Mindsers/configfile/issues/13))
 
 ## [0.3.1] - 2018-08-05
 ### Fixed

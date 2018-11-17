@@ -1,18 +1,12 @@
-const childProcess = require('child_process')
+import { spawn } from 'child_process'
 
-class ProcessUtils {
-  static execFile(filename) {
-    const child = childProcess.execFile(filename)
+export class ProcessUtils {
+  static spawn(filename) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(filename, [], { stdio: 'inherit' })
 
-    return {
-      stdout: child.stdout,
-      stderr: child.stderr,
-      toPromise: () => new Promise((resolve, reject) => {
-        child.addListener('error', reject)
-        child.addListener('exit', resolve)
-      })
-    }
+      child.addListener('error', reject)
+      child.addListener('exit', resolve)
+    })
   }
 }
-
-module.exports = exports = { ProcessUtils }
