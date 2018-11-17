@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 
-import { FsUtils, LogUtils } from '../shared/utils'
+import { FsUtils } from '../shared/utils'
 
 export class FileService {
   get scripts() {
@@ -60,7 +60,7 @@ export class FileService {
 
           element.files = data.files
         } catch (e) {
-          LogUtils.log({ type: 'warn', message: `Unable to load settings file for "${name}" module.` })
+          this.messageService.printWarning(`Unable to load settings file for "${name}" module.`)
           element.files = []
         }
 
@@ -78,8 +78,9 @@ export class FileService {
       })
   }
 
-  constructor(configService) {
+  constructor(configService, messageService) {
     this.configService = configService
+    this.messageService = messageService
   }
 
   scriptByName(scriptName) {

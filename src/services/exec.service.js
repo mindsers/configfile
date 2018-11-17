@@ -1,7 +1,11 @@
-import { FsUtils, ProcessUtils, LogUtils } from '../shared/utils'
+import { FsUtils, ProcessUtils } from '../shared/utils'
 import { ScriptNotExist, BadScriptPermission } from '../shared/errors'
 
 export class ExecService {
+  constructor(messageService) {
+    this.messageService = messageService
+  }
+
   async runScript(script) {
     if (script == null) {
       throw new ScriptNotExist(script.script)
@@ -12,10 +16,10 @@ export class ExecService {
     const child = ProcessUtils.execFile(script.path)
 
     child.stdout.on('data', data => {
-      LogUtils.log({ message: data.trim() })
+      this.messageService.printRawText(data.trim())
     })
     child.stderr.on('data', data => {
-      LogUtils.log({ type: 'error', message: data.trim(), prefix: '' })
+      this.messageService.printRawError(data.trim())
     })
 
     try {

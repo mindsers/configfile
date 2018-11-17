@@ -1,9 +1,13 @@
 import path from 'path'
 
-import { FsUtils, LogUtils } from '../shared/utils'
+import { FsUtils } from '../shared/utils'
 import { TargetFileAlreadyExist } from '../shared/errors'
 
 export class DeployService {
+  constructor(messageService) {
+    this.messageService = messageService
+  }
+
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
     if (isGlobalFile) {
       throw new TypeError('Unable to deploy global file as a local one.')
@@ -36,7 +40,7 @@ export class DeployService {
         throw error
       }
 
-      LogUtils.log({ type: 'warn', message: `Unable to make a local copy ("${source}" => "${target}").` })
+      this.messageService.printWarning(`Unable to make a local copy ("${source}" => "${target}").`)
     }
   }
 
@@ -76,7 +80,7 @@ export class DeployService {
         throw error
       }
 
-      LogUtils.log({ type: 'warn', message: `Unable to link "${source}" => "${target}".` })
+      this.messageService.printWarning(`Unable to link "${source}" => "${target}".`)
     }
   }
 }

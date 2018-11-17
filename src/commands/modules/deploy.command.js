@@ -2,7 +2,6 @@ import inquirer from 'inquirer'
 
 import { Command } from '../../core'
 import { ConfigurationFileNotExist, TargetFileAlreadyExist } from '../../shared/errors'
-import { LogUtils } from '../../shared/utils'
 
 import { DeployStopedByUser } from './deploy-stop-by-user.error'
 
@@ -25,11 +24,12 @@ export class DeployModuleCommand extends Command {
     ]
   }
 
-  constructor(fileService, deployService) {
+  constructor(fileService, deployService, messageService) {
     super()
 
     this.fileService = fileService
     this.deployService = deployService
+    this.messageService = messageService
   }
 
   async run(modules, options) {
@@ -40,19 +40,19 @@ export class DeployModuleCommand extends Command {
       modulesToDeploy = await this._getModuleListToDeploy(modules)
     } catch (error) {
       if (error instanceof ConfigurationFileNotExist) {
-        LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        this.messageService.printError('No configuration file. You need to run the init command before.')
         return
       }
 
       if (error instanceof DeployStopedByUser) {
-        LogUtils.log({ message: `${error.message} No modules to deploy.` })
+        this.messageService.print(`${error.message} No modules to deploy.`)
         return
       }
     }
 
-    LogUtils.log({ type: 'info', message: `Deployment (${modulesToDeploy.join(', ')}) start.` })
+    this.messageService.printInfo(`Deployment (${modulesToDeploy.join(', ')}) start.`)
     await this._deployModules(modulesToDeploy, localDeployment)
-    LogUtils.log({ type: 'success', message: `Deployment task is finished.` })
+    this.messageService.printSuccess(`Deployment task is finished.`)
   }
 
   async _deployModules(modulesToDeploy, localDeployment) {

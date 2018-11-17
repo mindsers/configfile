@@ -1,8 +1,10 @@
 import { AbstractApplication } from 'yabf'
 import program from 'commander'
 
+import { MessageService, LoggerService } from '../services'
+import { APP_LOG_LEVEL, APP_LOG_LEVEL_TOKEN } from '../shared/config'
+
 import { Command } from './command'
-import { LogUtils } from '../shared/utils'
 
 export class TermApplication extends AbstractApplication {
   get version() {
@@ -21,14 +23,27 @@ export class TermApplication extends AbstractApplication {
     this._desc = text
   }
 
+  constructor(injector, messageService, loggerService) {
+    super(injector)
+
+    this.messageService = messageService
+    this.loggerService = loggerService
+  }
+
   buildInstructions() {
     return [
-      { provide: TermApplication, dependencies: [] }
+      { provide: TermApplication, dependencies: [MessageService, LoggerService] },
+      { provide: MessageService, dependencies: [] },
+      { provide: { identity: APP_LOG_LEVEL_TOKEN, useValue: APP_LOG_LEVEL } },
+      { provide: LoggerService, dependencies: [APP_LOG_LEVEL_TOKEN] }
     ]
   }
 
   register(command, deps = []) {
+    this.loggerService.log(`Register new command ${command.prototype.constructor.name}`)
+
     if (!(command.prototype instanceof Command)) {
+      this.loggerService.debug(`${command} is not a valid command`)
       return null
     }
 
@@ -38,8 +53,8 @@ export class TermApplication extends AbstractApplication {
 
   start() {
     if (!Array.isArray(this.commands) || this.commands.length < 1) {
-      LogUtils.log({ message: `No command found in Term Application` })
-      LogUtils.log({ type: 'error', message: `Application failed to initialize` })
+      this.loggerService.debug(`No command found in Term Application`)
+      this.messageService.printError('Application failed to initialize')
       return
     }
 
@@ -74,15 +89,18 @@ export class TermApplication extends AbstractApplication {
       }
     }
 
+    this.loggerService.log(`Program start`)
+    this.loggerService.debug(`Program launched with ${JSON.stringify(process.argv)}`)
     program.parse(process.argv)
   }
 
   _wrapActions(action) {
     return (...args) => {
       try {
-        return action(...args)
+        action(...args)
       } catch (error) {
-        LogUtils.log({ type: 'error', message: 'An error occured.', prefix: ' Fail ' })
+        this.loggerService.debug(`Program failed by error : ${error.message}`)
+        this.messageService.printError('Fail', 'An error occured.')
       }
     }
   }

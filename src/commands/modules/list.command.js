@@ -1,6 +1,5 @@
 import { Command } from '../../core/command'
 import { ConfigurationFileNotExist } from '../../shared/errors'
-import { LogUtils } from '../../shared/utils'
 
 export class ListModulesCommand extends Command {
   get commandName() {
@@ -15,10 +14,11 @@ export class ListModulesCommand extends Command {
     return 'list all modules available.'
   }
 
-  constructor(fileService) {
+  constructor(fileService, messageService) {
     super()
 
     this.fileService = fileService
+    this.messageService = messageService
   }
 
   run() {
@@ -28,21 +28,21 @@ export class ListModulesCommand extends Command {
       modules = this.fileService.modules
     } catch (e) {
       if (e instanceof ConfigurationFileNotExist) {
-        LogUtils.log({ message: 'Unable to load modules without knowing where are stored the data.' })
-        LogUtils.log({ type: 'error', message: 'No configuration file. You need to run the init command before.' })
+        this.messageService.print('Unable to load modules without knowing where are stored the data.')
+        this.messageService.printError('No configuration file. You need to run the init command before.')
         return
       }
     }
 
     if (modules.length < 1) {
-      LogUtils.log({ type: 'info', message: `No module found.` })
+      this.messageService.printInfo('No module found.')
       return
     }
 
-    LogUtils.log({ message: `${modules.length} module(s) found.` })
+    this.messageService.print(`${modules.length} module(s) found.`)
 
     for (const { module: name } of modules) {
-      LogUtils.log({ message: `- ${name}` })
+      this.messageService.print(`- ${name}`)
     }
   }
 }

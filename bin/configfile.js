@@ -7,7 +7,9 @@ const {
   ConfigService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
-  getPackageData
+  getPackageData,
+  LoggerService,
+  MessageService
 } = require('../src');
 
 (() => {
@@ -18,9 +20,10 @@ const {
   cli.description = 'Configuration files manager.'
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
+
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
-  cli.register(InitCommand, [ConfigService])
+  cli.register(InitCommand, [ConfigService, LoggerService, MessageService])
   cli.register(class extends Command { // modules namespace
     get commandName() {
       return 'modules'
