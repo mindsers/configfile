@@ -39,16 +39,30 @@ export class FileService {
     const authorizedExtensions = this.configService.scriptExtension
 
     return folderContent
-      .filter(element => {
-        const foundResults = []
-        for (const extension of authorizedExtensions) {
-          foundResults.push(element.includes(extension))
+      .map(element => {
+        const stats = fs.statSync(path.join(this.configService.folderPath, 'scripts', element))
+
+        if (!stats.isDirectory()) {
+          return element
         }
 
-        return foundResults.filter(element => element).length > 0
+        for (const ext of authorizedExtensions) {
+          if (FsUtils.fileExist(path.join(this.configService.folderPath, 'scripts', element, `index${ext}`))) {
+            return `${element}/index${ext}`
+          }
+        }
+      })
+      .filter(element => {
+        const hasAuthorizedExtension = item => authorizedExtensions
+          .map(ext => item.includes(ext))
+          .filter(el => el === true)
+          .length > 0
+
+        return element != null && hasAuthorizedExtension(element)
       })
       .map(element => {
-        const [scriptName] = element.split('.')
+        const [scriptPath] = element.split('.')
+        const [scriptName] = scriptPath.split('/')
         const scriptSlug = scriptName
           .toLowerCase()
           .replace(/ /g, '-')
