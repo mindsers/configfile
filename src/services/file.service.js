@@ -40,14 +40,16 @@ export class FileService {
 
     return folderContent
       .map(element => {
-        const stats = fs.statSync(path.join(this.configService.folderPath, 'scripts', element))
+        const elementPath = path.join(this.configService.folderPath, 'scripts', element)
+        const stats = fs.statSync(elementPath)
 
         if (!stats.isDirectory()) {
           return element
         }
 
         for (const ext of authorizedExtensions) {
-          if (FsUtils.fileExist(path.join(this.configService.folderPath, 'scripts', element, `index${ext}`))) {
+          const filePath = path.join(elementPath, `index${ext}`)
+          if (FsUtils.fileExist(filePath)) {
             return `${element}/index${ext}`
           }
         }
