@@ -73,6 +73,22 @@ export class ConfigService {
     fs.writeFileSync(this.configPath, JSON.stringify(configData, null, 4))
   }
 
+  addAlteration(moduleName, { type, originPath, recoveryName } = {}) {
+    if (type == null || originPath == null) {
+      return
+    }
+
+    const alterations = this._getAlterations(module)
+    const data = { type, originPath, recoveryName, date: Date.now() }
+
+    alterations.push(data)
+
+    fs.writeFileSync(
+      `${this.configFolderPath}/alterations/${moduleName}.json`,
+      JSON.stringify(alterations, null, 4)
+    )
+  }
+
   _hasRCFile() {
     return FsUtils.fileExist(this.configPath)
   }
@@ -83,5 +99,23 @@ export class ConfigService {
     }
 
     return JSON.parse(fs.readFileSync(this.configPath))
+  }
+
+  _getAlterations(moduleName) {
+    if (!this._hasRCFile()) {
+      throw new ConfigurationFileNotExist()
+    }
+
+    if (moduleName == null) {
+      return
+    }
+
+    const dataText = fs.readFileSync(`${this.configFolderPath}/alterations/${moduleName}.json`)
+
+    if (dataText == null || dataText.length < 1) {
+      return []
+    }
+
+    return JSON.parse(dataText)
   }
 }
