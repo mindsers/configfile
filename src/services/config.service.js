@@ -42,6 +42,11 @@ export class ConfigService {
 
     if (!FsUtils.fileExist(this.configFolderPath)) {
       fs.mkdirSync(this.configFolderPath)
+
+      // Subfolder
+      fs.mkdirSync(`${this.configFolderPath}/logs`)
+      fs.mkdirSync(`${this.configFolderPath}/recovery`)
+      fs.mkdirSync(`${this.configFolderPath}/alterations`)
     }
   }
 
