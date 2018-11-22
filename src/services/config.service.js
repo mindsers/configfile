@@ -40,14 +40,7 @@ export class ConfigService {
     this.configPath = `${configPath}rc`
     this.configFolderPath = `${configPath}`
 
-    if (!FsUtils.fileExist(this.configFolderPath)) {
-      fs.mkdirSync(this.configFolderPath)
-
-      // Subfolder
-      fs.mkdirSync(`${this.configFolderPath}/logs`)
-      fs.mkdirSync(`${this.configFolderPath}/recovery`)
-      fs.mkdirSync(`${this.configFolderPath}/alterations`)
-    }
+    this._verifyStructure()
   }
 
   getValueForKey(key) {
@@ -92,6 +85,21 @@ export class ConfigService {
       `${this.configFolderPath}/alterations/${moduleName}.json`,
       JSON.stringify(alterations, null, 4)
     )
+  }
+
+  _verifyStructure() {
+    const folders = [
+      this.configFolderPath,
+      `${this.configFolderPath}/logs`,
+      `${this.configFolderPath}/recovery`,
+      `${this.configFolderPath}/alterations`
+    ]
+
+    for (const path of folders) {
+      if (!FsUtils.fileExist(path)) {
+        fs.mkdirSync(path)
+      }
+    }
   }
 
   _hasRCFile() {
