@@ -5,20 +5,66 @@ import { FsUtils } from '../shared/utils'
 
 export class FileService {
   get scripts() {
+    if (this._scripts.length < 1) {
+      this._scripts = this.getScripts()
+    }
+
+    return this._scripts
+  }
+
+  get modules() {
+    if (this._modules.length < 1) {
+      this._modules = this.getModules()
+    }
+
+    return this._modules
+  }
+
+  constructor(configService, messageService) {
+    this.configService = configService
+    this.messageService = messageService
+
+    this._modules = []
+    this._scripts = []
+  }
+
+  scriptByName(scriptName) {
+    return this.scripts
+      .filter(({ script: name }) => name === scriptName)
+      .shift()
+  }
+
+  getScripts() {
     const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'scripts'))
     const authorizedExtensions = this.configService.scriptExtension
 
     return folderContent
-      .filter(element => {
-        const foundResults = []
-        for (const extension of authorizedExtensions) {
-          foundResults.push(element.includes(extension))
+      .map(element => {
+        const elementPath = path.join(this.configService.folderPath, 'scripts', element)
+        const stats = fs.statSync(elementPath)
+
+        if (!stats.isDirectory()) {
+          return element
         }
 
-        return foundResults.filter(element => element).length > 0
+        for (const ext of authorizedExtensions) {
+          const filePath = path.join(elementPath, `index${ext}`)
+          if (FsUtils.fileExist(filePath)) {
+            return `${element}/index${ext}`
+          }
+        }
+      })
+      .filter(element => {
+        const hasAuthorizedExtension = item => authorizedExtensions
+          .map(ext => item.includes(ext))
+          .filter(el => el === true)
+          .length > 0
+
+        return element != null && hasAuthorizedExtension(element)
       })
       .map(element => {
-        const [scriptName] = element.split('.')
+        const [scriptPath] = element.split('.')
+        const [scriptName] = scriptPath.split('/')
         const scriptSlug = scriptName
           .toLowerCase()
           .replace(/ /g, '-')
@@ -32,7 +78,7 @@ export class FileService {
       })
   }
 
-  get modules() {
+  getModules() {
     const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'files'))
 
     return folderContent
@@ -76,16 +122,5 @@ export class FileService {
 
         return element
       })
-  }
-
-  constructor(configService, messageService) {
-    this.configService = configService
-    this.messageService = messageService
-  }
-
-  scriptByName(scriptName) {
-    return this.scripts
-      .filter(({ script: name }) => name === scriptName)
-      .shift()
   }
 }
