@@ -41,6 +41,7 @@ export class ConfigService {
     this.configFolderPath = `${configPath}`
 
     this._verifyStructure()
+    this._loadAlterations()
   }
 
   getValueForKey(key) {
@@ -115,6 +116,14 @@ export class ConfigService {
   }
 
   _getAlterations(moduleName) {
+    if (moduleName == null) {
+      return
+    }
+
+    return this.alterations.filter(alteration => alteration.modules.includes(moduleName))
+  }
+
+  _getAlterationsFromFS(moduleName) {
     if (!this._hasRCFile()) {
       throw new ConfigurationFileNotExist()
     }
@@ -130,5 +139,34 @@ export class ConfigService {
     }
 
     return JSON.parse(dataText)
+  }
+
+  async _loadAlterations() {
+    if (!this._hasRCFile()) {
+      throw new ConfigurationFileNotExist()
+    }
+
+    const alterationFiles = await FsUtils.readdir(`${this.configFolderPath}/alterations/`)
+    let alterations = []
+
+    for (const file of alterationFiles) {
+      const moduleName = file.replace('.json', '')
+      const alts = this._getAlterationsFromFS(moduleName)
+
+      for (const alt of alts) {
+        const alteration = alterations.find(item => item.path === alt.path && item.type === alt.type) || alt
+        const others = alterations.filter(item => item.path !== alt.path || item.type !== alt.type)
+
+        if (!Array.isArray(alteration.modules)) {
+          alteration.modules = [moduleName]
+        } else {
+          alteration.modules.push(moduleName)
+        }
+
+        alterations = [...others, alteration]
+      }
+    }
+
+    this.alterations = alterations
   }
 }

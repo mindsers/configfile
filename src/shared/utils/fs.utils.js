@@ -17,6 +17,10 @@ export class FsUtils {
     return util.promisify(fs.readFile)
   }
 
+  static get readdir() {
+    return util.promisify(fs.readdir)
+  }
+
   static get copyFile() {
     return util.promisify(fs.copyFile)
   }
