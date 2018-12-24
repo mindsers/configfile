@@ -10,7 +10,8 @@ const {
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
   getPackageData,
-  MessageService
+  MessageService,
+  AlterationService
 } = require('../src')
 
 ;(() => {
@@ -25,7 +26,8 @@ const {
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
   cli.provide(FileService, [ConfigService, MessageService])
-  cli.provide(DeployService, [MessageService])
+  cli.provide(DeployService, [MessageService, AlterationService])
+  cli.provide(AlterationService, [ConfigService])
   cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()
