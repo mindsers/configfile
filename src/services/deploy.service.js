@@ -4,8 +4,9 @@ import { FsUtils } from '../shared/utils'
 import { TargetFileAlreadyExist } from '../shared/errors'
 
 export class DeployService {
-  constructor(messageService) {
+  constructor(messageService, alterationService) {
     this.messageService = messageService
+    this.alterationService = alterationService
   }
 
   async deployLocalFile({ source, target, global: isGlobalFile }, force = false) {
@@ -44,7 +45,7 @@ export class DeployService {
     }
   }
 
-  async deployGlobalFile({ source, target, global: isGlobalFile }) {
+  async deployGlobalFile({ source, target, global: isGlobalFile }, moduleName) {
     if (!isGlobalFile) {
       throw new TypeError('Unable to deploy local file as a global one.')
     }
@@ -52,6 +53,8 @@ export class DeployService {
     const dirname = path.dirname(target)
     if (!FsUtils.fileExist(dirname)) {
       await FsUtils.mkdirp(dirname)
+
+      this.alterationService.createAlteration(moduleName, { type: 'folder-creation', originPath: dirname })
     }
 
     try {
@@ -66,6 +69,7 @@ export class DeployService {
 
       if (targetStat.isFile() || targetStat.isDirectory()) {
         await FsUtils.rename(target, `${target}.old`)
+        this.alterationService.createAlteration(moduleName, { type: 'deletion', originPath: target, recoveryName: `${target}.old` })
       }
     } catch (error) {
       if (error.code !== 'ENOENT') { // No file exist at file.target
