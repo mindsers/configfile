@@ -33,4 +33,4 @@ No one is in the **Sponsors** section for now. Be the first! Read the **How can 
 
 The best supporters are listed below:
 
-- Steve Andriani ([LinkedIn](https://www.linkedin.com/in/steve-andriani-648661136/?originalSubdomain=fr))
+- Aurore Jacquemont ([Patreon](https://www.patreon.com/user/creators?u=15255739))
