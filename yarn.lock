@@ -417,7 +417,7 @@
   resolved "https://registry.yarnpkg.com/@sinonjs/text-encoding/-/text-encoding-0.7.1.tgz#8da5c6530915653f3a1f38fd5f101d8c3f8079c5"
   integrity sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
 
-"@types/node@^11.13.0":
+"@types/node@11.13.0":
   version "11.13.0"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-11.13.0.tgz#b0df8d6ef9b5001b2be3a94d909ce3c29a80f9e1"
   integrity sha512-rx29MMkRdVmzunmiA4lzBYJNnXsW/PhG4kMBy2ATsYaDjGGR75dCFEVVROKpNwlVdcUX3xxlghKQOeDPBJobng==
@@ -598,7 +598,7 @@ atob@^2.1.1:
   resolved "https://registry.yarnpkg.com/atob/-/atob-2.1.2.tgz#6d9517eb9e030d2436666651e86bd9f6f13533c9"
   integrity sha512-Wm6ukoaOGJi/73p/cl2GvLjTI5JM1k/O14isD73YML8StrH/7/lRFgmg8nICZgD3bZZvjwCGxtMOD3wWNAu8cg==
 
-ava@^1.4.1:
+ava@1.4.1:
   version "1.4.1"
   resolved "https://registry.yarnpkg.com/ava/-/ava-1.4.1.tgz#4a59289e0c9728e492ec3a5be21d1072636be172"
   integrity sha512-wKpgOPTL7hJSBWpfbU4SA8rlsTZrph9g9g7qYDV7M6uK1rKeW8oCUJWRwCd8B24S4N0Y5myf6cTEnA66WIk0sA==
@@ -1360,7 +1360,7 @@ escape-string-regexp@^1.0.4, escape-string-regexp@^1.0.5:
   resolved "https://registry.yarnpkg.com/escape-string-regexp/-/escape-string-regexp-1.0.5.tgz#1b61c0562190a8dff6ae3bb2cf0200ca130b86d4"
   integrity sha1-G2HAViGQqN/2rjuyzwIAyhMLhtQ=
 
-eslint-config-standard@^12.0.0:
+eslint-config-standard@12.0.0:
   version "12.0.0"
   resolved "https://registry.yarnpkg.com/eslint-config-standard/-/eslint-config-standard-12.0.0.tgz#638b4c65db0bd5a41319f96bba1f15ddad2107d9"
   integrity sha512-COUz8FnXhqFitYj4DTqHzidjIL/t4mumGZto5c7DrBpvWoie+Sn3P4sLEzUGeYhRElWuFEf8K1S1EfvD1vixCQ==
@@ -1389,7 +1389,7 @@ eslint-plugin-es@^1.3.1:
     eslint-utils "^1.3.0"
     regexpp "^2.0.0"
 
-eslint-plugin-import@^2.16.0:
+eslint-plugin-import@2.16.0:
   version "2.16.0"
   resolved "https://registry.yarnpkg.com/eslint-plugin-import/-/eslint-plugin-import-2.16.0.tgz#97ac3e75d0791c4fac0e15ef388510217be7f66f"
   integrity sha512-z6oqWlf1x5GkHIFgrSvtmudnqM6Q60KM4KvpWi5ubonMjycLjndvd5+8VAZIsTlHC03djdgJuyKG6XO577px6A==
@@ -1405,7 +1405,7 @@ eslint-plugin-import@^2.16.0:
     read-pkg-up "^2.0.0"
     resolve "^1.9.0"
 
-eslint-plugin-node@^8.0.1:
+eslint-plugin-node@8.0.1:
   version "8.0.1"
   resolved "https://registry.yarnpkg.com/eslint-plugin-node/-/eslint-plugin-node-8.0.1.tgz#55ae3560022863d141fa7a11799532340a685964"
   integrity sha512-ZjOjbjEi6jd82rIpFSgagv4CHWzG9xsQAVp1ZPlhRnnYxcTgENUVBvhYmkQ7GvT1QFijUSo69RaiOJKhMu6i8w==
@@ -1417,12 +1417,12 @@ eslint-plugin-node@^8.0.1:
     resolve "^1.8.1"
     semver "^5.5.0"
 
-eslint-plugin-promise@^4.1.1:
+eslint-plugin-promise@4.1.1:
   version "4.1.1"
   resolved "https://registry.yarnpkg.com/eslint-plugin-promise/-/eslint-plugin-promise-4.1.1.tgz#1e08cb68b5b2cd8839f8d5864c796f56d82746db"
   integrity sha512-faAHw7uzlNPy7b45J1guyjazw28M+7gJokKUjC5JSFoYfUEyy6Gw/i7YQvmv2Yk00sUjWcmzXQLpU1Ki/C2IZQ==
 
-eslint-plugin-standard@^4.0.0:
+eslint-plugin-standard@4.0.0:
   version "4.0.0"
   resolved "https://registry.yarnpkg.com/eslint-plugin-standard/-/eslint-plugin-standard-4.0.0.tgz#f845b45109c99cd90e77796940a344546c8f6b5c"
   integrity sha512-OwxJkR6TQiYMmt1EsNRMe5qG3GsbjlcOhbGUBY4LtavF9DsLaTcoR+j2Tdjqi23oUwKNUqX7qcn5fPStafMdlA==
@@ -1445,7 +1445,7 @@ eslint-visitor-keys@^1.0.0:
   resolved "https://registry.yarnpkg.com/eslint-visitor-keys/-/eslint-visitor-keys-1.0.0.tgz#3f3180fb2e291017716acb4c9d6d5b5c34a6a81d"
   integrity sha512-qzm/XxIbxm/FHyH341ZrbnMUpe+5Bocte9xkmFMzPMjRaZMcXww+MpBptFvtU+79L362nqiLhekCxCxDPaUMBQ==
 
-eslint@^5.16.0:
+eslint@5.16.0:
   version "5.16.0"
   resolved "https://registry.yarnpkg.com/eslint/-/eslint-5.16.0.tgz#a1e3ac1aae4a3fbd8296fcf8f7ab7314cbb6abea"
   integrity sha512-S3Rz11i7c8AA5JPv7xAH+dOyq/Cu/VXHiHXBPOU1k/JAM5dXqQPt3qcrhpHSorXmrpu2g0gkIBVXAqCpzfoZIg==
@@ -2979,7 +2979,7 @@ number-is-nan@^1.0.0:
   resolved "https://registry.yarnpkg.com/number-is-nan/-/number-is-nan-1.0.1.tgz#097b602b53422a522c1afb8790318336941a011d"
   integrity sha1-CXtgK1NCKlIsGvuHkDGDNpQaAR0=
 
-nyc@^13.3.0:
+nyc@13.3.0:
   version "13.3.0"
   resolved "https://registry.yarnpkg.com/nyc/-/nyc-13.3.0.tgz#da4dbe91a9c8b9ead3f4f3344c76f353e3c78c75"
   integrity sha512-P+FwIuro2aFG6B0Esd9ZDWUd51uZrAEoGutqZxzrVmYl3qSfkLgcQpBPBjtDFsUQLFY1dvTQJPOyeqr8S9GF8w==
@@ -3736,7 +3736,7 @@ signal-exit@^3.0.0, signal-exit@^3.0.2:
   resolved "https://registry.yarnpkg.com/signal-exit/-/signal-exit-3.0.2.tgz#b5fdc08f1287ea1178628e415e25132b73646c6d"
   integrity sha1-tf3AjxKH6hF4Yo5BXiUTK3NkbG0=
 
-sinon@^7.3.1:
+sinon@7.3.1:
   version "7.3.1"
   resolved "https://registry.yarnpkg.com/sinon/-/sinon-7.3.1.tgz#e8276522104e6c08d1cb52a907270b0e316655c4"
   integrity sha512-eQKMaeWovtOtYe2xThEvaHmmxf870Di+bim10c3ZPrL5bZhLGtu8cz+rOBTFz0CwBV4Q/7dYwZiqZbGVLZ+vjQ==
