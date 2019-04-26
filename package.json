@@ -24,7 +24,7 @@
     "esm": "3.2.22",
     "gift": "0.10.2",
     "inquirer": "6.2.2",
-    "yabf": "2.0.2"
+    "yabf": "2.1.0"
   },
   "devDependencies": {
     "@types/node": "11.13.8",
