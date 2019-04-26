@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+const { LoggerService } = require('yabf')
 const {
   TermApplication,
   Command,
@@ -8,7 +8,6 @@ const {
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
   getPackageData,
-  LoggerService,
   MessageService
 } = require('../src');
 
