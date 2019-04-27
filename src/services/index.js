@@ -1,4 +1,4 @@
-export * from './config.service'
+export * from './settings.service'
 export * from './deploy.service'
 export * from './exec.service'
 export * from './file.service'

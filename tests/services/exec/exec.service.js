@@ -9,7 +9,7 @@ import { ScriptNotExist } from '../../../src/services/exec'
 const tmpData = path.join(__dirname, './env-file')
 
 let execService
-let configService
+let settingsService
 
 beforeEach('init temp files for tests', t => {
   fs.mkdirSync(tmpData)
@@ -29,11 +29,11 @@ beforeEach('init temp files for tests', t => {
 })
 
 beforeEach('init service', t => {
-  configService = {
+  settingsService = {
     folderPath: tmpData,
     scriptExtension: ['.sh']
   }
-  execService = new ExecService(configService)
+  execService = new ExecService(settingsService)
 })
 
 afterEach.always('clean temp files', t => {

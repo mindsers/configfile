@@ -27,10 +27,10 @@ export class InitCommand extends Command {
     ]
   }
 
-  constructor(configService, loggerService, messageService) {
+  constructor(settingsService, loggerService, messageService) {
     super()
 
-    this.configService = configService
+    this.settingsService = settingsService
     this.loggerService = loggerService
     this.messageService = messageService
 
@@ -82,7 +82,7 @@ export class InitCommand extends Command {
         name: 'overwrite_file',
         message: 'A configuration file already exist. Do you want to continue ?',
         type: 'confirm',
-        when: () => this.configService.configFileExist() && !userForceOverwrite
+        when: () => this.settingsService.configFileExist() && !userForceOverwrite
       },
       {
         name: 'repo_url',
@@ -90,11 +90,11 @@ export class InitCommand extends Command {
         type: 'input',
         validate: url => GitUtils.isGitUrl(url),
         default: () => {
-          if (this.configService.configFileExist()) {
-            return this.configService.repoUrl
+          if (this.settingsService.configFileExist()) {
+            return this.settingsService.repoUrl
           }
         },
-        when: data => !this.configService.configFileExist() || data.overwrite_file || userForceOverwrite
+        when: data => !this.settingsService.configFileExist() || data.overwrite_file || userForceOverwrite
       },
       {
         name: 'folder_path',
@@ -102,11 +102,11 @@ export class InitCommand extends Command {
         type: 'input',
         validate: path => FsUtils.isFilePath(path),
         default: () => {
-          if (this.configService.configFileExist()) {
-            return this.configService.folderPath
+          if (this.settingsService.configFileExist()) {
+            return this.settingsService.folderPath
           }
         },
-        when: data => !this.configService.configFileExist() || data.overwrite_file || userForceOverwrite
+        when: data => !this.settingsService.configFileExist() || data.overwrite_file || userForceOverwrite
       }
     ]
 
@@ -121,14 +121,14 @@ export class InitCommand extends Command {
     folderPath = path.resolve(folderPath)
 
     this.log('Save validated user answers in config service')
-    this.configService.repoUrl = REPO_URL
-    this.configService.folderPath = folderPath
+    this.settingsService.repoUrl = REPO_URL
+    this.settingsService.folderPath = folderPath
   }
 
   _checkFileSystem() {
     this.log('Check file system - Start')
 
-    const folderPath = this.configService.folderPath
+    const folderPath = this.settingsService.folderPath
     if (!FsUtils.fileExist(folderPath)) {
       this.log(`Folder ${folderPath} doesn't exist.`)
       this.messageService.printInfo('Folder does not exist. It will be created.')
@@ -150,14 +150,14 @@ export class InitCommand extends Command {
 
   async _cloneGitRepo() {
     this.log(`Clone git repo - Start`)
-    if (this.configService.repoUrl == null) {
+    if (this.settingsService.repoUrl == null) {
       this.log(`No URL provided to allow to clone the repo`)
       this.messageService.printWarn('Unable to cloned git repository. Need repository URL.')
       return
     }
 
     try {
-      await GitUtils.clone(this.configService.repoUrl, this.configService.folderPath)
+      await GitUtils.clone(this.settingsService.repoUrl, this.settingsService.folderPath)
       this.messageService.printInfo('Git repository cloned successuly.')
     } catch (error) {
       this.log(error.message)

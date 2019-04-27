@@ -6,7 +6,7 @@ const {
   ListModulesCommand,
   DeployModuleCommand,
   DeployService,
-  ConfigService,
+  SettingsService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
   getPackageData,
@@ -24,9 +24,9 @@ const {
   cli.register(DeployModuleCommand, [FileService, DeployService, MessageService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
-  cli.provide(FileService, [ConfigService, MessageService])
+  cli.provide(FileService, [SettingsService, MessageService])
   cli.provide(DeployService, [MessageService])
-  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
+  cli.provide(SettingsService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()
 })()

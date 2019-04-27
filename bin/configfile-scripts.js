@@ -6,7 +6,7 @@ const {
   TermApplication,
   ListScriptsCommand,
   RunScriptCommand,
-  ConfigService,
+  SettingsService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
   getPackageData,
@@ -24,9 +24,9 @@ const {
   cli.register(ListScriptsCommand, [FileService, MessageService])
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
-  cli.provide(FileService, [ConfigService, MessageService])
+  cli.provide(FileService, [SettingsService, MessageService])
   cli.provide(ExecService)
-  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
+  cli.provide(SettingsService, [OPTION_PATH_FILE_TOKEN])
 
   cli.start()
 })()

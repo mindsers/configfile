@@ -8,7 +8,7 @@ import { FileService } from '../../src'
 const tmpData = path.join(__dirname, './env-file')
 
 let fileService
-let configService
+let settingsService
 
 beforeEach('init temp files for tests', t => {
   fs.mkdirSync(tmpData)
@@ -28,11 +28,11 @@ beforeEach('init temp files for tests', t => {
 })
 
 beforeEach('init service', t => {
-  configService = {
+  settingsService = {
     folderPath: tmpData,
     scriptExtension: ['.sh']
   }
-  fileService = new FileService(configService)
+  fileService = new FileService(settingsService)
 })
 
 afterEach.always('clean temp files', t => {
@@ -43,7 +43,7 @@ test('.scripts should return name and path of valid scripts', t => {
   t.deepEqual(fileService.scripts.map(el => el.script), ['test1'])
   t.is(fileService.scripts.filter(el => ('path' in el)).length, 1)
 
-  configService.scriptExtension = ['.js', '.sh', '.flg']
+  settingsService.scriptExtension = ['.js', '.sh', '.flg']
   t.deepEqual(fileService.scripts.map(el => el.script), ['tests-28', 'test1', 'test2'])
   t.is(fileService.scripts.filter(el => ('path' in el)).length, 3)
 })

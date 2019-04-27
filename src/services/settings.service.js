@@ -3,7 +3,7 @@ import fs from 'fs'
 import { ConfigurationFileNotExist } from '../shared/errors'
 import { FsUtils } from '../shared/utils'
 
-export class ConfigService {
+export class SettingsService {
   get repoUrl() {
     return this.getConfig('repo_url')
   }

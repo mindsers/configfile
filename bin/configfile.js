@@ -4,7 +4,7 @@ const {
   TermApplication,
   Command,
   InitCommand,
-  ConfigService,
+  SettingsService,
   OPTION_PATH_FILE_TOKEN,
   getOptionsFilePath,
   getPackageData,
@@ -20,9 +20,9 @@ const {
 
   cli.provide({ identity: OPTION_PATH_FILE_TOKEN, useValue: getOptionsFilePath() })
 
-  cli.provide(ConfigService, [OPTION_PATH_FILE_TOKEN])
+  cli.provide(SettingsService, [OPTION_PATH_FILE_TOKEN])
 
-  cli.register(InitCommand, [ConfigService, LoggerService, MessageService])
+  cli.register(InitCommand, [SettingsService, LoggerService, MessageService])
   cli.register(class extends Command { // modules namespace
     get commandName() {
       return 'modules'

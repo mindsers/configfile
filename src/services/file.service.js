@@ -20,8 +20,8 @@ export class FileService {
     return this._modules
   }
 
-  constructor(configService, messageService) {
-    this.configService = configService
+  constructor(settingsService, messageService) {
+    this.settingsService = settingsService
     this.messageService = messageService
 
     this._modules = []
@@ -35,12 +35,12 @@ export class FileService {
   }
 
   getScripts() {
-    const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'scripts'))
-    const authorizedExtensions = this.configService.scriptExtension
+    const folderContent = fs.readdirSync(path.join(this.settingsService.folderPath, 'scripts'))
+    const authorizedExtensions = this.settingsService.scriptExtension
 
     return folderContent
       .map(element => {
-        const elementPath = path.join(this.configService.folderPath, 'scripts', element)
+        const elementPath = path.join(this.settingsService.folderPath, 'scripts', element)
         const stats = fs.statSync(elementPath)
 
         if (!stats.isDirectory()) {
@@ -73,13 +73,13 @@ export class FileService {
         return {
           script: scriptSlug,
           file: element,
-          path: path.join(this.configService.folderPath, 'scripts', element)
+          path: path.join(this.settingsService.folderPath, 'scripts', element)
         }
       })
   }
 
   getModules() {
-    const folderContent = fs.readdirSync(path.join(this.configService.folderPath, 'files'))
+    const folderContent = fs.readdirSync(path.join(this.settingsService.folderPath, 'files'))
 
     return folderContent
       .map(element => {
@@ -90,8 +90,8 @@ export class FileService {
 
         return {
           module: moduleSlug,
-          path: path.join(this.configService.folderPath, 'files', element),
-          settingsPath: path.join(this.configService.folderPath, 'files', element, 'settings.json')
+          path: path.join(this.settingsService.folderPath, 'files', element),
+          settingsPath: path.join(this.settingsService.folderPath, 'files', element, 'settings.json')
         }
       })
       .filter(({ path }) => fs.statSync(path).isDirectory())
