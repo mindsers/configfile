@@ -21,7 +21,7 @@
   "dependencies": {
     "chalk": "2.4.2",
     "commander": "2.20.0",
-    "esm": "3.2.24",
+    "esm": "3.2.25",
     "gift": "0.10.2",
     "inquirer": "6.3.1",
     "yabf": "2.1.0"
