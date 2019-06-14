@@ -14,8 +14,8 @@
   },
   "scripts": {
     "test:unit:coverage": "nyc yarn test:unit",
-    "test:unit": "ava tests/**/*.js",
-    "test:lint": "eslint bin src tests",
+    "test:unit": "ava src/index.js",
+    "test:lint": "eslint bin src",
     "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
