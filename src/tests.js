@@ -1,1 +1,1 @@
-import './core/command.test.js'
+require('./core/cli/command.test.js')
