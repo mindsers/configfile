@@ -14,25 +14,24 @@
   },
   "scripts": {
     "test:unit:coverage": "nyc yarn test:unit",
-    "test:unit": "ava src/index.js",
+    "test:unit": "ava src/tests.js",
     "test:lint": "eslint bin src",
     "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
-    "chalk": "2.4.2",
-    "commander": "2.20.0",
-    "esm": "3.2.25",
-    "gift": "0.10.2",
-    "inquirer": "6.3.1",
-    "yabf": "2.1.0"
+    "import-jsx": "^2.0.0",
+    "ink": "^2.2.0",
+    "react": "^16.8.6"
   },
   "devDependencies": {
     "ava": "2.1.0",
     "eslint": "5.16.0",
     "eslint-config-standard": "12.0.0",
+    "eslint-config-standard-react": "^7.0.2",
     "eslint-plugin-import": "2.17.3",
     "eslint-plugin-node": "9.1.0",
     "eslint-plugin-promise": "4.1.1",
+    "eslint-plugin-react": "^7.13.0",
     "eslint-plugin-standard": "4.0.0",
     "nyc": "14.1.1",
     "rimraf": "2.6.3",
