@@ -1,6 +1,19 @@
 const React = require('react')
-const { Text } = require('ink')
+const propTypes = require('prop-types')
+const { Text, Box } = require('ink')
 
-module.exports = function Init() {
-  return <Text bold>init</Text>
+function Init(props) {
+  const { url } = props
+
+  return (
+    <Box marginTop={1}>
+      <Text bold>Clonning:</Text> {url}
+    </Box>
+  )
 }
+
+Init.propTypes = {
+  url: propTypes.string
+}
+
+module.exports = Init

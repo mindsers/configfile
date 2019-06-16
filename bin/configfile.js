@@ -13,11 +13,11 @@ program
   .alias('i')
   .description('activate configfiles on user session.')
   .option('-f, --force', 'force parameters file overwrite.')
-  .action((dir, cmd) => {
+  .action((url, cmd) => {
     render(
       React.createElement(
         importJsx('../src/commands/init/init.js'),
-        { dir, cmd }
+        { cmd, url }
       )
     )
   })
