@@ -1,4 +1,4 @@
-export class Command {
+class Command {
   get alias() {
     return null
   }
@@ -17,3 +17,5 @@ export class Command {
 
   // optional run() method which contains the action logic
 }
+
+module.exports = { Command }

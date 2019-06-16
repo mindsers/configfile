@@ -1,6 +1,6 @@
-import test from 'ava'
+const test = require('ava')
 
-import { Command } from './command.js'
+const { Command } = require('./command.js')
 
 test('Default command structure', t => {
   const cmd = new Command()
