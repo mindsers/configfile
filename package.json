@@ -19,6 +19,7 @@
     "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
+    "commander": "^2.20.0",
     "import-jsx": "^2.0.0",
     "ink": "^2.2.0",
     "react": "^16.8.6"
