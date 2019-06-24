@@ -27,7 +27,7 @@
     "yabf": "2.1.0"
   },
   "devDependencies": {
-    "@types/node": "11.13.14",
+    "@types/node": "11.13.15",
     "ava": "2.1.0",
     "eslint": "6.0.0",
     "eslint-config-standard": "12.0.0",
