@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "11.13.17",
-    "ava": "2.1.0",
+    "ava": "2.2.0",
     "eslint": "6.0.1",
     "eslint-config-standard": "12.0.0",
     "eslint-plugin-import": "2.18.0",
