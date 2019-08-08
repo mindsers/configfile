@@ -1,14 +1,14 @@
-[...description...]
+<!-- general description -->
 
 ### Steps to reproduce
 
 * ...
 
 ### Expected behavior
-Tell us what should happen
+<!-- Tell us what should happen -->
 
 ### Actual behavior
-Tell us what happens instead
+<!-- Tell us what happens instead -->
 
 ### System configuration
 **OS and version**:
