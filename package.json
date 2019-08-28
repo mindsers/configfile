@@ -23,7 +23,7 @@
     "commander": "3.0.0",
     "esm": "3.2.25",
     "gift": "0.10.2",
-    "inquirer": "6.5.1",
+    "inquirer": "7.0.0",
     "yabf": "2.1.0"
   },
   "devDependencies": {
