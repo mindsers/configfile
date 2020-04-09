@@ -5,23 +5,23 @@ import { FsUtils } from '../shared/utils'
 
 export class ConfigService {
   get repoUrl() {
-    return this.getConfig('repo_url')
+    return this.getValueForKey('repo_url')
   }
 
   set repoUrl(url) {
-    this.setConfig('repo_url', url)
+    this.setValueForKey('repo_url', url)
   }
 
   get folderPath() {
-    return this.getConfig('folder_path')
+    return this.getValueForKey('folder_path')
   }
 
   set folderPath(path) {
-    this.setConfig('folder_path', path)
+    this.setValueForKey('folder_path', path)
   }
 
   get scriptExtension() {
-    const extentions = this.getConfig('script_extensions')
+    const extentions = this.getValueForKey('script_extensions')
 
     if (extentions === null) {
       return ['.js', '.sh', '']
@@ -32,7 +32,7 @@ export class ConfigService {
 
   set scriptExtension(extentions) {
     if (Array.isArray(extentions)) {
-      this.setConfig('script_extensions', extentions)
+      this.setValueForKey('script_extensions', extentions)
     }
   }
 
@@ -40,25 +40,11 @@ export class ConfigService {
     this.configPath = `${configPath}rc`
     this.configFolderPath = `${configPath}`
 
-    if (!FsUtils.fileExist(this.configFolderPath)) {
-      fs.mkdirSync(this.configFolderPath)
-    }
+    this._verifyStructure()
   }
 
-  configFileExist() {
-    return FsUtils.fileExist(this.configPath)
-  }
-
-  configData() {
-    if (!this.configFileExist()) {
-      throw new ConfigurationFileNotExist()
-    }
-
-    return JSON.parse(fs.readFileSync(this.configPath))
-  }
-
-  getConfig(key) {
-    const configData = this.configData()
+  getValueForKey(key) {
+    const configData = this._getConfiguration()
 
     if (key in configData) {
       return configData[key]
@@ -67,11 +53,11 @@ export class ConfigService {
     return null
   }
 
-  setConfig(key, value) {
+  setValueForKey(key, value) {
     let configData = null
 
     try {
-      configData = this.configData()
+      configData = this._getConfiguration()
     } catch (e) {
       if (!(e instanceof ConfigurationFileNotExist)) {
         throw e
@@ -83,5 +69,32 @@ export class ConfigService {
     configData[key] = value
 
     fs.writeFileSync(this.configPath, JSON.stringify(configData, null, 4))
+  }
+
+  _verifyStructure() {
+    const folders = [
+      this.configFolderPath,
+      `${this.configFolderPath}/logs`,
+      `${this.configFolderPath}/recovery`,
+      `${this.configFolderPath}/alterations`
+    ]
+
+    for (const path of folders) {
+      if (!FsUtils.fileExist(path)) {
+        fs.mkdirSync(path)
+      }
+    }
+  }
+
+  _hasRCFile() {
+    return FsUtils.fileExist(this.configPath)
+  }
+
+  _getConfiguration() {
+    if (!this._hasRCFile()) {
+      throw new ConfigurationFileNotExist()
+    }
+
+    return JSON.parse(fs.readFileSync(this.configPath))
   }
 }

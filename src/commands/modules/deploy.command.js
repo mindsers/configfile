@@ -56,45 +56,40 @@ export class DeployModuleCommand extends Command {
   }
 
   async _deployModules(modulesToDeploy, localDeployment) {
-    const files = this.fileService.modules
-      .filter(element => modulesToDeploy.includes(element.module))
-      .reduce((files, element) => {
-        for (const file of element.files) {
-          files.push(file)
-        }
-        return files
-      }, [])
-      .filter(element => element.global === !localDeployment)
+    for (const mod of this.fileService.modules) {
+      if (!modulesToDeploy.includes(mod.module)) {
+        continue
+      }
 
-    const failedFiles = []
-    for (const file of files) {
-      try {
-        if (file.global) {
-          await this.deployService.deployGlobalFile(file)
+      for (const file of mod.files) {
+        if (file.global !== !localDeployment) {
           continue
         }
 
-        await this.deployService.deployLocalFile(file)
-      } catch (error) {
-        if (error instanceof TargetFileAlreadyExist) {
-          failedFiles.push(file)
-          return
+        try {
+          if (file.global) {
+            await this.deployService.deployGlobalFile(file, mod.module)
+            continue
+          }
+
+          await this.deployService.deployLocalFile(file)
+        } catch (error) {
+          if (error instanceof TargetFileAlreadyExist) {
+            const { overwrite_file: overwriteFile } = await inquirer.prompt([{
+              name: 'overwrite_file',
+              message: `File ${file.target} already exist. Do you want to overwrite it ?`,
+              type: 'confirm',
+              default: false
+            }])
+
+            if (overwriteFile) {
+              await this.fileService.deployLocalFile(file, true)
+            }
+            return
+          }
+
+          throw error
         }
-
-        throw error
-      }
-    }
-
-    for (const file of failedFiles) {
-      const { overwrite_file: overwriteFile } = await inquirer.prompt([{
-        name: 'overwrite_file',
-        message: `File ${file.target} already exist. Do you want to overwrite it ?`,
-        type: 'confirm',
-        default: false
-      }])
-
-      if (overwriteFile) {
-        await this.fileService.deployLocalFile(file, true)
       }
     }
   }
