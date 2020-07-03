@@ -19,7 +19,7 @@
     "test": "yarn test:lint && yarn test:unit:coverage"
   },
   "dependencies": {
-    "chalk": "4.0.0",
+    "chalk": "4.1.0",
     "commander": "5.1.0",
     "esm": "3.2.25",
     "gift": "0.10.2",
