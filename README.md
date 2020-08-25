@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/Mindsers/configfile/blob/master/LICENSE)
 [![Patreon](https://img.shields.io/badge/support-patreon-F96854.svg?logo=patreon&style=flat-square)](https://www.patreon.com/bePatron?u=9715649)
-[![Discourse](https://img.shields.io/discourse/https/community.nathanaelcherrier.com/posts.svg?color=00aeef&logo=discourse&logoColor=00aeef&style=flat-square)](https://community.nathanaelcherrier.com)
+[![Discourse](https://img.shields.io/discourse/https/community.nathanaelcherrier.com/posts.svg?color=00aeef&logo=discourse&logoColor=00aeef&style=flat-square)](https://community.nathanaelcherrier.com/c/open-source/configfile/8)
 
 *configfile* is a command line tool that help user to manage their own configuration files.
 
