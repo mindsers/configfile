@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "chalk": "4.1.0",
-    "commander": "6.1.0",
+    "commander": "6.2.0",
     "esm": "3.2.25",
     "gift": "0.10.2",
     "inquirer": "7.3.3",
