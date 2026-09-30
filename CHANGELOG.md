@@ -5,76 +5,39 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Compared to 0.3.1.
-
 ### Added
 - Add new contributor to SPONSORS.md
-- Non-interactive use, for scripts and provisioning:
-  - `init --repo <url> --folder <path>` (plus `--force` when a configuration already exists);
-  - `modules deploy --all` deploys every module and `--force` replaces existing local files
-    without asking;
-  - when stdin is not a terminal, a command that needs an answer fails and names the option to use.
-- `modules undeploy` removes deployed files and restores their `.old` backups; anything configfile
-  did not deploy, and local copies modified since, are kept. It takes `--local`, `--all` and
-  `--dry-run` like `modules deploy`.
-- `modules deploy --dry-run` / `modules undeploy --dry-run` show what would be done.
-- `modules status` shows whether each file is deployed.
-- `configfile update` pulls the dotfiles repository.
-- `init` reuses a folder that already contains a git repository instead of failing.
-- `scripts run <name> -- [args...]` passes arguments to the script.
-- `"deploy": "global" | "local" | "none"` in `settings.json` (`"global": true | false` still works).
-  `"none"` keeps a file in the repository without deploying it.
-- `modules deploy` warns about files that define no deployment strategy (they are still not deployed).
-- Local deployment (`modules deploy --local`) can copy folders.
-- Scripts can be written in any language: non-executable scripts are run with the interpreter of
-  their shebang line.
-- Warnings for invalid `settings.json` entries, duplicate module or script names and broken
-  symbolic links, with the reason.
+- The `modules undeploy` command to remove deployed files and restore their saved versions.
+- The `modules status` command to see which files are deployed.
+- The `update` command to pull the latest version of the dotfiles repository.
+- A preview of the changes with `--dry-run` on `modules deploy` and `modules undeploy`.
+- Options to use configfile in scripts without questions: `--repo`, `--folder` and `--force`
+  on `init`, `--all` and `--force` on `modules deploy`.
+- The `deploy` setting in `settings.json` to choose how a file is deployed: `"global"`, `"local"`
+  or `"none"` to keep a file in the repository without deploying it.
+- Arguments can be passed to scripts: `configfile scripts run <name> -- <arguments>`.
 - The `settings.json` format is documented in the README.
 
 ### Changed
 - **Breaking:** Node.js 22.13 or later is required, and only macOS and Linux are supported.
-- **Breaking:** a relative `target_path` of a global file is relative to the home folder instead of
-  the current folder.
-- **Deprecated:** `"global": true | false` in `settings.json` prints a warning; use
-  `"deploy": "global" | "local"`. It will be removed in 2.0.
-- Rewritten in TypeScript, as a native ES module, with no runtime dependency other than
-  commander and @inquirer/prompts.
-- Development uses pnpm, Biome (lint and format) and Vitest; CI runs on GitHub Actions
-  (Ubuntu and macOS, Node.js 22, 24 and 26).
-- Commands exit with a non-zero code on failure; `scripts run` exits with the script's code
-  (128 + signal number when the script is killed). Errors and warnings are written to stderr,
-  and so are the messages of `scripts run`, so that stdout only contains the script's output.
-- `configfile modules` and `configfile scripts` list modules and scripts.
-- A local copy identical to the source is reported as up to date instead of asking to replace it.
-- Scripts are no longer `chmod`-ed before running, so the dotfiles repository is not modified.
-- When a local file is replaced, the existing one is moved to `<target>.old` (or `.old.1`, …)
-  instead of being overwritten; a folder is replaced instead of merged.
-- When a global file's target is a symbolic link to something else, it is moved to `.old` and
-  the file is deployed, instead of printing a warning.
-- A module whose `settings.json` cannot be read is listed as ignored, and deploying it fails.
-- A `target_path` that would replace the home folder, the current folder or one of their parents
-  (such as `""`, `"~"` or `"."`) is refused.
-- `folder_path` in `~/.configfilerc` may start with `~`. `script_extensions` may omit the dot
-  (`"py"`), and an invalid value is reported instead of being ignored.
-- The repository URL and folder path given to `init` are no longer checked with a regex
-  (paths with digits and URLs without `.git` are accepted); git reports invalid URLs.
-  ([#48](https://github.com/Mindsers/configfile/issues/48))
-- The `~/.configfile` folder is no longer created.
+- **Breaking:** a relative `target_path` of a global file now starts from the home folder instead
+  of the current folder.
+- The `global` setting in `settings.json` is deprecated. Use `deploy` instead; `global` will be
+  removed in 2.0.
+- Configfile is rewritten in TypeScript ([!281](https://github.com/mindsers/configfile/pull/281)).
+- Commands exit with an error code when something fails, so configfile can be used in scripts.
+- Files replaced by `modules deploy --local` are saved as `.old` files, like global files.
+- Configfile no longer makes scripts executable. Scripts in any language run with the interpreter
+  of their first line (`#!`).
+- `init` reuses a folder that already contains the repository.
 
 ### Fixed
-- Local deployment (`--local`) stopped at the first existing file, never asked to overwrite it,
-  and reported success.
-- Unknown modules given to `modules deploy` were silently ignored.
-- A failed `init` (non-empty folder, failed clone) still saved the configuration.
-- Backing up an existing file overwrote an earlier `.old` backup.
-- Running an unknown script, or `scripts run` / `modules deploy <names>` before `init`, crashed
-  with a stack trace.
-- Files with a non-allowed extension and hidden files (such as `.DS_Store`) were listed as scripts.
-- Pressing Ctrl+C during `scripts run` could leave the script running in the background.
-  SIGTERM is now forwarded to the script as well.
-- Executable `.js` and `.sh` scripts without shebang line failed to run on macOS.
+- Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
 - Script standard outputs are correctly displayed ([!57](https://github.com/Mindsers/configfile/pull/57), [#13](https://github.com/Mindsers/configfile/issues/13))
+- A failed `init` saved the configuration anyway.
+- Deploying a module could overwrite a previously saved `.old` file.
+- Hidden files such as `.DS_Store` were listed as scripts.
+- Stopping `scripts run` with Ctrl+C could leave the script running.
 
 ## [0.3.1] - 2018-08-05
 ### Fixed
