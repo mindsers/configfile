@@ -15,7 +15,8 @@ Compared to 0.3.1.
     without asking;
   - when stdin is not a terminal, a command that needs an answer fails and names the option to use.
 - `modules undeploy` removes deployed files and restores their `.old` backups; anything configfile
-  did not deploy, and local copies modified since, are kept.
+  did not deploy, and local copies modified since, are kept. It takes `--local`, `--all` and
+  `--dry-run` like `modules deploy`.
 - `modules deploy --dry-run` / `modules undeploy --dry-run` show what would be done.
 - `modules status` shows whether each file is deployed.
 - `configfile update` pulls the dotfiles repository.
@@ -39,6 +40,8 @@ Compared to 0.3.1.
   `"deploy": "global" | "local"`. It will be removed in 2.0.
 - Rewritten in TypeScript, as a native ES module, with no runtime dependency other than
   commander and @inquirer/prompts.
+- Development uses pnpm, Biome (lint and format) and Vitest; CI runs on GitHub Actions
+  (Ubuntu and macOS, Node.js 22, 24 and 26).
 - Commands exit with a non-zero code on failure; `scripts run` exits with the script's code
   (128 + signal number when the script is killed). Errors and warnings are written to stderr,
   and so are the messages of `scripts run`, so that stdout only contains the script's output.
@@ -69,6 +72,8 @@ Compared to 0.3.1.
   with a stack trace.
 - Files with a non-allowed extension and hidden files (such as `.DS_Store`) were listed as scripts.
 - Pressing Ctrl+C during `scripts run` could leave the script running in the background.
+  SIGTERM is now forwarded to the script as well.
+- Executable `.js` and `.sh` scripts without shebang line failed to run on macOS.
 - Script standard outputs are correctly displayed ([!57](https://github.com/Mindsers/configfile/pull/57), [#13](https://github.com/Mindsers/configfile/issues/13))
 
 ## [0.3.1] - 2018-08-05
