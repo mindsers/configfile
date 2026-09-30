@@ -1,7 +1,6 @@
 {
-  "extends": [
-    "config:js-app"
-  ],
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
   "assignees": ["mindsers"],
   "labels": ["state: need review", "type: enhancement"]
 }

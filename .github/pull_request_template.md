@@ -1,3 +1,6 @@
+<!-- The pull request title follows Conventional Commits, like commit messages:
+     `feat(modules): add status command`, `fix: …`, `docs: …`. See CONTRIBUTING.md. -->
+
 ### Summary
 
 Provide a general description of the code changes in your pull

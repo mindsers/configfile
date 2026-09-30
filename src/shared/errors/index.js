@@ -1,6 +1,0 @@
-export * from './file-not-directory.error'
-export * from './folder-not-empty.error'
-export * from './bad-script-permission.error'
-export * from './config-file-not-exist.error'
-export * from './script-not-exist.error'
-export * from './target-file-already-exist.error'

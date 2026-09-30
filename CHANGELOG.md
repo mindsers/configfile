@@ -6,15 +6,43 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Added
-- Add new contrubitor to SPONSORS.md
-- Configfile will emit log making debug easier ([!57](https://github.com/Mindsers/configfile/pull/57), [!80](https://github.com/mindsers/configfile/pull/80))
+- Add new contributor to SPONSORS.md
+- The `modules undeploy` command to remove deployed files and restore the saved versions
+  configfile made (recorded in `~/.configfile/`).
+- The `modules status` command to see which files are deployed.
+- The `update` command to pull the latest version of the dotfiles repository.
+- A preview of the changes with `--dry-run` on `modules deploy` and `modules undeploy`.
+- Options to use configfile in scripts without questions: `--repo`, `--folder` and `--force`
+  on `init`, `--all` and `--force` on `modules deploy`, `--all` on `modules undeploy`.
+- The `deploy` setting in `settings.json` to choose how a file is deployed: `"global"`, `"local"`
+  or `"none"` to keep a file in the repository without deploying it.
+- Arguments can be passed to scripts: `configfile scripts run <name> -- <arguments>`.
+- A script can be a folder containing an `index` file.
+- The `settings.json` format is documented in the README.
 
 ### Changed
-- Use [Yabf](https://github.com/Mindsers/yabf) as base to build the next configfile.
+- **Breaking:** Node.js 22.13 or later is required, and only macOS and Linux are supported.
+- **Breaking:** a relative `target_path` of a global file now starts from the home folder instead
+  of the current folder.
+- The `global` setting in `settings.json` is deprecated. Use `deploy` instead; `global` will be
+  removed in 2.0.
+- Configfile is rewritten in TypeScript ([!281](https://github.com/mindsers/configfile/pull/281)).
+- Commands exit with an error code when something fails, so configfile can be used in scripts.
+- Files replaced by `modules deploy --local` are saved as `.old` files, like global files.
+- Configfile no longer makes scripts executable: scripts that are not executable run with the
+  interpreter of their first line (`#!`), or with `node` or `sh` for `.js` and `.sh` files.
+- Deploying refuses targets inside the dotfiles repository, or containing it.
+- `init` reuses a folder that already contains the repository.
 
 ### Fixed
 - Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
 - Script standard outputs are correctly displayed ([!57](https://github.com/Mindsers/configfile/pull/57), [#13](https://github.com/Mindsers/configfile/issues/13))
+- A failed `init` saved the configuration anyway.
+- Deploying a module could overwrite a previously saved `.old` file.
+- Hidden files such as `.DS_Store` were listed as scripts.
+- Stopping configfile while a script runs (for example with `kill`) could leave the script
+  running.
+- Scripts could not read input from the terminal.
 
 ## [0.3.1] - 2018-08-05
 ### Fixed
