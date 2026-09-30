@@ -558,6 +558,23 @@ describe('modules status, dry run and undeploy', () => {
     expect(await readFile(path.join(sandbox.home, '.ssh/id_rsa'), 'utf8')).toBe('PRIVATE KEY')
   })
 
+  it('shows control characters from settings.json as escapes', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write(
+      'home/dotfiles/files/a/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'x\u001b]0;HIJACK\u0007\rfake', target_path: 't' }],
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'status', 'a'])
+
+    const controls = [...result.stdout].filter(c => c !== '\n' && c.charCodeAt(0) < 0x20)
+    expect(controls).toEqual([])
+    expect(result.stdout).toContain('x\\x1b]0;HIJACK\\x07\\rfake (no deployment strategy)')
+  })
+
   it('warns about the deprecated "global" key', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
@@ -951,6 +968,21 @@ describe('init', () => {
 
     expect(result.code).not.toBe(0)
     expect(existsSync(pwned)).toBe(false)
+  })
+
+  it('hides credentials of the repository URL and keeps the configuration private', async () => {
+    const sandbox = await createSandbox()
+    await createRemote(sandbox)
+    // An existing clone is reused, so no network access is needed.
+    git(sandbox.root, 'clone', '--quiet', path.join(sandbox.root, 'remote'), sandbox.repo)
+    const url = 'https://user:ghp_SECRET@github.com/acme/dotfiles.git'
+
+    const result = await runCli(sandbox, ['init', '--repo', url, '--folder', '~/dotfiles'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout + result.stderr).not.toContain('ghp_SECRET')
+    expect(result.stderr).toContain('The repository URL contains credentials')
+    expect((await stat(path.join(sandbox.home, '.configfilerc'))).mode & 0o777).toBe(0o600)
   })
 
   it('asks before overwriting an existing configuration', async () => {

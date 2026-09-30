@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 ### Added
 - Add new contributor to SPONSORS.md
-- The `modules undeploy` command to remove deployed files and restore the saved versions
-  configfile made (recorded in `~/.configfile/`).
+- The `modules undeploy` command to remove the files configfile deployed and restore the saved
+  versions it made (recorded in `~/.configfile/`).
 - The `modules status` command to see which files are deployed.
 - The `update` command to pull the latest version of the dotfiles repository.
 - A preview of the changes with `--dry-run` on `modules deploy` and `modules undeploy`.
@@ -31,7 +31,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Files replaced by `modules deploy --local` are saved as `.old` files, like global files.
 - Configfile no longer makes scripts executable: scripts that are not executable run with the
   interpreter of their first line (`#!`), or with `node` or `sh` for `.js` and `.sh` files.
-- Deploying refuses targets inside the dotfiles repository, or containing it.
+- Deploying refuses targets inside the dotfiles repository or the module, targets containing
+  them, and configfile's own files, whatever the path used to reach them.
+- A `source_path` must stay inside its module folder.
+- Local copies follow symbolic links: a copy never points into the repository.
+- `settings.json` files written for configfile 0.3.1 (a plain list) are deprecated; put the list
+  in a `"files"` key.
+- `~/.configfilerc` is only readable by its owner.
 - `init` reuses a folder that already contains the repository.
 
 ### Fixed
@@ -43,6 +49,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Stopping configfile while a script runs (for example with `kill`) could leave the script
   running.
 - Scripts could not read input from the terminal.
+- Two configfile processes running at the same time could lose files.
 
 ## [0.3.1] - 2018-08-05
 ### Fixed

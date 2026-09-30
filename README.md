@@ -56,9 +56,9 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 
 | Key | Description |
 | --- | --- |
-| `source_path` | Path of the file (or folder), relative to the module folder. |
-| `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. A target that would replace your home folder, the current folder, the dotfiles repository or one of their parents, or that is inside the repository, is refused. |
-| `deploy` | `"global"`: the file is **symlinked** by `configfile modules deploy`. `"local"`: the file is **copied** by `configfile modules deploy --local`, typically into a project folder. `"none"`: the file is **never deployed**, which keeps it in the repository for later. |
+| `source_path` | Path of the file (or folder), relative to the module folder. It must stay inside the module folder, symbolic links included. |
+| `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. Targets can be anywhere you can write, except: your home folder, the current folder, the dotfiles repository, the module folder, *configfile*'s own files (`~/.configfilerc`, `~/.configfile/`), one of their parents, or anything inside the repository. These are recognised whatever the path used to reach them (letter case, symbolic links). |
+| `deploy` | `"global"`: the file is **symlinked** by `configfile modules deploy`. `"local"`: the file is **copied** by `configfile modules deploy --local`, typically into a project folder (symbolic links in the source are followed, so the copy never points into the repository). `"none"`: the file is **never deployed**, which keeps it in the repository for later. |
 | `global` | **Deprecated**, removed in 2.0: older spelling of `deploy`. `true` is `"global"`, `false` is `"local"`. It still works in 1.x, with a warning. Use one or the other, not both. |
 
 An entry without `deploy` or `global` is not deployed, and `modules deploy` warns about it.
@@ -67,7 +67,11 @@ When a global file is deployed and something else already exists at its target (
 
 When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
 
-*configfile* records the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links (and the local copies that are still identical to the repository) and moves the most recent backup *configfile* made back in place. Other files, including `.old` files you made yourself, are left untouched.
+*configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links and the local copies *configfile* made (unless they were modified since), and moves the most recent backup it made back in place, if that backup is unchanged. Anything else, including identical files and `.old` files you made yourself, is left untouched.
+
+Only one *configfile* at a time changes files: a second one waits for the first to finish (the lock is `~/.configfile/lock`).
+
+> **Deploying a repository means trusting it**, like code you run: its files end up in your shell configuration, and its scripts run on your machine. Only deploy repositories you trust.
 
 ### Scripts
 
@@ -123,12 +127,15 @@ Scripts can be written in any language:
 ## Upgrading from 0.3
 
 - Node.js 22.13 or later is required, on macOS or Linux. Install again with `npm install --global configfile`.
-- `~/.configfilerc`, the repository layout and `settings.json` work as before. Files deployed by 0.3 are recognised as deployed.
+- `~/.configfilerc`, the repository layout and `settings.json` work as before, including `settings.json` files that are a plain list (the 0.3.1 format, deprecated: put the list in a `"files"` key). Links deployed by 0.3 are recognised as deployed.
+- If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.
 - A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.
 - Scripts keep their names (up to the first dot) and every file of `scripts/` is still a script. They are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
 - Targets inside the dotfiles repository, or containing it, are now refused.
-- `modules undeploy` only restores backups made by 1.0 or later (recorded in `~/.configfile/state.json`); `.old` files made by 0.3 stay where they are.
+- `modules undeploy` only removes what 1.0 or later deployed, and only restores backups it made (recorded in `~/.configfile/state.json`): local copies and `.old` files made by 0.3 stay where they are.
+- A `source_path` must stay inside its module folder.
+- With `script_extensions` set, only files with one of these extensions are scripts, and `""` means files without extension (0.3 matched any file containing the text).
 - Commands now exit with a non-zero code on failure.
 
 ## Contribution
