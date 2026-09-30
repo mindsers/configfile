@@ -1,16 +1,16 @@
 # Configfile
 
-Configfile is a command line interface application to help developer manages their development setup.
+Configfile is a command line application that helps developers manage their development setup from a dotfiles git repository.
 
 ## Getting Started
 
 To install Configfile:
 
 ```bash
-npm install -g configfile@latest
-# or
-yarn global add configfile@latest
+npm install --global configfile
 ```
+
+Node.js 22.13 or later and git are required.
 
 Generating first configuration:
 
@@ -18,24 +18,29 @@ Generating first configuration:
 configfile init
 ```
 
-It is an interactive command. Answer questions.
+It asks for your repository URL and where to clone it. To set it up without questions (in a script, for example):
+
+```bash
+configfile init --repo git@github.com:me/dotfiles.git --folder ~/.dotfiles
+```
 
 ### Running unit tests
 
-Unit test will be available via:
-
 ```bash
-yarn test
+pnpm install
+pnpm test
 ```
 
 ### Additional commands
 
-- [configfile modules list]()
-- [configfile modules deploy]()
-- [configfile scripts list]()
-- [configfile scripts run]()
+- [configfile modules list](../README.md#usage)
+- [configfile modules deploy](../README.md#usage)
+- [configfile scripts list](../README.md#usage)
+- [configfile scripts run](../README.md#usage)
 
 ## Configfiles Configuration
 
-- [Data folder structure]()
-- [Module settings]()
+- [Data folder structure](../README.md#data-storage)
+- [Module settings](../README.md#modules)
+- [Scripts](../README.md#scripts)
+- [~/.configfilerc](../README.md#configuration)

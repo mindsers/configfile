@@ -2,41 +2,56 @@
   "name": "configfile",
   "version": "0.3.1",
   "description": "Personal config files manager",
-  "main": "index.js",
-  "repository": "github.com:Mindsers/configfile.git",
+  "keywords": [
+    "dotfiles",
+    "config",
+    "cli",
+    "symlink"
+  ],
+  "homepage": "https://github.com/mindsers/configfile#readme",
+  "bugs": "https://github.com/mindsers/configfile/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mindsers/configfile.git"
+  },
   "author": "Mindsers <dev@nathanaelcherrier.com>",
   "license": "Apache-2.0",
-  "config": {
-    "optionsFilePath": "~/.configfile"
-  },
+  "type": "module",
   "bin": {
-    "configfile": "./bin/configfile.js"
+    "configfile": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "packageManager": "pnpm@12.6.0",
   "scripts": {
-    "test:unit:coverage": "nyc yarn test:unit",
-    "test:unit": "ava tests/**/*.js",
-    "test:lint": "eslint bin src tests",
-    "test": "yarn test:lint && yarn test:unit:coverage"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "node --run clean && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "chalk": "4.1.0",
-    "commander": "7.0.0",
-    "esm": "3.2.25",
-    "gift": "0.10.2",
-    "inquirer": "7.3.3",
-    "yabf": "2.1.0"
+    "@inquirer/prompts": "^8.7.2",
+    "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "11.15.44",
-    "ava": "3.15.0",
-    "eslint": "7.18.0",
-    "eslint-config-standard": "16.0.2",
-    "eslint-plugin-import": "2.22.1",
-    "eslint-plugin-node": "11.1.0",
-    "eslint-plugin-promise": "4.2.1",
-    "eslint-plugin-standard": "4.1.0",
-    "nyc": "15.1.0",
-    "rimraf": "3.0.2",
-    "sinon": "9.2.3"
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "22.20.4",
+    "@vitest/coverage-v8": "5.0.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
   }
 }

@@ -2,62 +2,144 @@
 
 [![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
-[![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/Mindsers/configfile/blob/master/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/mindsers/configfile/ci.yml?branch=develop&style=flat-square)](https://github.com/mindsers/configfile/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/mindsers/configfile/blob/develop/LICENSE)
 [![Patreon](https://img.shields.io/badge/support-patreon-F96854.svg?logo=patreon&style=flat-square)](https://www.patreon.com/bePatron?u=9715649)
-[![Discourse](https://img.shields.io/discourse/https/community.nathanaelcherrier.com/posts.svg?color=00aeef&logo=discourse&logoColor=00aeef&style=flat-square)](https://community.nathanaelcherrier.com/c/open-source/configfile/8)
 
-*configfile* is a command line tool that help user to manage their own configuration files.
+*configfile* is a command line tool that helps you manage your configuration files (dotfiles) and setup scripts from a git repository.
 
-## Data storage
+## Requirements
 
-This tool **does not store** configuration files for you. A git repo ([dotfiles](https://github.com/topics/dotfiles)) is needed to store your configuration files.
-
-Please follow this structure:
-
-```txt
-/files/
-    /module1/
-    /module2/
-        /settings.json
-        /configurationfile.txt
-    /module3/
-/scripts/
-    /scriptfile.sh
-```
+- macOS or Linux
+- Node.js 22.13 or later
+- git
 
 ## Installation
 
-To install *Configfile*, you need to use NPM or Yarn.
-
 ```bash
-yarn global add configfile@latest
+npm install --global configfile
 ```
+
+## Data storage
+
+This tool **does not store** configuration files for you. A git repository ([dotfiles](https://github.com/topics/dotfiles)) is needed to store your configuration files, with this structure:
+
+```txt
+files/
+    zsh/
+        settings.json
+        zshrc
+    git/
+        settings.json
+        gitconfig
+scripts/
+    setup.sh
+    macos/
+        index.sh
+```
+
+### Modules
+
+Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
+
+`settings.json` lists the files of the module:
+
+```json
+{
+  "files": [
+    { "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" },
+    { "source_path": "editorconfig", "target_path": ".editorconfig", "deploy": "local" },
+    { "source_path": "old-aliases", "target_path": "~/.aliases", "deploy": "none" }
+  ]
+}
+```
+
+| Key | Description |
+| --- | --- |
+| `source_path` | Path of the file (or folder), relative to the module folder. |
+| `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. A target that would replace your home folder, the current folder or one of their parents is refused. |
+| `deploy` | `"global"`: the file is **symlinked** by `configfile modules deploy`. `"local"`: the file is **copied** by `configfile modules deploy --local`, typically into a project folder. `"none"`: the file is **never deployed**, which keeps it in the repository for later. |
+| `global` | **Deprecated**, removed in 2.0: older spelling of `deploy`. `true` is `"global"`, `false` is `"local"`. It still works in 1.x, with a warning. Use one or the other, not both. |
+
+An entry without `deploy` or `global` is not deployed, and `modules deploy` warns about it.
+
+When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A link that already points to the right file is left as is, so deploying twice is safe.
+
+When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
+
+`configfile modules undeploy` reverts a deployment: it removes the links (or the local copies that were not modified since) and moves the most recent `.old` backup back in place. Anything *configfile* did not deploy is left untouched.
+
+### Scripts
+
+Every file of `scripts/` with an allowed extension, or folder of `scripts/` (or symbolic link to a folder) containing an `index` file with an allowed extension, is a **script**. Allowed extensions are `.js`, `.sh` and no extension by default. Hidden files are ignored.
+
+A script's name is its file name without extension, or its folder name, with the same rules as module names: `scripts/setup.sh` is run with `configfile scripts run setup`.
+
+Scripts can be written in any language:
+
+- a script with a shebang line (such as `#!/usr/bin/env python3`) is run directly when it is executable, and with that interpreter otherwise;
+- a `.js` or `.sh` script without shebang line is run with `node` or `sh`;
+- any other executable file (such as a compiled program) is run directly.
+
+*configfile* never changes the permissions of your files. Scripts run in the current folder, their output is not modified (the messages of *configfile* go to stderr), and their exit code is forwarded.
 
 ## Usage
 
-- `configfile init` or `configfile i`: Initialize *configfile* on the current user session.
-    - `-f, --force` force current configuration to be overwritten.
-- `configfile modules list` or `configfile m l`: Display a list of all modules available via *Configfile*.
-- `configfile modules deploy [moduleName...]` or `configfile m d [moduleName...]`: Deploy the configuration files for the given module name.
-    - `-l, --local` deploy authorized file to the current directory.
-- `configfile scripts` or `configfile s`: Display a list of all scripts available via *Configfile*.
-- `configfile scripts run <scriptName>` or `configfile s r <scriptName>`: Execute the script identifying by the given script name.
+- `configfile init` (`i`): clone your dotfiles repository and save its location in `~/.configfilerc`. If the folder already contains a git repository, it is used as is.
+    - `-f, --force`: overwrite an existing configuration without asking.
+    - `--repo <url>` and `--folder <path>`: answer the questions from the command line, for non-interactive setups.
+- `configfile modules list` (`m l`, or just `configfile modules`): list available modules.
+- `configfile modules status [modules...]` (`m st`): show whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file.
+    - `-l, --local`: check the local files, in the current folder.
+- `configfile modules deploy [modules...]` (`m d`): deploy the global files of the given modules. Without module names, asks to deploy all modules.
+    - `-l, --local`: copy the local files of the modules instead.
+    - `-a, --all`: deploy every module without asking.
+    - `-f, --force`: replace existing local files without asking (they are moved to `.old`).
+    - `-n, --dry-run`: show what would be done, without changing anything.
+- `configfile modules undeploy [modules...]` (`m u`): remove the deployed global files of the given modules and restore their backups. Without module names, asks to undeploy all modules.
+    - `-l, --local`, `-a, --all` and `-n, --dry-run`: as for `deploy`.
+- `configfile scripts list` (`s l`, or just `configfile scripts`): list available scripts.
+- `configfile scripts run <name> [-- args...]` (`s r`): run a script. Arguments after `--` are passed to the script.
+- `configfile update` (`u`): pull the latest version of your dotfiles repository (`git pull --ff-only`). Global files are symbolic links, so they are up to date right away; run `modules deploy` for new files.
+
+*configfile* exits with a non-zero code when a command fails, and with the script's exit code when a script fails, so it can be used from other scripts. When stdin is not a terminal, a command that would ask a question fails and names the option to pass instead (`--repo`, `--folder` and `--force` for `init`; module names or `--all`, and `--force`, for `modules deploy` and `undeploy`). Ctrl+C at a question exits with code 130.
+
+### Configuration
+
+`~/.configfilerc` is a JSON file:
+
+```json
+{
+  "repo_url": "git@github.com:me/dotfiles.git",
+  "folder_path": "/Users/me/.dotfiles",
+  "script_extensions": [".js", ".sh", ""]
+}
+```
+
+`folder_path` may start with `~`. `script_extensions` is optional; the dot may be omitted (`"py"`), and `""` means files without extension.
+
+## Upgrading from 0.3
+
+- Node.js 22.13 or later is required, on macOS or Linux. Install again with `npm install --global configfile`.
+- `~/.configfilerc`, the repository layout and `settings.json` work as before. Files deployed by 0.3 are recognised as deployed.
+- `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.
+- A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.
+- Scripts are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
+- Commands now exit with a non-zero code on failure.
 
 ## Contribution
 
-Contributions to the source code of *Configfile* are welcomed and greatly appreciated. For help on how to contribute in this project, please refer to [How to contribute to Configfile](https://github.com/Mindsers/configfile/blob/develop/CONTRIBUTING.md).
+Contributions to the source code of *configfile* are welcome and greatly appreciated. For help on how to contribute to this project, please refer to [How to contribute to Configfile](https://github.com/mindsers/configfile/blob/develop/CONTRIBUTING.md).
 
 ## Support
 
-*Configfile* is licensed under an Apache-2.0 license, which means that it's a  completely free open source software. Unfortunately, *Configfile* doesn't make itself. Version 1.0.0 is the next step, which will result in many late, beer-filled nights of development.
+*configfile* is licensed under an Apache-2.0 license, which means that it's a completely free open source software. Unfortunately, *configfile* doesn't make itself.
 
-If you're using *Configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
+If you're using *configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
 
 [![Become a Patron!](https://c5.patreon.com/external/logo/become_a_patron_button.png)](https://www.patreon.com/bePatron?u=9715649)
 
-For help on how to support Configfile, please refer to [The awesome people who support Configfile](https://github.com/Mindsers/configfile/blob/develop/SPONSORS.md).
-
-<!-- ### Premium sponsors -->
+For help on how to support Configfile, please refer to [The awesome people who support Configfile](https://github.com/mindsers/configfile/blob/develop/SPONSORS.md).
 
 ## License
 

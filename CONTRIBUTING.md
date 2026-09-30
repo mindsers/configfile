@@ -17,7 +17,8 @@ This file is a set of guilines for contributing to *Configfile* project. These a
 
 [Styleguides](#styleguides)
 
-* [JavaScript styleguide](#javaScript-styleguide)
+* [Development setup](#development-setup)
+* [TypeScript styleguide](#typescript-styleguide)
 * [Git commit messages](#git-commit-messages)
 
 ## How can I contribute?
@@ -64,38 +65,26 @@ Documentation file are stored in the project source code.
 
 ## Styleguides
 
-### JavaScript styleguide
+### Development setup
 
-All JavaScript must adhere to [JavaScript Standard Style](https://standardjs.com).
+*Configfile* is written in TypeScript and uses [pnpm](https://pnpm.io). Use the Node.js version from `.node-version` (22.13 or later is supported).
 
-Exepctions to Standard style:
+```bash
+pnpm install
+pnpm check        # lint, type check and tests
+pnpm test:watch   # tests in watch mode
+pnpm build        # compile to dist/
+node dist/cli.js --help
+```
 
-* We do not want space after function name `function name(arg) { ... }`
+### TypeScript styleguide
 
-Additional rules:
+Formatting and linting are handled by [Biome](https://biomejs.dev), configured in `biome.json`. Run `pnpm format` before committing; `pnpm lint` must pass.
 
-* Prefer spread operator (`prefer-spread`)
-* No useless brackets for arrow functions (`arrow-body-style`)
-* No useless parens for arrow functions (`arrow-parens`)
-* Require space before/after arrow function’s arrow (`arrow-spacing`)
-* `switch` must have a default case (`default-case`)
-* `for...in` loop must be guard by an `if` (`guard-for-in`)
-* Require space before the star of generator function (`generator-star-spacing`)
-* Getter properties must return a value (`getter-return`)
-* Compare to `-0` is an error (`no-compare-neg-zero`)
-* Use brackets if arrow function body could be confused with comparisons (`no-confusing-arrow`)
-* No `else` when return is used (`no-else-return`)
-* No empty block statements (`no-empty`)
-* No type conversion with shorter notations (`no-implicit-coercion`)
-* No useless `return` statement (`no-useless-return`)
-* No redeclare variables (`no-redeclare`)
-* Using `var` statement is an error (`no-var`)
-* Prefer arrow function for callback (`prefer-arrow-callback`)
-* Prefer using constant (`prefer-const`)
-* Prefer rest parameter (`prefer-rest-params`)
-* Prefer using template literals (`prefer-template`)
-
-All the rules are listed in `.eslinrc.json` on the root directory.
+* Relative imports use the `.js` extension (`import { x } from './x.js'`).
+* Expected failures throw a `CliError` (exit code and message for the user); never call `process.exit`.
+* Commands get everything from the injected `Context` (home, cwd, output, prompts) so they can be tested.
+* Bug fixes come with a test that reproduces the bug.
 
 ### Git commit messages
 
