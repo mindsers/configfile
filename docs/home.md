@@ -10,7 +10,7 @@ To install Configfile:
 npm install --global configfile
 ```
 
-Node.js 22.13 or later and git are required.
+macOS or Linux, Node.js 22.13 or later and git are required.
 
 Generating first configuration:
 
@@ -34,9 +34,12 @@ pnpm test
 ### Additional commands
 
 - [configfile modules list](../README.md#usage)
+- [configfile modules status](../README.md#usage)
 - [configfile modules deploy](../README.md#usage)
+- [configfile modules undeploy](../README.md#usage)
 - [configfile scripts list](../README.md#usage)
 - [configfile scripts run](../README.md#usage)
+- [configfile update](../README.md#usage)
 
 ## Configfiles Configuration
 

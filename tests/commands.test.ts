@@ -1,11 +1,10 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { chmod, copyFile, lstat, mkdir, readFile, readlink, stat, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { createSandbox, runCli, type Sandbox } from './helpers.js'
+import { createRemote, createSandbox, git, runCli, type Sandbox } from './helpers.js'
 
 async function withModule(sandbox: Sandbox) {
   await sandbox.configure()
@@ -275,7 +274,7 @@ describe('modules', () => {
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('does not exist')
-    expect(result.stderr).toContain('1 file or module failed.')
+    expect(result.stderr).toContain('1 file, module or settings entry failed.')
   })
 
   it('exits with 130 when a prompt is cancelled with Ctrl+C', async () => {
@@ -306,7 +305,7 @@ describe('modules status, dry run and undeploy', () => {
 
     await sandbox.write('cwd/a', 'edited')
     const local = await runCli(sandbox, ['modules', 'status', '--local'])
-    expect(local.stdout).toContain(`${sandbox.cwd}/a (modified since it was copied)`)
+    expect(local.stdout).toContain(`${sandbox.cwd}/a (differs from the repository)`)
     expect(local.stdout).toContain(`${sandbox.cwd}/b (not deployed)`)
   })
 
@@ -381,6 +380,101 @@ describe('modules status, dry run and undeploy', () => {
     await runCli(sandbox, ['modules', 'undeploy', '--all'])
     expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(false)
   })
+
+  it('only restores the backups it made, recorded in ~/.configfile/state.json', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write('home/.zshrc', 'mine')
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    const state = JSON.parse(
+      await readFile(path.join(sandbox.home, '.configfile/state.json'), 'utf8'),
+    )
+    expect(state).toEqual({
+      backups: { [path.join(sandbox.home, '.zshrc')]: [path.join(sandbox.home, '.zshrc.old')] },
+    })
+
+    await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+    // A .old file made by hand is left alone.
+    await sandbox.write('home/.zshrc.old', 'made by hand')
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+
+    expect(result.stdout).toContain(
+      `${sandbox.home}/.zshrc (removed, ${sandbox.home}/.zshrc.old.1 restored)`,
+    )
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('mine')
+    expect(await readFile(path.join(sandbox.home, '.zshrc.old'), 'utf8')).toBe('made by hand')
+  })
+
+  it('fails when settings entries of the selected modules are invalid, after deploying the rest', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify({
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'a', deploy: 'global' },
+        ],
+      }),
+    )
+    await sandbox.write(
+      'home/dotfiles/files/other/settings.json',
+      JSON.stringify({ files: [{ source_path: 'x', deploy: 'global' }] }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('zsh: entry #2 is ignored: "target_path" is missing.')
+    expect(result.stderr).not.toContain('other:')
+    expect(result.stderr).toContain('1 file, module or settings entry failed.')
+    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
+  })
+
+  it('gives a dry run the exit code of the real run', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write('cwd/a', 'mine')
+
+    const result = await runCli(sandbox, ['m', 'd', '-n', '-l', 'zsh'], [], { interactive: false })
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('1 file already existed. Use --force to replace them.')
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps showing the status after a file that cannot be checked',
+    async () => {
+      const sandbox = await createSandbox()
+      await sandbox.configure()
+      await sandbox.write('home/dotfiles/files/a/f', 'f')
+      await sandbox.write(
+        'home/dotfiles/files/a/settings.json',
+        JSON.stringify({
+          files: [{ source_path: 'f', target_path: '~/locked/f', deploy: 'global' }],
+        }),
+      )
+      await sandbox.write('home/dotfiles/files/b/g', 'g')
+      await sandbox.write(
+        'home/dotfiles/files/b/settings.json',
+        JSON.stringify({ files: [{ source_path: 'g', target_path: '~/.g', deploy: 'global' }] }),
+      )
+      await mkdir(path.join(sandbox.home, 'locked'))
+      await chmod(path.join(sandbox.home, 'locked'), 0o000)
+
+      try {
+        const result = await runCli(sandbox, ['modules', 'status'])
+
+        expect(result.code).toBe(0)
+        expect(result.stdout).toContain(`${sandbox.home}/locked/f (cannot be checked:`)
+        expect(result.stdout).toContain(`b:\n  ${sandbox.home}/.g (not deployed)`)
+      } finally {
+        await chmod(path.join(sandbox.home, 'locked'), 0o755)
+      }
+    },
+  )
 
   it('warns about the deprecated "global" key', async () => {
     const sandbox = await createSandbox()
@@ -564,6 +658,23 @@ describe('scripts', () => {
     expect((await stat(script)).mode & 0o777).toBe(0o644)
   })
 
+  it('runs any file of scripts/, named up to the first dot, as 0.3 did', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write(
+      'home/dotfiles/scripts/setup.macos.py',
+      `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(`${sandbox.root}/ran`)}, 'yes')\n`,
+      0o644,
+    )
+
+    const list = await runCli(sandbox, ['scripts', 'list'])
+    expect(list.stdout).toBe('1 script found.\n- setup\n')
+
+    const result = await runCli(sandbox, ['scripts', 'run', 'setup'])
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.root, 'ran'), 'utf8')).toBe('yes')
+  })
+
   it('explains how to fix a non-executable script without extension', async () => {
     const sandbox = await createSandbox()
     await withScripts(sandbox)
@@ -587,24 +698,7 @@ describe('scripts', () => {
 })
 
 describe('init', () => {
-  async function withRemote(sandbox: Sandbox) {
-    const remote = path.join(sandbox.root, 'remote')
-    await sandbox.write('remote/files/.gitkeep')
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: remote, stdio: 'ignore' })
-    git('init', '--quiet')
-    git('add', '.')
-    git(
-      '-c',
-      'user.name=test',
-      '-c',
-      'user.email=test@example.com',
-      'commit',
-      '--quiet',
-      '-m',
-      'init',
-    )
-    return remote
-  }
+  const withRemote = createRemote
 
   const readConfig = async (sandbox: Sandbox) =>
     JSON.parse(await readFile(path.join(sandbox.home, '.configfilerc'), 'utf8'))
@@ -727,6 +821,27 @@ describe('init', () => {
     expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(false)
   })
 
+  it.skipIf(process.getuid?.() === 0)(
+    'explains how to recover when the configuration cannot be saved',
+    async () => {
+      const sandbox = await createSandbox()
+      const remote = await withRemote(sandbox)
+      const folder = path.join(sandbox.root, 'clone')
+      await chmod(sandbox.home, 0o555)
+
+      try {
+        const result = await runCli(sandbox, ['init', '--repo', remote, '--folder', folder])
+
+        expect(result.code).toBe(1)
+        expect(result.stderr).toContain('Cannot save the configuration')
+        expect(result.stderr).toContain(`The repository is in ${folder}`)
+        expect(existsSync(path.join(folder, '.git'))).toBe(true)
+      } finally {
+        await chmod(sandbox.home, 0o755)
+      }
+    },
+  )
+
   it('asks before overwriting an existing configuration', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure({ repo_url: 'kept' })
@@ -742,16 +857,7 @@ describe('init', () => {
 describe('update', () => {
   it('pulls the dotfiles repository', async () => {
     const sandbox = await createSandbox()
-    const remote = path.join(sandbox.root, 'remote')
-    await sandbox.write('remote/files/.gitkeep')
-    const git = (cwd: string, ...args: string[]) =>
-      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
-        cwd,
-        stdio: 'ignore',
-      })
-    git(remote, 'init', '--quiet')
-    git(remote, 'add', '.')
-    git(remote, 'commit', '--quiet', '-m', 'first')
+    const remote = await createRemote(sandbox)
     git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
     await sandbox.configure()
 
@@ -763,6 +869,40 @@ describe('update', () => {
 
     expect(result.code).toBe(0)
     expect(await readFile(path.join(sandbox.repo, 'files/new-file'), 'utf8')).toBe('new')
+  })
+
+  it('refuses to merge when the histories diverged (fast-forward only)', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+    await sandbox.configure()
+    await sandbox.write('remote/files/remote-change', 'remote')
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', 'remote')
+    await sandbox.write('home/dotfiles/files/local-change', 'local')
+    git(sandbox.repo, 'add', '.')
+    git(sandbox.repo, 'commit', '--quiet', '-m', 'local')
+
+    // Without --ff-only, this configuration would let git pull create a merge commit.
+    const gitConfig = {
+      GIT_CONFIG_COUNT: '3',
+      GIT_CONFIG_KEY_0: 'pull.rebase',
+      GIT_CONFIG_VALUE_0: 'false',
+      GIT_CONFIG_KEY_1: 'user.name',
+      GIT_CONFIG_VALUE_1: 'test',
+      GIT_CONFIG_KEY_2: 'user.email',
+      GIT_CONFIG_VALUE_2: 'test@example.com',
+    }
+    Object.assign(process.env, gitConfig)
+    try {
+      const result = await runCli(sandbox, ['update'])
+
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('git pull failed')
+      expect(existsSync(path.join(sandbox.repo, 'files/remote-change'))).toBe(false)
+    } finally {
+      for (const key of Object.keys(gitConfig)) delete process.env[key]
+    }
   })
 
   it('fails when the dotfiles folder is not a git repository', async () => {

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { lstat } from 'node:fs/promises'
 import path from 'node:path'
 
 import type { Command } from 'commander'
@@ -19,8 +19,13 @@ export function registerUpdateCommand(program: Command, ctx: Context): void {
 async function update(ctx: Context): Promise<void> {
   const { folderPath } = await new ConfigStore(ctx.home).read()
 
-  if (!existsSync(path.join(folderPath, '.git'))) {
-    throw new CliError(`${folderPath} is not a git repository. Run "configfile init".`)
+  try {
+    await lstat(path.join(folderPath, '.git'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new CliError(`${folderPath} is not a git repository. Run "configfile init".`)
+    }
+    throw new CliError(`Cannot read ${folderPath}: ${(error as Error).message}`)
   }
 
   ctx.output.info(`Updating ${folderPath}…`)

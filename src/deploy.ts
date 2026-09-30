@@ -6,6 +6,7 @@ import {
   readdir,
   readFile,
   readlink,
+  realpath,
   rename,
   rm,
   stat,
@@ -14,7 +15,8 @@ import {
 import path from 'node:path'
 
 import { CliError } from './errors.js'
-import type { ModuleFile } from './repository.js'
+import { contains, type ModuleFile } from './repository.js'
+import type { BackupRecord } from './state.js'
 
 /** What is currently at the target of a module file. */
 export type TargetState =
@@ -25,23 +27,83 @@ export type TargetState =
   | { kind: 'modified' }
   /** Global only: something that is not the link to the source. */
   | { kind: 'occupied'; what: 'file' | 'folder' | 'link' }
+  /**
+   * Something is at the target but the source is missing from the repository.
+   * `ours`: it is the link configfile made (global files only).
+   */
+  | { kind: 'source-missing'; ours: boolean }
+
+/** A target left in place by `undeploy`, and why. */
+export type KeptState = Extract<TargetState, { kind: 'occupied' | 'modified' | 'source-missing' }>
+
+export type DeployDecision =
+  | { action: 'up-to-date' }
+  | { action: 'create' }
+  /** Move what is at the target aside, then deploy. */
+  | { action: 'replace'; what: 'file' | 'folder' | 'link' | 'copy' }
+  /** Local only, without `force`: the target exists and differs from the source. */
+  | { action: 'conflict' }
+
+export type UndeployDecision =
+  | { action: 'remove' }
+  | { action: 'not-deployed' }
+  | { action: 'keep'; state: KeptState }
 
 export type DeployResult =
   | { status: 'deployed' }
   | { status: 'up-to-date' }
   | { status: 'backed-up'; backup: string }
-  /** Local only, without `force`: the target exists and differs from the source. */
   | { status: 'conflict' }
 
 export type UndeployResult =
-  | { status: 'removed'; restored: string | null }
+  /** `missingBackup`: a recorded backup that was deleted since, so nothing could be restored. */
+  | { status: 'removed'; restored: string | null; missingBackup: string | null }
   | { status: 'not-deployed' }
-  /** Left in place because configfile did not put it there, or it was modified since. */
-  | { status: 'kept'; reason: string }
+  | { status: 'kept'; state: KeptState }
+
+/** The single place deciding what deploying a file does; dry runs use it too. */
+export function decideDeploy(state: TargetState, { force }: { force: boolean }): DeployDecision {
+  switch (state.kind) {
+    case 'missing':
+      return { action: 'create' }
+    case 'deployed':
+      return { action: 'up-to-date' }
+    case 'occupied':
+      return { action: 'replace', what: state.what }
+    case 'modified':
+      return force ? { action: 'replace', what: 'copy' } : { action: 'conflict' }
+    case 'source-missing':
+      // Deploying checks the source first, so this only happens in a race.
+      throw new CliError('the source file is missing from the repository.')
+  }
+}
+
+/** The single place deciding what undeploying a file does; dry runs use it too. */
+export function decideUndeploy(state: TargetState): UndeployDecision {
+  switch (state.kind) {
+    case 'missing':
+      return { action: 'not-deployed' }
+    case 'deployed':
+      return { action: 'remove' }
+    case 'source-missing':
+      return state.ours ? { action: 'remove' } : { action: 'keep', state }
+    case 'occupied':
+    case 'modified':
+      return { action: 'keep', state }
+  }
+}
 
 export async function inspectFile(file: ModuleFile): Promise<TargetState> {
   const existing = await lstatOrNull(file.target)
   if (existing == null) return { kind: 'missing' }
+
+  const pointsToSource =
+    existing.isSymbolicLink() &&
+    path.resolve(path.dirname(file.target), await readlink(file.target)) === file.source
+
+  if ((await lstatOrNull(file.source)) == null) {
+    return { kind: 'source-missing', ours: file.strategy === 'global' && pointsToSource }
+  }
 
   if (file.strategy === 'local') {
     return (await sameContent(file.source, file.target))
@@ -49,10 +111,8 @@ export async function inspectFile(file: ModuleFile): Promise<TargetState> {
       : { kind: 'modified' }
   }
 
-  if (existing.isSymbolicLink()) {
-    const linkTarget = path.resolve(path.dirname(file.target), await readlink(file.target))
-    return linkTarget === file.source ? { kind: 'deployed' } : { kind: 'occupied', what: 'link' }
-  }
+  if (pointsToSource) return { kind: 'deployed' }
+  if (existing.isSymbolicLink()) return { kind: 'occupied', what: 'link' }
   return { kind: 'occupied', what: existing.isDirectory() ? 'folder' : 'file' }
 }
 
@@ -60,18 +120,37 @@ export async function inspectFile(file: ModuleFile): Promise<TargetState> {
  * Deploys a file: global files are symlinked, local files are copied.
  *
  * Anything already at the target that is not the deployed file is moved aside
- * to `<target>.old` (or `.old.1`, …). For local files this only happens with
- * `force`; otherwise a `conflict` is returned.
+ * to `<target>.old` (or `.old.1`, …) and recorded, so that `undeployFile` can
+ * restore it. For local files this only happens with `force`; otherwise a
+ * `conflict` is returned.
  */
-export async function deployFile(file: ModuleFile, { force = false } = {}): Promise<DeployResult> {
+export async function deployFile(
+  file: ModuleFile,
+  { force = false, record }: { force?: boolean; record: BackupRecord },
+): Promise<DeployResult> {
   await assertSourceExists(file)
+  await assertSafeTarget(file)
 
-  const state = await inspectFile(file)
-  if (state.kind === 'deployed') return { status: 'up-to-date' }
-  if (state.kind === 'modified' && !force) return { status: 'conflict' }
+  const decision = decideDeploy(await inspectFile(file), { force })
+  if (decision.action === 'up-to-date') return { status: 'up-to-date' }
+  if (decision.action === 'conflict') return { status: 'conflict' }
 
   await mkdir(path.dirname(file.target), { recursive: true })
-  const backup = state.kind === 'missing' ? null : await moveAside(file.target)
+
+  let backup: string | null = null
+  if (decision.action === 'replace') {
+    backup = nextBackupPath(file.target)
+    await rename(file.target, backup)
+    try {
+      await record.add(file.target, backup)
+    } catch (error) {
+      // Without a record, undeploy could not restore it: put it back and stop.
+      await rename(backup, file.target).catch(() => {
+        throw new CliError(`${(error as Error).message} The previous file is in ${backup}.`)
+      })
+      throw error
+    }
+  }
 
   try {
     if (file.strategy === 'global') {
@@ -86,7 +165,7 @@ export async function deployFile(file: ModuleFile, { force = false } = {}): Prom
       })
     }
   } catch (error) {
-    throw await restoreAfterFailure(file.target, backup, error)
+    throw await undoFailedDeploy(file.target, backup, record, error)
   }
 
   return backup == null ? { status: 'deployed' } : { status: 'backed-up', backup }
@@ -94,28 +173,41 @@ export async function deployFile(file: ModuleFile, { force = false } = {}): Prom
 
 /**
  * Removes a deployed file (the link, or a copy that was not modified since),
- * then puts back the most recent backup made by a deployment, if any.
+ * then puts back the most recent backup configfile made of it, if any. Other
+ * `.old` files are never touched.
  */
-export async function undeployFile(file: ModuleFile): Promise<UndeployResult> {
-  const state = await inspectFile(file)
+export async function undeployFile(
+  file: ModuleFile,
+  { record }: { record: BackupRecord },
+): Promise<UndeployResult> {
+  await assertSafeTarget(file)
 
-  switch (state.kind) {
-    case 'missing':
-      return { status: 'not-deployed' }
-    case 'occupied':
-      return { status: 'kept', reason: `the ${state.what} there was not deployed by configfile` }
-    case 'modified':
-      return { status: 'kept', reason: 'it was modified since it was copied' }
-    case 'deployed':
-      break
-  }
+  const decision = decideUndeploy(await inspectFile(file))
+  if (decision.action === 'not-deployed') return { status: 'not-deployed' }
+  if (decision.action === 'keep') return { status: 'kept', state: decision.state }
+
+  // Checked before removing anything, so a problem never leaves the target empty.
+  const backup = await record.latest(file.target)
 
   await rm(file.target, { recursive: true })
 
-  const backup = await latestBackup(file.target)
-  if (backup != null) await rename(backup, file.target)
+  if (backup == null) return { status: 'removed', restored: null, missingBackup: null }
+  if (!backup.exists) {
+    await record.remove(file.target, backup.path)
+    return { status: 'removed', restored: null, missingBackup: backup.path }
+  }
 
-  return { status: 'removed', restored: backup }
+  try {
+    await rename(backup.path, file.target)
+  } catch (error) {
+    throw new CliError(
+      `${file.target} was removed, but its backup ${backup.path} could not be put back: ` +
+        `${(error as Error).message}`,
+    )
+  }
+  await record.remove(file.target, backup.path)
+
+  return { status: 'removed', restored: backup.path, missingBackup: null }
 }
 
 /** The name the next backup of `target` will get. */
@@ -128,35 +220,6 @@ export function nextBackupPath(target: string): string {
     backup = `${target}.old.${i}`
   }
   return backup
-}
-
-/** The most recently created backup of `target` (`.old`, `.old.1`, …), or `null`. */
-export async function latestBackup(target: string): Promise<string | null> {
-  const dir = path.dirname(target)
-  const pattern = new RegExp(`^${escapeRegExp(path.basename(target))}\\.old(\\.\\d+)?$`)
-
-  const names = await readdir(dir).catch(() => [])
-  let latest: { path: string; changed: number; number: number } | null = null
-
-  for (const name of names) {
-    const match = pattern.exec(name)
-    if (match == null) continue
-
-    const candidate = path.join(dir, name)
-    // ctime changes when a file is renamed, so it tells when the backup was made.
-    // The backup number only breaks ties (renames within the same millisecond).
-    const changed = (await lstat(candidate)).ctimeMs
-    const number = match[1] == null ? 0 : Number(match[1].slice(1))
-    if (
-      latest == null ||
-      changed > latest.changed ||
-      (changed === latest.changed && number > latest.number)
-    ) {
-      latest = { path: candidate, changed, number }
-    }
-  }
-
-  return latest?.path ?? null
 }
 
 /** Fails with a readable message when the source of `file` is missing or unreadable. */
@@ -173,26 +236,73 @@ export async function assertSourceExists(file: ModuleFile): Promise<void> {
   }
 }
 
-async function moveAside(target: string): Promise<string> {
-  const backup = nextBackupPath(target)
-  await rename(target, backup)
-  return backup
+/**
+ * Refuses targets that are, through symbolic links, inside the repository or
+ * one of its parents (settings are checked on paths as written; this checks
+ * where they really lead). The target itself is not followed: it may be the
+ * deployed link.
+ */
+export async function assertSafeTarget(file: ModuleFile): Promise<void> {
+  const repository = await realpath(file.repository)
+  const target = path.join(
+    await realpathOfExisting(path.dirname(file.target)),
+    path.basename(file.target),
+  )
+
+  if (contains(repository, target) || contains(target, repository)) {
+    throw new CliError(
+      `the target leads into the dotfiles repository (${repository}) through a symbolic link. ` +
+        'Deploying there would change the repository itself.',
+    )
+  }
 }
 
-/** Puts the backup back after a failed deployment, and explains where things are. */
-async function restoreAfterFailure(
+/** Real path of `target`, or of its closest existing parent followed by the rest. */
+async function realpathOfExisting(target: string): Promise<string> {
+  try {
+    return await realpath(target)
+  } catch (error) {
+    const parent = path.dirname(target)
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === target) throw error
+    return path.join(await realpathOfExisting(parent), path.basename(target))
+  }
+}
+
+/**
+ * After a failed deployment: removes what was partly created at the target and
+ * puts the backup back. Explains where things are when that is not possible.
+ */
+async function undoFailedDeploy(
   target: string,
   backup: string | null,
+  record: BackupRecord,
   error: unknown,
 ): Promise<Error> {
   const reason = (error as Error).message
+
+  // EEXIST: something else created the target meanwhile; it is not ours to remove.
+  if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+    try {
+      await rm(target, { recursive: true, force: true })
+    } catch (cleanupError) {
+      return new CliError(
+        `${reason} A partial copy was left at ${target} (${(cleanupError as Error).message})` +
+          (backup == null ? '.' : `; the previous file is in ${backup}.`),
+      )
+    }
+  }
+
   if (backup == null) return new CliError(reason)
 
   try {
     await rename(backup, target)
+    await record.remove(target, backup)
     return new CliError(reason)
-  } catch {
-    return new CliError(`${reason} The previous file was moved to ${backup}.`)
+  } catch (restoreError) {
+    return new CliError(
+      `${reason} The previous file is in ${backup} (it could not be put back: ` +
+        `${(restoreError as Error).message}).`,
+    )
   }
 }
 
@@ -235,8 +345,4 @@ async function lstatOrNull(target: string) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

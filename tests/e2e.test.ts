@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { createSandbox, type Sandbox } from './helpers.js'
 
@@ -58,6 +58,19 @@ describe('built CLI', () => {
   })
 
   describe('signals during scripts run', () => {
+    // Each test runs in its own process group, killed afterwards: if signal
+    // forwarding ever regresses, no script is left running on the machine.
+    const groups: number[] = []
+    afterEach(() => {
+      for (const pid of groups.splice(0)) {
+        try {
+          process.kill(-pid, 'SIGKILL')
+        } catch {
+          // Already gone.
+        }
+      }
+    })
+
     /** Starts a long-running script, sends `signal` to configfile only once it runs. */
     async function interrupt(sandbox: Sandbox, script: string, signal: NodeJS.Signals) {
       await sandbox.configure()
@@ -66,7 +79,9 @@ describe('built CLI', () => {
       const child = spawn(process.execPath, [cli, 'scripts', 'run', 'long'], {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
+        detached: true,
       })
+      if (child.pid != null) groups.push(child.pid)
 
       let stdout = ''
       child.stdout.on('data', chunk => {

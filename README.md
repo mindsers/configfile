@@ -40,7 +40,7 @@ scripts/
 
 ### Modules
 
-Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
+Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than ASCII letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
 
 `settings.json` lists the files of the module:
 
@@ -57,7 +57,7 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 | Key | Description |
 | --- | --- |
 | `source_path` | Path of the file (or folder), relative to the module folder. |
-| `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. A target that would replace your home folder, the current folder or one of their parents is refused. |
+| `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. A target that would replace your home folder, the current folder, the dotfiles repository or one of their parents, or that is inside the repository, is refused. |
 | `deploy` | `"global"`: the file is **symlinked** by `configfile modules deploy`. `"local"`: the file is **copied** by `configfile modules deploy --local`, typically into a project folder. `"none"`: the file is **never deployed**, which keeps it in the repository for later. |
 | `global` | **Deprecated**, removed in 2.0: older spelling of `deploy`. `true` is `"global"`, `false` is `"local"`. It still works in 1.x, with a warning. Use one or the other, not both. |
 
@@ -67,18 +67,18 @@ When a global file is deployed and something else already exists at its target (
 
 When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
 
-`configfile modules undeploy` reverts a deployment: it removes the links (or the local copies that were not modified since) and moves the most recent `.old` backup back in place. Anything *configfile* did not deploy is left untouched.
+*configfile* records the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links (and the local copies that are still identical to the repository) and moves the most recent backup *configfile* made back in place. Other files, including `.old` files you made yourself, are left untouched.
 
 ### Scripts
 
-Every file of `scripts/` with an allowed extension, or folder of `scripts/` (or symbolic link to a folder) containing an `index` file with an allowed extension, is a **script**. Allowed extensions are `.js`, `.sh` and no extension by default. Hidden files are ignored.
+Every file of `scripts/`, and every folder of `scripts/` (or symbolic link to a folder) containing an `index` file (`index`, `index.sh`, …), is a **script**. Hidden files are ignored. To only use some extensions, set `script_extensions` in the [configuration](#configuration).
 
-A script's name is its file name without extension, or its folder name, with the same rules as module names: `scripts/setup.sh` is run with `configfile scripts run setup`.
+A script's name is its file name up to the first dot, or its folder name, with the same rules as module names: `scripts/setup.sh` and `scripts/setup.macos.py` are both named `setup` (only the first one, alphabetically, is used, with a warning).
 
 Scripts can be written in any language:
 
 - a script with a shebang line (such as `#!/usr/bin/env python3`) is run directly when it is executable, and with that interpreter otherwise;
-- a `.js` or `.sh` script without shebang line is run with `node` or `sh`;
+- a `.js` (or `.mjs`, `.cjs`) or `.sh` script without shebang line is run with `node` or `sh`;
 - any other executable file (such as a compiled program) is run directly.
 
 *configfile* never changes the permissions of your files. Scripts run in the current folder, their output is not modified (the messages of *configfile* go to stderr), and their exit code is forwarded.
@@ -100,11 +100,13 @@ Scripts can be written in any language:
     - `-l, --local`, `-a, --all` and `-n, --dry-run`: as for `deploy`.
 - `configfile scripts list` (`s l`, or just `configfile scripts`): list available scripts.
 - `configfile scripts run <name> [-- args...]` (`s r`): run a script. Arguments after `--` are passed to the script.
-- `configfile update` (`u`): pull the latest version of your dotfiles repository (`git pull --ff-only`). Global files are symbolic links, so they are up to date right away; run `modules deploy` for new files.
+- `configfile update` (`u`): pull the latest version of your dotfiles repository (`git pull --ff-only`). Global files are symbolic links, so they are up to date right away; run `modules deploy` for new files, and `modules deploy --local` to refresh local copies.
 
-*configfile* exits with a non-zero code when a command fails, and with the script's exit code when a script fails, so it can be used from other scripts. When stdin is not a terminal, a command that would ask a question fails and names the option to pass instead (`--repo`, `--folder` and `--force` for `init`; module names or `--all`, and `--force`, for `modules deploy` and `undeploy`). Ctrl+C at a question exits with code 130.
+*configfile* exits with a non-zero code when a command fails, and with the script's exit code when a script fails, so it can be used from other scripts. When stdin is not a terminal, a command that would ask a question fails and names the option to pass instead (`--repo`, `--folder` and `--force` for `init`; module names or `--all` for `modules deploy` and `undeploy`). Without a terminal, `modules deploy --local` skips existing local files and exits with an error, unless `--force` is given. Ctrl+C at a question exits with code 130.
 
 ### Configuration
+
+*configfile* keeps its configuration in `~/.configfilerc`, and its working files (the record of backups) in the `~/.configfile/` folder.
 
 `~/.configfilerc` is a JSON file:
 
@@ -116,7 +118,7 @@ Scripts can be written in any language:
 }
 ```
 
-`folder_path` may start with `~`. `script_extensions` is optional; the dot may be omitted (`"py"`), and `""` means files without extension.
+`folder_path` may start with `~`; a relative path is relative to your home folder. `script_extensions` is optional: without it, every file of `scripts/` is a script. With it, only files with one of these extensions are; the dot may be omitted (`"py"`), and `""` means files without extension.
 
 ## Upgrading from 0.3
 
@@ -124,7 +126,9 @@ Scripts can be written in any language:
 - `~/.configfilerc`, the repository layout and `settings.json` work as before. Files deployed by 0.3 are recognised as deployed.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.
 - A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.
-- Scripts are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
+- Scripts keep their names (up to the first dot) and every file of `scripts/` is still a script. They are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
+- Targets inside the dotfiles repository, or containing it, are now refused.
+- `modules undeploy` only restores backups made by 1.0 or later (recorded in `~/.configfile/state.json`); `.old` files made by 0.3 stay where they are.
 - Commands now exit with a non-zero code on failure.
 
 ## Contribution

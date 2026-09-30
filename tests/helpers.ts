@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -133,4 +134,36 @@ export async function runCli(
   const code = await main(args, ctx)
 
   return { code, stdout: ctx.stdout.text, stderr: ctx.stderr.text, asked: ctx.asked }
+}
+
+/**
+ * Runs git for test setup, independent of the developer's git configuration
+ * (vitest.config.ts also points GIT_CONFIG_GLOBAL to /dev/null).
+ */
+export function git(cwd: string, ...args: string[]): void {
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.name=test',
+      '-c',
+      'user.email=test@example.com',
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'init.defaultBranch=main',
+      ...args,
+    ],
+    { cwd, stdio: 'ignore' },
+  )
+}
+
+/** A git repository with one commit, in `<sandbox>/remote`, to clone from. */
+export async function createRemote(sandbox: Sandbox): Promise<string> {
+  const remote = path.join(sandbox.root, 'remote')
+  await sandbox.write('remote/files/.gitkeep')
+  git(remote, 'init', '--quiet')
+  git(remote, 'add', '.')
+  git(remote, 'commit', '--quiet', '-m', 'first')
+  return remote
 }

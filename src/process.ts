@@ -12,7 +12,8 @@ import type { Script } from './repository.js'
  *
  * While it runs, Ctrl+C and Ctrl+\ are left to the child (the terminal sends
  * them to both processes) and SIGTERM / SIGHUP are forwarded to it, so the
- * child is never orphaned and its own exit code is reported.
+ * child is not left running when configfile is asked to stop, and its own exit
+ * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
  */
 export function run(command: string, args: string[], { cwd }: { cwd: string }): Promise<number> {
   return new Promise((resolve, reject) => {

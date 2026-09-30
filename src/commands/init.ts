@@ -97,7 +97,14 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       break
   }
 
-  await store.write({ repoUrl, folderPath })
+  try {
+    await store.write({ repoUrl, folderPath })
+  } catch (error) {
+    throw new CliError(
+      `${(error as Error).message} The repository is in ${folderPath}: fix the problem and run ` +
+        '"configfile init" again, it will reuse it.',
+    )
+  }
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
 }
 

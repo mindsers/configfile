@@ -5,15 +5,16 @@ import path from 'node:path'
 import { CliError, NotInitializedError } from './errors.js'
 import { resolveUserPath } from './paths.js'
 
-export const DEFAULT_SCRIPT_EXTENSIONS: readonly string[] = ['.js', '.sh', '']
-
 export interface Config {
   /** URL of the dotfiles git repository. */
   readonly repoUrl: string | null
   /** Absolute path of the local clone of the dotfiles repository. */
   readonly folderPath: string
-  /** File extensions recognised as scripts, with their dot. `''` means "no extension". */
-  readonly scriptExtensions: readonly string[]
+  /**
+   * File extensions recognised as scripts, with their dot (`''` means "no
+   * extension"), or `null` when every file of `scripts/` is a script.
+   */
+  readonly scriptExtensions: readonly string[] | null
 }
 
 /** On-disk shape of `~/.configfilerc`. Unknown keys are preserved on write. */
@@ -83,11 +84,17 @@ export class ConfigStore {
       folder_path: config.folderPath,
     }
 
-    await writeFile(this.path, `${JSON.stringify(next, null, 2)}\n`)
+    try {
+      await writeFile(this.path, `${JSON.stringify(next, null, 2)}\n`)
+    } catch (error) {
+      throw new CliError(
+        `Cannot save the configuration to ${this.path}: ${(error as Error).message}`,
+      )
+    }
   }
 
-  #readExtensions(value: unknown): readonly string[] {
-    if (value === undefined) return DEFAULT_SCRIPT_EXTENSIONS
+  #readExtensions(value: unknown): readonly string[] | null {
+    if (value === undefined || value === null) return null
 
     if (!Array.isArray(value) || !value.every(ext => typeof ext === 'string')) {
       throw new InvalidConfigError(

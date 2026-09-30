@@ -9,22 +9,37 @@ import { resolveUserPath, slugify } from './paths.js'
 export interface ModuleFile {
   /** Absolute path of the file inside the dotfiles repository. */
   readonly source: string
-  /** Absolute path where the file is deployed. */
+  /** Absolute path where the file is deployed. Never inside the repository. */
   readonly target: string
   /** `global`: symlinked by a regular deploy. `local`: copied by `deploy --local`. */
   readonly strategy: 'global' | 'local'
+  /** Absolute path of the dotfiles repository the file comes from. */
+  readonly repository: string
 }
 
-export interface Module {
+interface ModuleBase {
   readonly name: string
   readonly path: string
-  /** Files to deploy. `"deploy": "none"`, invalid and undecided entries are left out. */
-  readonly files: readonly ModuleFile[]
-  /** `source_path` of entries that define no deployment strategy (not deployed). */
-  readonly undecided: readonly string[]
-  /** Why settings.json could not be used, or `null`. Such a module has no files. */
-  readonly error: string | null
 }
+
+export type Module = ModuleBase &
+  (
+    | {
+        readonly error: null
+        /** Files to deploy. `"deploy": "none"`, invalid and undecided entries are left out. */
+        readonly files: readonly ModuleFile[]
+        /** `source_path` of entries that define no deployment strategy (not deployed). */
+        readonly undecided: readonly string[]
+        /** Why some entries of settings.json are ignored. */
+        readonly invalidEntries: readonly string[]
+        /** Deprecated settings used by the module. */
+        readonly deprecations: readonly string[]
+      }
+    | {
+        /** Why settings.json could not be used. Such a module has no files. */
+        readonly error: string
+      }
+  )
 
 export interface Script {
   readonly name: string
@@ -57,12 +72,20 @@ export async function listModules(folderPath: string, env: Environment): Promise
     const name = slugify(entry.name)
     if (!isUsableName(name, entry.name, modules, 'module', env)) continue
 
-    const content =
-      typeof settingsStats === 'string'
-        ? { files: [], undecided: [], error: `settings.json cannot be read (${settingsStats})` }
-        : await readModuleFiles(name, modulePath, settingsPath, env)
+    if (typeof settingsStats === 'string') {
+      modules.push({
+        name,
+        path: modulePath,
+        error: `settings.json cannot be read (${settingsStats})`,
+      })
+      continue
+    }
 
-    modules.push({ name, path: modulePath, ...content })
+    modules.push({
+      name,
+      path: modulePath,
+      ...(await readModuleFiles(modulePath, settingsPath, folderPath, env)),
+    })
   }
 
   return modules
@@ -87,33 +110,34 @@ function readStrategy(entry: Record<string, unknown>): DeployStrategy | 'unset' 
   return global ? 'global' : 'local'
 }
 
+type ModuleContent = Exclude<Module, { error: string }>
+
 async function readModuleFiles(
-  name: string,
   modulePath: string,
   settingsPath: string,
+  repository: string,
   env: Environment,
-): Promise<Pick<Module, 'files' | 'undecided' | 'error'>> {
-  const failed = (error: string) => ({ files: [], undecided: [], error })
-
+): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
   let settings: unknown
   try {
     settings = JSON.parse(await readFile(settingsPath, 'utf8'))
   } catch (error) {
-    return failed(`settings.json is not valid JSON (${(error as Error).message})`)
+    return { error: `settings.json is not valid JSON (${(error as Error).message})` }
   }
 
   const entries: unknown = (settings as { files?: unknown } | null)?.files
   if (!Array.isArray(entries)) {
-    return failed('settings.json has no "files" list')
+    return { error: 'settings.json has no "files" list' }
   }
 
   const files: ModuleFile[] = []
   const undecided: string[] = []
+  const invalidEntries: string[] = []
   let usesLegacyKey = false
 
   for (const [index, entry] of (entries as unknown[]).entries()) {
     const invalid = (reason: string) =>
-      env.warn(`Entry #${index + 1} of the "${name}" module settings is ignored: ${reason}.`)
+      invalidEntries.push(`entry #${index + 1} is ignored: ${reason}`)
 
     if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) {
       invalid('it is not an object')
@@ -150,38 +174,69 @@ async function readModuleFiles(
       home: env.home,
       cwd: strategy === 'global' ? env.home : env.cwd,
     })
-    const unsafe = [env.home, env.cwd].find(folder => isSameOrAncestor(resolvedTarget, folder))
-    if (unsafe != null) {
-      invalid(`"target_path" (${target}) would replace ${unsafe}`)
+
+    const problem = unsafeTarget(resolvedTarget, { ...env, repository })
+    if (problem != null) {
+      invalid(`"target_path" (${target}) ${problem}`)
       continue
     }
 
-    files.push({ source: path.resolve(modulePath, source), target: resolvedTarget, strategy })
+    files.push({
+      source: path.resolve(modulePath, source),
+      target: resolvedTarget,
+      strategy,
+      repository,
+    })
   }
 
-  if (usesLegacyKey) {
-    env.warn(
-      `Module "${name}": "global": true | false is deprecated and will stop working in 2.0. ` +
-        'Use "deploy": "global" | "local" instead.',
-    )
-  }
+  const deprecations = usesLegacyKey
+    ? [
+        '"global": true | false is deprecated and will stop working in 2.0. ' +
+          'Use "deploy": "global" | "local" instead',
+      ]
+    : []
 
-  return { files, undecided, error: null }
+  return { error: null, files, undecided, invalidEntries, deprecations }
 }
 
 /**
- * Reads the scripts of a dotfiles repository. A script is either a file of
- * `scripts/` with an allowed extension, or a folder of `scripts/` (symlinks
- * included) containing an `index` file with an allowed extension. Hidden files
- * are ignored.
+ * Why deploying to `target` could destroy something important, or `null`.
+ * Deploying moves whatever is at the target aside, so the target must not be
+ * the home folder, the current folder, the repository, one of their parents,
+ * or anything inside the repository.
+ */
+export function unsafeTarget(
+  target: string,
+  { home, cwd, repository }: { home: string; cwd: string; repository: string },
+): string | null {
+  for (const [folder, label] of [
+    [home, 'the home folder'],
+    [cwd, 'the current folder'],
+    [repository, 'the dotfiles repository'],
+  ] as const) {
+    if (contains(target, folder)) return `would replace ${label} (${folder})`
+  }
+  if (contains(repository, target)) return `is inside the dotfiles repository (${repository})`
+  return null
+}
+
+/**
+ * Reads the scripts of a dotfiles repository: every file of `scripts/`, and
+ * every folder of `scripts/` (symlinks included) containing an `index` file.
+ * Hidden files are ignored. When `extensions` is set, only files with one of
+ * these extensions count (`''` means "no extension").
+ *
+ * A script is named after its file name up to the first dot: `setup.macos.sh`
+ * is the `setup` script.
  */
 export async function listScripts(
   folderPath: string,
-  extensions: readonly string[],
+  extensions: readonly string[] | null,
   env: Pick<Environment, 'warn'>,
 ): Promise<Script[]> {
   const scriptsDir = path.join(folderPath, 'scripts')
   const scripts: Script[] = []
+  const allowed = (name: string) => extensions == null || extensions.includes(path.extname(name))
 
   for (const entry of await readDirOrFail(scriptsDir)) {
     if (entry.name.startsWith('.')) continue
@@ -190,26 +245,14 @@ export async function listScripts(
     if (stats == null) continue
 
     let file: string | undefined
-    let baseName: string
-
     if (stats.isDirectory()) {
-      baseName = entry.name
-      file = undefined
-      for (const ext of extensions) {
-        const candidate = path.join(entry.name, `index${ext}`)
-        if ((await stat(path.join(scriptsDir, candidate)).catch(() => null))?.isFile()) {
-          file = candidate
-          break
-        }
-      }
-    } else {
-      const ext = path.extname(entry.name)
-      baseName = path.basename(entry.name, ext)
-      file = stats.isFile() && extensions.includes(ext) ? entry.name : undefined
+      file = await findIndex(scriptsDir, entry.name, allowed, env)
+    } else if (stats.isFile() && allowed(entry.name)) {
+      file = entry.name
     }
-
     if (file == null) continue
 
+    const [baseName = ''] = entry.name.split('.')
     const name = slugify(baseName)
     if (!isUsableName(name, file, scripts, 'script', env)) continue
 
@@ -219,7 +262,32 @@ export async function listScripts(
   return scripts
 }
 
-/** Follows symlinks. Returns `null` (with a warning) for a broken link. */
+/** The `index` file of a script folder (`index`, `index.sh`, …), relative to `scriptsDir`. */
+async function findIndex(
+  scriptsDir: string,
+  folder: string,
+  allowed: (name: string) => boolean,
+  env: Pick<Environment, 'warn'>,
+): Promise<string | undefined> {
+  let names: string[]
+  try {
+    names = await readdir(path.join(scriptsDir, folder))
+  } catch (error) {
+    env.warn(`Script folder ${path.join(scriptsDir, folder)} cannot be read (${errorCode(error)}).`)
+    return undefined
+  }
+
+  for (const name of names.sort()) {
+    if (name !== 'index' && !name.startsWith('index.')) continue
+    if (!allowed(name)) continue
+    if ((await stat(path.join(scriptsDir, folder, name)).catch(() => null))?.isFile()) {
+      return path.join(folder, name)
+    }
+  }
+  return undefined
+}
+
+/** Follows symlinks. Returns `null` (with a warning) when the link cannot be followed. */
 async function statEntry(entry: Dirent, fullPath: string, env: Pick<Environment, 'warn'>) {
   if (!entry.isSymbolicLink()) {
     return { isDirectory: () => entry.isDirectory(), isFile: () => entry.isFile() }
@@ -227,7 +295,8 @@ async function statEntry(entry: Dirent, fullPath: string, env: Pick<Environment,
 
   const stats: Stats | string = await stat(fullPath).catch(errorCode)
   if (typeof stats === 'string') {
-    env.warn(`${fullPath} is a broken symbolic link (${stats}). It is ignored.`)
+    const reason = stats === 'ENOENT' ? 'is a broken symbolic link' : `cannot be read (${stats})`
+    env.warn(`${fullPath} ${reason}. It is ignored.`)
     return null
   }
   return stats
@@ -242,7 +311,9 @@ function isUsableName(
   env: Pick<Environment, 'warn'>,
 ): boolean {
   if (name === '') {
-    env.warn(`"${source}" has no usable ${kind} name (letters, digits, "_" or "-"). It is ignored.`)
+    env.warn(
+      `"${source}" has no usable ${kind} name (ASCII letters, digits, "_" or "-"). It is ignored.`,
+    )
     return false
   }
   if (existing.some(other => other.name === name)) {
@@ -252,8 +323,9 @@ function isUsableName(
   return true
 }
 
-function isSameOrAncestor(candidate: string, folder: string): boolean {
-  const relative = path.relative(candidate, folder)
+/** Whether `child` is `parent` or inside it (paths are compared as text). */
+export function contains(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 

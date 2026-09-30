@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
 
-import { ConfigStore, DEFAULT_SCRIPT_EXTENSIONS } from '../src/config.js'
+import { ConfigStore } from '../src/config.js'
 import { CliError, NotInitializedError } from '../src/errors.js'
 import { createSandbox } from './helpers.js'
 
@@ -15,14 +15,14 @@ describe('ConfigStore', () => {
     await expect(store.read()).rejects.toBeInstanceOf(NotInitializedError)
   })
 
-  it('reads the snake_case file format and defaults the script extensions', async () => {
+  it('reads the snake_case file format; without script_extensions, every file is a script', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure({ repo_url: 'git@example.com:me/dotfiles.git' })
 
     await expect(new ConfigStore(sandbox.home).read()).resolves.toEqual({
       repoUrl: 'git@example.com:me/dotfiles.git',
       folderPath: sandbox.repo,
-      scriptExtensions: DEFAULT_SCRIPT_EXTENSIONS,
+      scriptExtensions: null,
     })
   })
 
@@ -87,7 +87,7 @@ describe('ConfigStore', () => {
     await sandbox.configure({ script_extensions: ['py', '.rb', ''] })
     expect((await store.read()).scriptExtensions).toEqual(['.py', '.rb', ''])
 
-    for (const invalid of ['.py', [1], null]) {
+    for (const invalid of ['.py', [1], 3]) {
       await sandbox.configure({ script_extensions: invalid })
       await expect(store.read()).rejects.toThrow(/"script_extensions" must be a list of strings/)
     }

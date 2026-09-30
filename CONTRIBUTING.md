@@ -83,7 +83,7 @@ Formatting and linting are handled by [Biome](https://biomejs.dev), configured i
 
 * Relative imports use the `.js` extension (`import { x } from './x.js'`).
 * Expected failures throw a `CliError` (exit code and message for the user); never call `process.exit`.
-* Commands get everything from the injected `Context` (home, cwd, output, prompts) so they can be tested.
+* Commands get everything from the injected `Context` (home, cwd, output, prompts) so they can be tested. The only exception is the `DEBUG` environment variable, read where stack traces are printed.
 * Bug fixes come with a test that reproduces the bug.
 
 ### Git commit messages

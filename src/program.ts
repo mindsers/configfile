@@ -14,12 +14,12 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 }
 
 export function buildProgram(ctx: Context): Command {
+  // showHelpAfterError, exitOverride and configureOutput are copied to
+  // subcommands when they are created, so they are set before registering them.
   const program = new Command('configfile')
     .description('Manage your configuration files from a dotfiles git repository.')
     .version(pkg.version)
     .showHelpAfterError('(add --help for additional information)')
-    // Settings above are copied to subcommands when they are created, so they
-    // must be set before the commands are registered.
     .exitOverride()
     .configureOutput({
       writeOut: text => ctx.output.stdout.write(text),
