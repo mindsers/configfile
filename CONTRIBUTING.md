@@ -88,14 +88,25 @@ Formatting and linting are handled by [Biome](https://biomejs.dev), configured i
 
 ### Git commit messages
 
-* Use the present tense ("Add feature" not "Added feature").
+Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
-* Use the imperative mood ("Move cursor to..." not "Moves cursor to...").
+```txt
+<type>[optional scope][!]: <description>
 
-* Limit the first line to 72 characters or less.
+[optional body]
 
-* Reference issues and pull requests liberally after the first line.
+[optional footer(s)]
+```
 
+* Use one of these types: `feat` (a new feature), `fix` (a bug fix), `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` or `revert`.
+
+* The scope is optional and names the part of the project: `feat(modules): add status command`, `docs(changelog): …`.
+
+* Mark breaking changes with `!` after the type or scope (`feat!: …`), and explain them in a `BREAKING CHANGE:` footer.
+
+* Write the description in the imperative mood and present tense, starting with a lowercase letter and without a final period ("add feature", not "Added feature."). Keep the first line to 72 characters or less.
+
+* Reference issues and pull requests in the body or the footer (`Fixes #48`).
 
 [Issues]: https://github.com/Mindsers/configfile/issues
 [forum]: https://community.nathanaelcherrier.com/c/open-source/configfile/8
