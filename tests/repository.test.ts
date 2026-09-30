@@ -91,6 +91,7 @@ describe('listModules', () => {
     const { modules, warnings } = await modulesOf(sandbox)
     const zsh = usable(modules[0])
     const repository = sandbox.repo
+    const module = path.join(sandbox.repo, 'files/zsh')
 
     expect(zsh.files).toEqual([
       {
@@ -98,24 +99,28 @@ describe('listModules', () => {
         target: path.join(sandbox.home, '.zshrc'),
         strategy: 'global',
         repository,
+        module,
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/local.env'),
         target: path.join(sandbox.cwd, '.env'),
         strategy: 'local',
         repository,
+        module,
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/aliases'),
         target: path.join(sandbox.home, '.aliases'),
         strategy: 'global',
         repository,
+        module,
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/editorconfig'),
         target: path.join(sandbox.cwd, '.editorconfig'),
         strategy: 'local',
         repository,
+        module,
       },
     ])
     expect(zsh.undecided).toEqual(['forgotten'])
@@ -173,8 +178,11 @@ describe('listModules', () => {
     ['/', 'global', 'would replace the home folder'],
     ['.', 'local', 'would replace the current folder'],
     ['~/dotfiles', 'global', 'would replace the dotfiles repository'],
-    ['~/dotfiles/files', 'global', 'is inside the dotfiles repository'],
+    ['~/dotfiles/files', 'global', 'would replace the module folder'],
     ['~/dotfiles/files/zsh/zshrc', 'global', 'is inside the dotfiles repository'],
+    ['~/.configfilerc', 'global', "would replace configfile's configuration"],
+    ['~/.configfile', 'global', "would replace configfile's working folder"],
+    ['~/.configfile/state.json', 'global', "is inside configfile's working folder"],
   ])('refuses the dangerous target_path %s (%s)', async (target, deploy, reason) => {
     const sandbox = await createSandbox()
     await sandbox.write(
@@ -187,6 +195,54 @@ describe('listModules', () => {
 
     expect(zsh.files).toEqual([])
     expect(zsh.invalidEntries[0]).toContain(reason)
+  })
+
+  it.each(['../zshrc', '../../../Documents', '/etc/hosts', '.', 'sub/../../other/zshrc'])(
+    'refuses a source_path outside the module folder: %s',
+    async source => {
+      const sandbox = await createSandbox()
+      await sandbox.write(
+        'home/dotfiles/files/zsh/settings.json',
+        settings([{ source_path: source, target_path: '~/.zshrc', deploy: 'global' }]),
+      )
+
+      const { modules } = await modulesOf(sandbox)
+      const zsh = usable(modules[0])
+
+      expect(zsh.files).toEqual([])
+      expect(zsh.invalidEntries[0]).toContain('must name a file or folder inside the module folder')
+    },
+  )
+
+  it('accepts sources in subfolders of the module', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      settings([{ source_path: 'conf/./zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
+    )
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(usable(modules[0]).files[0]?.source).toBe(
+      path.join(sandbox.repo, 'files/zsh/conf/zshrc'),
+    )
+  })
+
+  it('reads the configfile 0.3.1 list format, with a deprecation', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', global: true }]),
+    )
+
+    const { modules } = await modulesOf(sandbox)
+    const zsh = usable(modules[0])
+
+    expect(zsh.files.map(file => file.target)).toEqual([path.join(sandbox.home, '.zshrc')])
+    expect(zsh.deprecations).toEqual([
+      expect.stringContaining('settings.json is a list (configfile 0.3 format)'),
+      expect.stringContaining('"global": true | false is deprecated'),
+    ])
   })
 
   it('refuses a target that contains the repository', async () => {

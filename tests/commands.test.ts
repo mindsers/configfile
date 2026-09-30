@@ -476,6 +476,44 @@ describe('modules status, dry run and undeploy', () => {
     },
   )
 
+  it('deploys a repository written for configfile 0.3.1 (list format)', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', global: true }]),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain('settings.json is a list (configfile 0.3 format)')
+    expect(await readlink(path.join(sandbox.home, '.zshrc'))).toBe(
+      path.join(sandbox.repo, 'files/zsh/zshrc'),
+    )
+  })
+
+  it('never lets a source outside the module be deployed or undeployed', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/Documents/thesis.txt', 'years of work')
+    await sandbox.write(
+      'home/dotfiles/files/evil/settings.json',
+      JSON.stringify({
+        files: [{ source_path: '../../../Documents', target_path: '~/Documents', deploy: 'local' }],
+      }),
+    )
+
+    const undeploy = await runCli(sandbox, ['modules', 'undeploy', '--local', 'evil'])
+
+    expect(undeploy.code).toBe(1)
+    expect(undeploy.stderr).toContain('must name a file or folder inside the module folder')
+    expect(await readFile(path.join(sandbox.home, 'Documents/thesis.txt'), 'utf8')).toBe(
+      'years of work',
+    )
+  })
+
   it('warns about the deprecated "global" key', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)

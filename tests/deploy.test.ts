@@ -32,6 +32,7 @@ async function setup() {
     target,
     strategy,
     repository: sandbox.repo,
+    module: path.join(sandbox.repo, 'files/zsh'),
     ...overrides,
   })
 
@@ -46,6 +47,7 @@ async function folderModule(sandbox: Sandbox) {
     target: path.join(sandbox.cwd, 'colors'),
     strategy: 'local',
     repository: sandbox.repo,
+    module: path.join(sandbox.repo, 'files/vim'),
   } as const
 }
 
@@ -214,6 +216,7 @@ describe('deployFile (local)', () => {
         target: path.join(sandbox.cwd, 'folder'),
         strategy: 'local',
         repository: sandbox.repo,
+        module: path.join(sandbox.repo, 'files/secret'),
       } as const
 
       await expect(deployFile(file, { force: true, record })).rejects.toThrow(CliError)
@@ -233,6 +236,7 @@ describe('deployFile (local)', () => {
       target: path.join(sandbox.cwd, 'folder'),
       strategy: 'local',
       repository: sandbox.repo,
+      module: path.join(sandbox.repo, 'files/secret'),
     } as const
 
     await expect(deployFile(file, { record })).rejects.toThrow(CliError)
@@ -346,6 +350,7 @@ describe('undeployFile', () => {
       target: path.join(sandbox.home, '.config/nvim'),
       strategy: 'global',
       repository: sandbox.repo,
+      module: path.join(sandbox.repo, 'files/nvim'),
     } as const
     await deployFile(nvim, { record })
 

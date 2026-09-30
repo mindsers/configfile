@@ -15,7 +15,8 @@ import {
 import path from 'node:path'
 
 import { CliError } from './errors.js'
-import { contains, type ModuleFile } from './repository.js'
+import { contains } from './paths.js'
+import type { ModuleFile } from './repository.js'
 import type { BackupRecord } from './state.js'
 
 /** What is currently at the target of a module file. */
