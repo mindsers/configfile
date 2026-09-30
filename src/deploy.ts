@@ -1,52 +1,63 @@
 import { lstatSync } from 'node:fs'
-import {
-  cp,
-  lstat,
-  mkdir,
-  readdir,
-  readFile,
-  readlink,
-  realpath,
-  rename,
-  rm,
-  stat,
-  symlink,
-} from 'node:fs/promises'
+import { cp, mkdir, open, readdir, readlink, realpath, rename, rm, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { CliError } from './errors.js'
-import { contains } from './paths.js'
+import {
+  type Identity,
+  identityOf,
+  kindOf,
+  lstatOrNull,
+  messageOf,
+  realpathOfExisting,
+  removeTree,
+  sameIdentity,
+  siblingName,
+  statOrNull,
+} from './fsutil.js'
+import { configfilePaths, contains } from './paths.js'
 import type { ModuleFile } from './repository.js'
-import type { BackupRecord } from './state.js'
+import { type Backup, type DeploymentRecord, isBackupPathOf } from './state.js'
 
-/** What is currently at the target of a module file. */
+/** What is currently at the target of a module file, and whose it is. */
 export type TargetState =
   | { kind: 'missing' }
-  /** Global: the link to the source. Local: a copy identical to the source. */
-  | { kind: 'deployed' }
-  /** Local only: a file or folder that differs from the source. */
-  | { kind: 'modified' }
-  /** Global only: something that is not the link to the source. */
-  | { kind: 'occupied'; what: 'file' | 'folder' | 'link' }
   /**
-   * Something is at the target but the source is missing from the repository.
-   * `ours`: it is the link configfile made (global files only).
+   * Global: a link to the source. Local: an unmodified copy configfile made.
+   * `recorded`: false for links made before 1.0 (adopted when deploying).
    */
+  | { kind: 'deployed'; recorded: boolean }
+  /** Local: a copy configfile made, modified since. */
+  | { kind: 'modified' }
+  /** Local: identical to the source, but not copied by configfile. */
+  | { kind: 'identical' }
+  /** Global: the link configfile made, pointing to an old location of the source. */
+  | { kind: 'stale' }
+  /** Something configfile did not put there. */
+  | { kind: 'foreign'; what: 'file' | 'folder' | 'link' }
+  /** Something is there but the source is missing. `ours`: configfile put it there. */
   | { kind: 'source-missing'; ours: boolean }
-
-/** A target left in place by `undeploy`, and why. */
-export type KeptState = Extract<TargetState, { kind: 'occupied' | 'modified' | 'source-missing' }>
 
 export type DeployDecision =
   | { action: 'up-to-date' }
   | { action: 'create' }
-  /** Move what is at the target aside, then deploy. */
-  | { action: 'replace'; what: 'file' | 'folder' | 'link' | 'copy' }
-  /** Local only, without `force`: the target exists and differs from the source. */
+  /** Move what is at the target aside (recorded as a backup), then deploy. */
+  | { action: 'replace'; what: 'file' | 'folder' | 'link' | 'copy'; backup: string }
+  /** Replace configfile's own outdated link; nothing is backed up. */
+  | { action: 'refresh' }
+  /** The target exists and differs; replaced only with `force`. */
   | { action: 'conflict' }
 
+export type KeptState = Extract<
+  TargetState,
+  { kind: 'modified' | 'identical' | 'foreign' | 'source-missing' }
+>
+
+/** The backup undeploy would put back, and whether it can. */
+export type BackupCheck = { path: string; status: 'ok' | 'missing' | 'changed' }
+
 export type UndeployDecision =
-  | { action: 'remove' }
+  | { action: 'remove'; backup: BackupCheck | null }
   | { action: 'not-deployed' }
   | { action: 'keep'; state: KeptState }
 
@@ -57,158 +68,204 @@ export type DeployResult =
   | { status: 'conflict' }
 
 export type UndeployResult =
-  /** `missingBackup`: a recorded backup that was deleted since, so nothing could be restored. */
-  | { status: 'removed'; restored: string | null; missingBackup: string | null }
+  | {
+      status: 'removed'
+      /** The backup that was checked (restored when its status is `ok`), or `null`. */
+      backup: BackupCheck | null
+      /** A removed copy that could not be deleted, left at this path. */
+      leftover: string | null
+    }
   | { status: 'not-deployed' }
   | { status: 'kept'; state: KeptState }
 
-/** The single place deciding what deploying a file does; dry runs use it too. */
-export function decideDeploy(state: TargetState, { force }: { force: boolean }): DeployDecision {
+/** What deploying and undeploying need besides the file itself. */
+export interface DeployContext {
+  readonly record: DeploymentRecord
+  readonly guard: Guard
+}
+
+// ---------------------------------------------------------------------------
+// Inspecting and deciding (shared by dry runs and real runs)
+
+export async function inspectFile(
+  file: ModuleFile,
+  record: DeploymentRecord,
+): Promise<TargetState> {
+  const existing = await lstatOrNull(file.target)
+  if (existing == null) return { kind: 'missing' }
+
+  const recorded = (await record.find(file.target))?.deployed
+  const recordedHere = sameIdentity(recorded?.identity, identityOf(existing))
+  const pointsToSource =
+    existing.isSymbolicLink() &&
+    path.resolve(path.dirname(file.target), await readlink(file.target)) === file.source
+  const sourceExists = (await lstatOrNull(file.source)) != null
+
+  if (file.strategy === 'global') {
+    if (!sourceExists) return { kind: 'source-missing', ours: pointsToSource || recordedHere }
+    if (pointsToSource) return { kind: 'deployed', recorded: recordedHere }
+    if (recordedHere && existing.isSymbolicLink()) return { kind: 'stale' }
+    return { kind: 'foreign', what: kindOf(existing) }
+  }
+
+  if (!sourceExists) return { kind: 'source-missing', ours: false }
+  const same = await sameContent(file.source, file.target)
+  if (recordedHere) return same ? { kind: 'deployed', recorded: true } : { kind: 'modified' }
+  return same ? { kind: 'identical' } : { kind: 'foreign', what: kindOf(existing) }
+}
+
+/** What deploying `file` would do. Runs every check a real deployment runs. */
+export async function planDeploy(
+  file: ModuleFile,
+  { force, record, guard }: DeployContext & { force: boolean },
+): Promise<DeployDecision> {
+  await assertUsableSource(file)
+  await guard.check(file)
+
+  const state = await inspectFile(file, record)
   switch (state.kind) {
     case 'missing':
       return { action: 'create' }
     case 'deployed':
+    case 'identical':
       return { action: 'up-to-date' }
-    case 'occupied':
-      return { action: 'replace', what: state.what }
+    case 'stale':
+      return { action: 'refresh' }
     case 'modified':
-      return force ? { action: 'replace', what: 'copy' } : { action: 'conflict' }
+      return force
+        ? { action: 'replace', what: 'copy', backup: nextBackupPath(file.target) }
+        : { action: 'conflict' }
+    case 'foreign':
+      if (file.strategy === 'local' && !force) return { action: 'conflict' }
+      return { action: 'replace', what: state.what, backup: nextBackupPath(file.target) }
     case 'source-missing':
-      // Deploying checks the source first, so this only happens in a race.
+      // assertUsableSource checked the source: it disappeared meanwhile.
       throw new CliError('the source file is missing from the repository.')
   }
 }
 
-/** The single place deciding what undeploying a file does; dry runs use it too. */
-export function decideUndeploy(state: TargetState): UndeployDecision {
+/** What undeploying `file` would do. Runs every check a real undeployment runs. */
+export async function planUndeploy(
+  file: ModuleFile,
+  { record, guard }: DeployContext,
+): Promise<UndeployDecision> {
+  await guard.check(file)
+
+  const state = await inspectFile(file, record)
   switch (state.kind) {
     case 'missing':
       return { action: 'not-deployed' }
     case 'deployed':
-      return { action: 'remove' }
+    case 'stale':
+      return { action: 'remove', backup: await checkLatestBackup(file.target, record) }
     case 'source-missing':
-      return state.ours ? { action: 'remove' } : { action: 'keep', state }
-    case 'occupied':
+      return state.ours && file.strategy === 'global'
+        ? { action: 'remove', backup: await checkLatestBackup(file.target, record) }
+        : { action: 'keep', state }
     case 'modified':
+    case 'identical':
+    case 'foreign':
       return { action: 'keep', state }
   }
 }
 
-export async function inspectFile(file: ModuleFile): Promise<TargetState> {
-  const existing = await lstatOrNull(file.target)
-  if (existing == null) return { kind: 'missing' }
-
-  const pointsToSource =
-    existing.isSymbolicLink() &&
-    path.resolve(path.dirname(file.target), await readlink(file.target)) === file.source
-
-  if ((await lstatOrNull(file.source)) == null) {
-    return { kind: 'source-missing', ours: file.strategy === 'global' && pointsToSource }
-  }
-
-  if (file.strategy === 'local') {
-    return (await sameContent(file.source, file.target))
-      ? { kind: 'deployed' }
-      : { kind: 'modified' }
-  }
-
-  if (pointsToSource) return { kind: 'deployed' }
-  if (existing.isSymbolicLink()) return { kind: 'occupied', what: 'link' }
-  return { kind: 'occupied', what: existing.isDirectory() ? 'folder' : 'file' }
-}
+// ---------------------------------------------------------------------------
+// Deploying and undeploying (callers hold the lock, see `withLock`)
 
 /**
- * Deploys a file: global files are symlinked, local files are copied.
+ * Deploys a file: global files are symlinked, local files are copied (links
+ * followed, so the copy never points into the repository).
  *
- * Anything already at the target that is not the deployed file is moved aside
- * to `<target>.old` (or `.old.1`, …) and recorded, so that `undeployFile` can
- * restore it. For local files this only happens with `force`; otherwise a
- * `conflict` is returned.
+ * Anything in the way that configfile did not put there is moved aside to
+ * `<target>.old` (or `.old.1`, …) and recorded before it is moved, so that
+ * `undeployFile` can restore it. For local files this only happens with
+ * `force`; otherwise a `conflict` is returned.
  */
 export async function deployFile(
   file: ModuleFile,
-  { force = false, record }: { force?: boolean; record: BackupRecord },
+  context: DeployContext & { force?: boolean },
 ): Promise<DeployResult> {
-  await assertSourceExists(file)
-  await assertSafeTarget(file)
+  const { record } = context
+  const decision = await planDeploy(file, { ...context, force: context.force ?? false })
 
-  const decision = decideDeploy(await inspectFile(file), { force })
-  if (decision.action === 'up-to-date') return { status: 'up-to-date' }
   if (decision.action === 'conflict') return { status: 'conflict' }
+  if (decision.action === 'up-to-date') {
+    // Adopt links made before 1.0, so that undeploy knows they are ours.
+    const stats = await lstatOrNull(file.target)
+    const known = (await record.find(file.target))?.deployed
+    if (stats != null && !sameIdentity(known?.identity, identityOf(stats))) {
+      if (file.strategy === 'global') await recordDeployed(file, record)
+    }
+    return { status: 'up-to-date' }
+  }
 
   await mkdir(path.dirname(file.target), { recursive: true })
 
+  if (decision.action === 'refresh') {
+    await rm(file.target)
+  }
+
   let backup: string | null = null
   if (decision.action === 'replace') {
-    backup = nextBackupPath(file.target)
-    await rename(file.target, backup)
-    try {
-      await record.add(file.target, backup)
-    } catch (error) {
-      // Without a record, undeploy could not restore it: put it back and stop.
-      await rename(backup, file.target).catch(() => {
-        throw new CliError(`${(error as Error).message} The previous file is in ${backup}.`)
-      })
-      throw error
-    }
+    backup = decision.backup
+    await moveAside(file.target, backup, record)
   }
 
   try {
     if (file.strategy === 'global') {
       await symlink(file.source, file.target)
     } else {
-      // verbatimSymlinks: links inside a copied folder stay identical to the source.
-      await cp(file.source, file.target, {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-        verbatimSymlinks: true,
-      })
+      await copyInto(file.source, file.target)
     }
   } catch (error) {
-    throw await undoFailedDeploy(file.target, backup, record, error)
+    throw await putBackAfterFailure(file.target, backup, record, error)
   }
 
+  await recordDeployed(file, record)
   return backup == null ? { status: 'deployed' } : { status: 'backed-up', backup }
 }
 
 /**
- * Removes a deployed file (the link, or a copy that was not modified since),
- * then puts back the most recent backup configfile made of it, if any. Other
- * `.old` files are never touched.
+ * Removes what configfile deployed (its link, or its copy when unmodified),
+ * then puts back the most recent backup it made, if that backup is unchanged.
+ * Nothing configfile did not create is ever removed.
  */
 export async function undeployFile(
   file: ModuleFile,
-  { record }: { record: BackupRecord },
+  context: DeployContext,
 ): Promise<UndeployResult> {
-  await assertSafeTarget(file)
+  const { record } = context
+  const decision = await planUndeploy(file, context)
 
-  const decision = decideUndeploy(await inspectFile(file))
   if (decision.action === 'not-deployed') return { status: 'not-deployed' }
   if (decision.action === 'keep') return { status: 'kept', state: decision.state }
 
-  // Checked before removing anything, so a problem never leaves the target empty.
-  const backup = await record.latest(file.target)
+  // Moved aside first: if the backup cannot be put back, the deployed file returns.
+  const removed = siblingName(file.target, 'undeploy')
+  await rename(file.target, removed)
 
-  await rm(file.target, { recursive: true })
-
-  if (backup == null) return { status: 'removed', restored: null, missingBackup: null }
-  if (!backup.exists) {
-    await record.remove(file.target, backup.path)
-    return { status: 'removed', restored: null, missingBackup: backup.path }
+  const { backup } = decision
+  if (backup?.status === 'ok') {
+    try {
+      await rename(backup.path, file.target)
+    } catch (error) {
+      await rename(removed, file.target).catch(() => {})
+      throw new CliError(`Cannot put the backup ${backup.path} back: ${messageOf(error)}`)
+    }
   }
 
+  await record.setDeployed(file.target, null)
+  if (backup != null && backup.status !== 'changed') {
+    await record.removeBackup(file.target, backup.path)
+  }
+
+  let leftover: string | null = null
   try {
-    await rename(backup.path, file.target)
-  } catch (error) {
-    throw new CliError(
-      `${file.target} was removed, but its backup ${backup.path} could not be put back: ` +
-        `${(error as Error).message}`,
-    )
+    await removeTree(removed)
+  } catch {
+    leftover = removed
   }
-  await record.remove(file.target, backup.path)
-
-  return { status: 'removed', restored: backup.path, missingBackup: null }
+  return { status: 'removed', backup, leftover }
 }
 
 /** The name the next backup of `target` will get. */
@@ -223,127 +280,258 @@ export function nextBackupPath(target: string): string {
   return backup
 }
 
-/** Fails with a readable message when the source of `file` is missing or unreadable. */
-export async function assertSourceExists(file: ModuleFile): Promise<void> {
-  try {
-    await stat(file.source)
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    throw new CliError(
-      code === 'ENOENT'
-        ? `Source file ${file.source} does not exist.`
-        : `Cannot read source file ${file.source}: ${(error as Error).message}`,
-    )
-  }
-}
+// ---------------------------------------------------------------------------
+// Safety checks
 
 /**
- * Refuses targets that are, through symbolic links, inside the repository or
- * one of its parents (settings are checked on paths as written; this checks
- * where they really lead). The target itself is not followed: it may be the
- * deployed link.
+ * The source must exist and really be inside its module folder, links
+ * included: a repository must not be able to deploy files from elsewhere
+ * (for example `~/.ssh`). Links inside a local folder are checked too, since
+ * copies follow them.
  */
-export async function assertSafeTarget(file: ModuleFile): Promise<void> {
-  const repository = await realpath(file.repository)
-  const target = path.join(
-    await realpathOfExisting(path.dirname(file.target)),
-    path.basename(file.target),
-  )
+export async function assertUsableSource(file: ModuleFile): Promise<void> {
+  const stats = await statOrNull(file.source).catch(error => {
+    throw new CliError(`Cannot read source file ${file.source}: ${messageOf(error)}`)
+  })
+  if (stats == null) throw new CliError(`Source file ${file.source} does not exist.`)
 
-  if (contains(repository, target) || contains(target, repository)) {
-    throw new CliError(
-      `the target leads into the dotfiles repository (${repository}) through a symbolic link. ` +
-        'Deploying there would change the repository itself.',
-    )
-  }
-}
-
-/** Real path of `target`, or of its closest existing parent followed by the rest. */
-async function realpathOfExisting(target: string): Promise<string> {
-  try {
-    return await realpath(target)
-  } catch (error) {
-    const parent = path.dirname(target)
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === target) throw error
-    return path.join(await realpathOfExisting(parent), path.basename(target))
-  }
-}
-
-/**
- * After a failed deployment: removes what was partly created at the target and
- * puts the backup back. Explains where things are when that is not possible.
- */
-async function undoFailedDeploy(
-  target: string,
-  backup: string | null,
-  record: BackupRecord,
-  error: unknown,
-): Promise<Error> {
-  const reason = (error as Error).message
-
-  // EEXIST: something else created the target meanwhile; it is not ours to remove.
-  if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-    try {
-      await rm(target, { recursive: true, force: true })
-    } catch (cleanupError) {
-      return new CliError(
-        `${reason} A partial copy was left at ${target} (${(cleanupError as Error).message})` +
-          (backup == null ? '.' : `; the previous file is in ${backup}.`),
-      )
+  const module = await realpath(file.module)
+  const assertInside = async (link: string) => {
+    const real = await realpath(link).catch(() => null)
+    if (real == null) throw new CliError(`${link} is a broken symbolic link.`)
+    if (!contains(module, real)) {
+      throw new CliError(`${link} leads outside the module folder (${real}).`)
     }
   }
 
+  await assertInside(file.source)
+  if (file.strategy === 'local' && stats.isDirectory()) {
+    await walkLinks(await realpath(file.source), assertInside)
+  }
+}
+
+async function walkLinks(folder: string, visit: (link: string) => Promise<void>): Promise<void> {
+  for (const entry of await readdir(folder, { withFileTypes: true })) {
+    const entryPath = path.join(folder, entry.name)
+    if (entry.isSymbolicLink()) {
+      await visit(entryPath)
+      const real = await realpath(entryPath)
+      if ((await statOrNull(real))?.isDirectory()) await walkLinks(real, visit)
+    } else if (entry.isDirectory()) {
+      await walkLinks(entryPath, visit)
+    }
+  }
+}
+
+/**
+ * Refuses targets that are, by identity (whatever their letter case or the
+ * links used to reach them), the home folder, the current folder, the
+ * repository, the module, configfile's own files, one of their parents, or
+ * inside the repository, the module or configfile's working folder.
+ */
+export class Guard {
+  readonly #home: string
+  readonly #cwd: string
+  readonly #ancestors = new Map<string, Promise<Map<string, string>>>()
+
+  constructor({ home, cwd }: { home: string; cwd: string }) {
+    this.#home = home
+    this.#cwd = cwd
+  }
+
+  async check(file: ModuleFile): Promise<void> {
+    const own = configfilePaths(this.#home)
+    const stats = await lstatOrNull(file.target)
+
+    if (stats != null && !stats.isSymbolicLink()) {
+      const replaced = [
+        [this.#home, 'the home folder'],
+        [this.#cwd, 'the current folder'],
+        [file.repository, 'the dotfiles repository'],
+        [file.module, 'the module folder'],
+        [own.dir, "configfile's working folder"],
+        [own.rc, "configfile's configuration"],
+      ] as const
+      for (const [protectedPath, label] of replaced) {
+        const ancestors = await this.#ancestorsOf(protectedPath)
+        if (ancestors.has(key(identityOf(stats)))) {
+          throw new CliError(`the target would replace ${label} (${protectedPath}).`)
+        }
+      }
+    }
+
+    const parents = await this.#ancestorsOf(path.dirname(file.target))
+    for (const [protectedPath, label] of [
+      [file.repository, 'the dotfiles repository'],
+      [file.module, 'the module folder'],
+      [own.dir, "configfile's working folder"],
+    ] as const) {
+      const identity = await statOrNull(protectedPath)
+      if (identity != null && parents.has(key(identityOf(identity)))) {
+        throw new CliError(
+          `the target is inside ${label} (${protectedPath}), possibly through a symbolic link.`,
+        )
+      }
+    }
+  }
+
+  /** Identities of `target` (links followed) and of all its parents, up to `/`. */
+  #ancestorsOf(target: string): Promise<Map<string, string>> {
+    let cached = this.#ancestors.get(target)
+    if (cached == null) {
+      cached = (async () => {
+        const identities = new Map<string, string>()
+        let current = await realpathOfExisting(target)
+        for (;;) {
+          const stats = await statOrNull(current)
+          if (stats != null) identities.set(key(identityOf(stats)), current)
+          const parent = path.dirname(current)
+          if (parent === current) return identities
+          current = parent
+        }
+      })()
+      this.#ancestors.set(target, cached)
+    }
+    return cached
+  }
+}
+
+function key(identity: Identity): string {
+  return `${identity.dev}:${identity.ino}`
+}
+
+// ---------------------------------------------------------------------------
+// File operations
+
+async function recordDeployed(file: ModuleFile, record: DeploymentRecord): Promise<void> {
+  const stats = await lstatOrNull(file.target)
+  if (stats == null) return
+  await record.setDeployed(file.target, {
+    strategy: file.strategy,
+    source: file.source,
+    identity: identityOf(stats),
+  })
+}
+
+/** Records the backup first, so that a crash never leaves an unknown `.old` file. */
+async function moveAside(target: string, backup: string, record: DeploymentRecord): Promise<void> {
+  const stats = await lstatOrNull(target)
+  if (stats == null) return
+  await record.addBackup(target, { path: backup, identity: identityOf(stats), kind: kindOf(stats) })
+  try {
+    await rename(target, backup)
+  } catch (error) {
+    await record.removeBackup(target, backup)
+    throw error
+  }
+}
+
+/** Copies through a temporary sibling, so an interrupted copy never sits at the target. */
+async function copyInto(source: string, target: string): Promise<void> {
+  const temporary = siblingName(target, 'copy')
+  try {
+    await cp(source, temporary, {
+      recursive: true,
+      dereference: true,
+      errorOnExist: true,
+      force: false,
+    })
+    await rename(temporary, target)
+  } catch (error) {
+    await removeTree(temporary).catch(() => {})
+    throw error
+  }
+}
+
+/** After a failed deployment, puts the backup back and explains where things are. */
+async function putBackAfterFailure(
+  target: string,
+  backup: string | null,
+  record: DeploymentRecord,
+  error: unknown,
+): Promise<Error> {
+  const reason = messageOf(error)
   if (backup == null) return new CliError(reason)
 
   try {
     await rename(backup, target)
-    await record.remove(target, backup)
+    await record.removeBackup(target, backup)
     return new CliError(reason)
   } catch (restoreError) {
     return new CliError(
       `${reason} The previous file is in ${backup} (it could not be put back: ` +
-        `${(restoreError as Error).message}).`,
+        `${messageOf(restoreError)}).`,
     )
   }
 }
 
-/** Compares files, folders (recursively) and symlinks without following links. */
-async function sameContent(a: string, b: string): Promise<boolean> {
-  const [statsA, statsB] = await Promise.all([lstatOrNull(a), lstatOrNull(b)])
-  if (statsA == null || statsB == null) return false
+/** The most recent recorded backup of `target`, and whether it can be restored as is. */
+async function checkLatestBackup(
+  target: string,
+  record: DeploymentRecord,
+): Promise<BackupCheck | null> {
+  const backup: Backup | undefined = (await record.find(target))?.backups.at(-1)
+  if (backup == null || !isBackupPathOf(target, backup.path)) return null
 
-  if (statsA.isSymbolicLink() || statsB.isSymbolicLink()) {
-    return (
-      statsA.isSymbolicLink() &&
-      statsB.isSymbolicLink() &&
-      (await readlink(a)) === (await readlink(b))
-    )
+  const stats = await lstatOrNull(backup.path).catch(error => {
+    throw new CliError(`Cannot check the backup ${backup.path}: ${messageOf(error)}`)
+  })
+  if (stats == null) return { path: backup.path, status: 'missing' }
+  if (backup.identity != null && !sameIdentity(backup.identity, identityOf(stats))) {
+    return { path: backup.path, status: 'changed' }
   }
+  return { path: backup.path, status: 'ok' }
+}
 
-  if (statsA.isDirectory() && statsB.isDirectory()) {
-    const [namesA, namesB] = await Promise.all([readdir(a), readdir(b)])
-    namesA.sort()
-    namesB.sort()
-    if (namesA.length !== namesB.length || namesA.some((name, i) => name !== namesB[i])) {
+/**
+ * Whether the local copy `target` has the content of `source`. Links in the
+ * source are followed (copies follow them); a link at the target never matches.
+ */
+async function sameContent(source: string, target: string): Promise<boolean> {
+  const [sourceStats, targetStats] = await Promise.all([statOrNull(source), lstatOrNull(target)])
+  if (sourceStats == null || targetStats == null || targetStats.isSymbolicLink()) return false
+
+  if (sourceStats.isDirectory() && targetStats.isDirectory()) {
+    const [sourceNames, targetNames] = await Promise.all([readdir(source), readdir(target)])
+    sourceNames.sort()
+    targetNames.sort()
+    if (
+      sourceNames.length !== targetNames.length ||
+      sourceNames.some((name, i) => name !== targetNames[i])
+    ) {
       return false
     }
-    for (const name of namesA) {
-      if (!(await sameContent(path.join(a, name), path.join(b, name)))) return false
+    for (const name of sourceNames) {
+      if (!(await sameContent(path.join(source, name), path.join(target, name)))) return false
     }
     return true
   }
 
-  if (statsA.isFile() && statsB.isFile()) {
-    return statsA.size === statsB.size && (await readFile(a)).equals(await readFile(b))
+  if (sourceStats.isFile() && targetStats.isFile()) {
+    return sourceStats.size === targetStats.size && (await sameBytes(source, target))
   }
   return false
 }
 
-async function lstatOrNull(target: string) {
+/** Compares two files of the same size by chunks, whatever their size. */
+async function sameBytes(a: string, b: string): Promise<boolean> {
+  const [handleA, handleB] = await Promise.all([open(a, 'r'), open(b, 'r')])
   try {
-    return await lstat(target)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
+    const size = 64 * 1024
+    const bufferA = Buffer.alloc(size)
+    const bufferB = Buffer.alloc(size)
+    for (;;) {
+      const [readA, readB] = await Promise.all([
+        handleA.read(bufferA, 0, size, null),
+        handleB.read(bufferB, 0, size, null),
+      ])
+      if (readA.bytesRead !== readB.bytesRead) return false
+      if (readA.bytesRead === 0) return true
+      if (!bufferA.subarray(0, readA.bytesRead).equals(bufferB.subarray(0, readB.bytesRead))) {
+        return false
+      }
+    }
+  } finally {
+    await Promise.all([handleA.close(), handleB.close()])
   }
 }

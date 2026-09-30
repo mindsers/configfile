@@ -305,7 +305,7 @@ describe('modules status, dry run and undeploy', () => {
 
     await sandbox.write('cwd/a', 'edited')
     const local = await runCli(sandbox, ['modules', 'status', '--local'])
-    expect(local.stdout).toContain(`${sandbox.cwd}/a (differs from the repository)`)
+    expect(local.stdout).toContain(`${sandbox.cwd}/a (not deployed: a file is in the way)`)
     expect(local.stdout).toContain(`${sandbox.cwd}/b (not deployed)`)
   })
 
@@ -390,8 +390,26 @@ describe('modules status, dry run and undeploy', () => {
     const state = JSON.parse(
       await readFile(path.join(sandbox.home, '.configfile/state.json'), 'utf8'),
     )
+    const zshrc = path.join(sandbox.home, '.zshrc')
     expect(state).toEqual({
-      backups: { [path.join(sandbox.home, '.zshrc')]: [path.join(sandbox.home, '.zshrc.old')] },
+      version: 2,
+      targets: {
+        [zshrc]: {
+          target: zshrc,
+          deployed: {
+            strategy: 'global',
+            source: path.join(sandbox.repo, 'files/zsh/zshrc'),
+            identity: { dev: expect.any(Number), ino: expect.any(Number) },
+          },
+          backups: [
+            {
+              path: `${zshrc}.old`,
+              identity: { dev: expect.any(Number), ino: expect.any(Number) },
+              kind: 'file',
+            },
+          ],
+        },
+      },
     })
 
     await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
@@ -512,6 +530,32 @@ describe('modules status, dry run and undeploy', () => {
     expect(await readFile(path.join(sandbox.home, 'Documents/thesis.txt'), 'utf8')).toBe(
       'years of work',
     )
+  })
+
+  it('refuses a tampered state file before changing anything', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write('home/.ssh/id_rsa', 'PRIVATE KEY')
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({
+        version: 2,
+        targets: {
+          [zshrc]: {
+            target: zshrc,
+            deployed: null,
+            backups: [{ path: path.join(sandbox.home, '.ssh/id_rsa'), identity: null, kind: null }],
+          },
+        },
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('is not a valid configfile state file')
+    expect(await readFile(path.join(sandbox.home, '.ssh/id_rsa'), 'utf8')).toBe('PRIVATE KEY')
   })
 
   it('warns about the deprecated "global" key', async () => {
@@ -713,6 +757,19 @@ describe('scripts', () => {
     expect(await readFile(path.join(sandbox.root, 'ran'), 'utf8')).toBe('yes')
   })
 
+  it('removes its signal handlers once the script is done', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/scripts/quick.sh', 'true\n')
+    const counts = () =>
+      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'].map(s => process.listenerCount(s))
+    const before = counts()
+
+    await runCli(sandbox, ['scripts', 'run', 'quick'])
+
+    expect(counts()).toEqual(before)
+  })
+
   it('explains how to fix a non-executable script without extension', async () => {
     const sandbox = await createSandbox()
     await withScripts(sandbox)
@@ -879,6 +936,22 @@ describe('init', () => {
       }
     },
   )
+
+  it('never lets a repository URL be read as a git option', async () => {
+    const sandbox = await createSandbox()
+    const pwned = path.join(sandbox.root, 'pwned')
+
+    const result = await runCli(sandbox, [
+      'init',
+      '--repo',
+      `--upload-pack=touch ${pwned}`,
+      '--folder',
+      '~/dotfiles',
+    ])
+
+    expect(result.code).not.toBe(0)
+    expect(existsSync(pwned)).toBe(false)
+  })
 
   it('asks before overwriting an existing configuration', async () => {
     const sandbox = await createSandbox()

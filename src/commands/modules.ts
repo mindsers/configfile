@@ -3,24 +3,27 @@ import type { Command } from 'commander'
 import { ConfigStore } from '../config.js'
 import type { Context } from '../context.js'
 import {
-  assertSafeTarget,
-  assertSourceExists,
+  type BackupCheck,
+  type DeployContext,
   type DeployDecision,
   type DeployResult,
-  decideDeploy,
-  decideUndeploy,
   deployFile,
+  Guard,
   inspectFile,
   type KeptState,
-  nextBackupPath,
+  planDeploy,
+  planUndeploy,
   type TargetState,
+  type UndeployDecision,
   type UndeployResult,
   undeployFile,
 } from '../deploy.js'
 import { CliError } from '../errors.js'
+import { messageOf } from '../fsutil.js'
+import { withLock } from '../lock.js'
 import { plural } from '../output.js'
 import { listModules, type Module, type ModuleFile } from '../repository.js'
-import { BackupRecord } from '../state.js'
+import { DeploymentRecord } from '../state.js'
 
 type Strategy = ModuleFile['strategy']
 type UsableModule = Extract<Module, { error: null }>
@@ -127,6 +130,8 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     return
   }
 
+  // Read only: status never changes files or the record.
+  const record = await DeploymentRecord.load(ctx.home)
   for (const module of selected) {
     output.print(`${module.name}:`)
 
@@ -140,9 +145,9 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     for (const file of files) {
       let state: string
       try {
-        state = describeState(await inspectFile(file))
+        state = describeState(await inspectFile(file, record))
       } catch (error) {
-        state = `cannot be checked: ${(error as Error).message}`
+        state = `cannot be checked: ${messageOf(error)}`
       }
       output.print(`  ${file.target} (${state})`)
     }
@@ -160,7 +165,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
   const run = await prepare('deploy', names, options, ctx)
   if (run == null) return
 
-  const { files, record } = run
+  const { files } = run
   let failures = run.failures
   const reportError = (file: ModuleFile, error: unknown) => {
     failures++
@@ -168,10 +173,11 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
   }
 
   if (options.dryRun) {
+    const context = await deployContext(ctx)
     let wouldSkip = 0
     for (const file of files) {
       try {
-        const decision = await planDeploy(file, options)
+        const decision = await planDeploy(file, { ...context, force: options.force })
         if (decision.action === 'conflict' && !prompts.interactive) wouldSkip++
         output.print(
           `- ${file.target} (${describePlannedDeploy(file, decision, prompts.interactive)})`,
@@ -184,10 +190,31 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     return
   }
 
+  await withLock(ctx.home, async () => {
+    const context = await deployContext(ctx)
+    await deployAll(files, options, context, ctx, failures)
+  })
+}
+
+/** Deploys `files` while the lock is held, then reports the outcome. */
+async function deployAll(
+  files: ModuleFile[],
+  options: Options,
+  context: DeployContext,
+  ctx: Context,
+  initialFailures: number,
+): Promise<void> {
+  const { output, prompts } = ctx
+  let failures = initialFailures
+  const reportError = (file: ModuleFile, error: unknown) => {
+    failures++
+    reportFileError(file, error, ctx)
+  }
+
   const conflicts: ModuleFile[] = []
   for (const file of files) {
     try {
-      const result = await deployFile(file, { force: options.force, record })
+      const result = await deployFile(file, { ...context, force: options.force })
       if (result.status === 'conflict') {
         conflicts.push(file)
       } else {
@@ -215,7 +242,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     }
 
     try {
-      const result = await deployFile(file, { force: true, record })
+      const result = await deployFile(file, { ...context, force: true })
       if (result.status === 'conflict') {
         throw new CliError('the target still exists after being moved aside.')
       }
@@ -233,22 +260,37 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   const run = await prepare('undeploy', names, options, ctx)
   if (run == null) return
 
-  const { files, record } = run
+  const { files } = run
   let failures = run.failures
 
-  for (const file of files) {
-    try {
-      const line = options.dryRun
-        ? `(${await planUndeploy(file, record)})`
-        : describeUndeploy(await undeployFile(file, { record }))
-      output.print(`- ${file.target} ${line}`)
-    } catch (error) {
-      failures++
-      reportFileError(file, error, ctx)
+  const undeployEach = async (context: DeployContext) => {
+    for (const file of files) {
+      try {
+        const line = options.dryRun
+          ? `(${describePlannedUndeploy(await planUndeploy(file, context))})`
+          : describeUndeploy(await undeployFile(file, context))
+        output.print(`- ${file.target} ${line}`)
+      } catch (error) {
+        failures++
+        reportFileError(file, error, ctx)
+      }
     }
   }
 
+  if (options.dryRun) {
+    await undeployEach(await deployContext(ctx))
+  } else {
+    await withLock(ctx.home, async () => undeployEach(await deployContext(ctx)))
+  }
   finish(failures, [], options.dryRun ? 'Dry run finished.' : 'Undeployment finished.', ctx)
+}
+
+/** Loads the record: call it after taking the lock when files are changed. */
+async function deployContext(ctx: Context): Promise<DeployContext> {
+  return {
+    record: await DeploymentRecord.load(ctx.home),
+    guard: new Guard({ home: ctx.home, cwd: ctx.cwd }),
+  }
 }
 
 /**
@@ -261,7 +303,7 @@ async function prepare(
   names: string[],
   options: Options,
   ctx: Context,
-): Promise<{ files: ModuleFile[]; failures: number; record: BackupRecord } | null> {
+): Promise<{ files: ModuleFile[]; failures: number } | null> {
   const { output } = ctx
   const selected = await selectModules(verb, await loadModules(ctx), names, options, ctx)
   if (selected.length === 0) return null
@@ -306,7 +348,7 @@ async function prepare(
       ? `Dry run, nothing is changed. ${action} ${moduleNames} would do:`
       : `${action} ${moduleNames}…`,
   )
-  return { files, failures, record: await BackupRecord.load(ctx.home) }
+  return { files, failures }
 }
 
 async function selectModules(
@@ -398,31 +440,6 @@ function reportFileError(file: ModuleFile, error: unknown, ctx: Context): void {
   }
 }
 
-/** What deploying would do, with the same checks as a real deployment. */
-async function planDeploy(file: ModuleFile, options: Options): Promise<DeployDecision> {
-  await assertSourceExists(file)
-  await assertSafeTarget(file)
-  return decideDeploy(await inspectFile(file), { force: options.force })
-}
-
-async function planUndeploy(file: ModuleFile, record: BackupRecord): Promise<string> {
-  await assertSafeTarget(file)
-  const decision = decideUndeploy(await inspectFile(file))
-
-  switch (decision.action) {
-    case 'not-deployed':
-      return 'not deployed'
-    case 'keep':
-      return `would be kept: ${describeKept(decision.state)}`
-    case 'remove': {
-      const backup = await record.latest(file.target)
-      if (backup == null) return 'would be removed'
-      if (!backup.exists) return `would be removed; its backup ${backup.path} no longer exists`
-      return `would be removed, ${backup.path} restored`
-    }
-  }
-}
-
 function describePlannedDeploy(
   file: ModuleFile,
   decision: DeployDecision,
@@ -435,12 +452,26 @@ function describePlannedDeploy(
       return 'already up to date'
     case 'replace':
       return decision.what === 'copy'
-        ? `would be replaced, the existing one moved to ${nextBackupPath(file.target)}`
-        : `would be linked, the existing ${decision.what} moved to ${nextBackupPath(file.target)}`
+        ? `would be replaced, the existing one moved to ${decision.backup}`
+        : `would be ${file.strategy === 'global' ? 'linked' : 'copied'}, the existing ` +
+            `${decision.what} moved to ${decision.backup}`
+    case 'refresh':
+      return 'would be linked again (it pointed to an old location of the repository)'
     case 'conflict':
       return interactive
         ? 'already exists: you would be asked whether to replace it'
         : 'already exists: would be skipped (use --force to replace it)'
+  }
+}
+
+function describePlannedUndeploy(decision: UndeployDecision): string {
+  switch (decision.action) {
+    case 'not-deployed':
+      return 'not deployed'
+    case 'keep':
+      return `would be kept: ${describeKept(decision.state)}`
+    case 'remove':
+      return `would be removed${describeBackup(decision.backup, 'would be')}`
   }
 }
 
@@ -451,8 +482,12 @@ function describeState(state: TargetState): string {
     case 'deployed':
       return 'deployed'
     case 'modified':
-      return 'differs from the repository'
-    case 'occupied':
+      return 'modified since it was copied'
+    case 'identical':
+      return 'identical to the repository, but not copied by configfile'
+    case 'stale':
+      return 'deployed, but linked to an old location of the repository: deploy it again'
+    case 'foreign':
       return `not deployed: a ${state.what} is in the way`
     case 'source-missing':
       return state.ours
@@ -463,12 +498,27 @@ function describeState(state: TargetState): string {
 
 function describeKept(state: KeptState): string {
   switch (state.kind) {
-    case 'occupied':
+    case 'foreign':
       return `the ${state.what} there was not deployed by configfile`
+    case 'identical':
+      return 'it is identical to the repository, but configfile did not copy it'
     case 'modified':
-      return 'it differs from the repository (modified since it was copied?)'
+      return 'it was modified since it was copied'
     case 'source-missing':
       return 'its source is missing from the repository, so it cannot be compared'
+  }
+}
+
+/** `, <backup> restored` and its variants, for undeploy results and dry runs. */
+function describeBackup(backup: BackupCheck | null, tense: 'would be' | 'was'): string {
+  if (backup == null) return ''
+  switch (backup.status) {
+    case 'ok':
+      return tense === 'was' ? `, ${backup.path} restored` : `, ${backup.path} restored`
+    case 'missing':
+      return `; its backup ${backup.path} no longer exists, nothing ${tense} restored`
+    case 'changed':
+      return `; its backup ${backup.path} changed since it was made, so it ${tense === 'was' ? 'was' : 'would be'} not restored`
   }
 }
 
@@ -485,12 +535,11 @@ function describeDeploy(result: Exclude<DeployResult, { status: 'conflict' }>): 
 
 function describeUndeploy(result: UndeployResult): string {
   switch (result.status) {
-    case 'removed':
-      if (result.restored != null) return `(removed, ${result.restored} restored)`
-      if (result.missingBackup != null) {
-        return `(removed; its backup ${result.missingBackup} no longer exists, nothing restored)`
-      }
-      return '(removed)'
+    case 'removed': {
+      const leftover =
+        result.leftover == null ? '' : `; the removed copy could not be deleted: ${result.leftover}`
+      return `(removed${describeBackup(result.backup, 'was')}${leftover})`
+    }
     case 'not-deployed':
       return '(not deployed)'
     case 'kept':
