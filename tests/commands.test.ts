@@ -1,5 +1,15 @@
 import { existsSync } from 'node:fs'
-import { chmod, copyFile, lstat, mkdir, readFile, readlink, stat, symlink } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  rename,
+  stat,
+  symlink,
+} from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -573,6 +583,80 @@ describe('modules status, dry run and undeploy', () => {
     const controls = [...result.stdout].filter(c => c !== '\n' && c.charCodeAt(0) < 0x20)
     expect(controls).toEqual([])
     expect(result.stdout).toContain('x\\x1b]0;HIJACK\\x07\\rfake (no deployment strategy)')
+  })
+
+  it('stacks two modules deployed to the same target, and unwinds them', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    for (const name of ['a', 'b']) {
+      await sandbox.write(`home/dotfiles/files/${name}/x`, name)
+      await sandbox.write(
+        `home/dotfiles/files/${name}/settings.json`,
+        JSON.stringify({ files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global' }] }),
+      )
+    }
+    await sandbox.write('home/.x', 'original')
+    const target = path.join(sandbox.home, '.x')
+
+    await runCli(sandbox, ['modules', 'deploy', 'a'])
+    const deployB = await runCli(sandbox, ['modules', 'deploy', 'b'])
+    expect(deployB.stdout).toContain(`(deployed, previous file moved to ${target}.old.1)`)
+    expect((await runCli(sandbox, ['modules', 'status', 'a'])).stdout).toContain(
+      '(not deployed: a link is in the way)',
+    )
+
+    await runCli(sandbox, ['modules', 'undeploy', 'b'])
+    expect(await readlink(target)).toBe(path.join(sandbox.repo, 'files/a/x'))
+    await runCli(sandbox, ['modules', 'undeploy', 'a'])
+    expect(await readFile(target, 'utf8')).toBe('original')
+  })
+
+  it('refuses to copy a folder containing a link loop', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/l/d/file', 'x')
+    await symlink('.', path.join(sandbox.repo, 'files/l/d/loop'))
+    await sandbox.write(
+      'home/dotfiles/files/l/settings.json',
+      JSON.stringify({ files: [{ source_path: 'd', target_path: 'd', deploy: 'local' }] }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', '--local', 'l'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('makes a loop')
+    expect(existsSync(path.join(sandbox.cwd, 'd'))).toBe(false)
+  })
+
+  it('keeps unknown keys of the state file', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({ version: 2, targets: {}, custom: 1 }),
+    )
+
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    const state = JSON.parse(
+      await readFile(path.join(sandbox.home, '.configfile/state.json'), 'utf8'),
+    )
+    expect(state.custom).toBe(1)
+  })
+
+  it('keeps a local copy an editor saved through a new file', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'zsh'])
+    // Editors such as vim save by writing a new file and renaming it over the old one.
+    await sandbox.write('cwd/a.tmp', 'edited')
+    await rename(path.join(sandbox.cwd, 'a.tmp'), path.join(sandbox.cwd, 'a'))
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--local', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.cwd, 'a'), 'utf8')).toBe('edited')
+    expect(existsSync(path.join(sandbox.cwd, 'b'))).toBe(false)
   })
 
   it('warns about the deprecated "global" key', async () => {

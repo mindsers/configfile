@@ -67,7 +67,7 @@ When a global file is deployed and something else already exists at its target (
 
 When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
 
-*configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links and the local copies *configfile* made (unless they were modified since), and moves the most recent backup it made back in place, if that backup is unchanged. Anything else, including identical files and `.old` files you made yourself, is left untouched.
+*configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links and the local copies *configfile* made (unless they were modified since), and moves the most recent backup it made back in place, if that backup is unchanged. Anything else is left untouched: files it did not create (even when identical to the repository), local copies that were modified or saved again by an editor since, and `.old` files you made yourself.
 
 Only one *configfile* at a time changes files: a second one waits for the first to finish (the lock is `~/.configfile/lock`).
 

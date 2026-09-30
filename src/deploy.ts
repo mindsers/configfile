@@ -104,7 +104,13 @@ export async function inspectFile(
   if (file.strategy === 'global') {
     if (!sourceExists) return { kind: 'source-missing', ours: pointsToSource || recordedHere }
     if (pointsToSource) return { kind: 'deployed', recorded: recordedHere }
-    if (recordedHere && existing.isSymbolicLink()) return { kind: 'stale' }
+    // Our own link, to a source that no longer exists (the repository moved).
+    // A link to another existing source (another module) is not ours to replace.
+    const recordedSourceGone =
+      recorded != null &&
+      recorded.source !== file.source &&
+      (await lstatOrNull(recorded.source)) == null
+    if (recordedHere && existing.isSymbolicLink() && recordedSourceGone) return { kind: 'stale' }
     return { kind: 'foreign', what: kindOf(existing) }
   }
 
@@ -310,13 +316,22 @@ export async function assertUsableSource(file: ModuleFile): Promise<void> {
   }
 }
 
+/**
+ * Visits every link of `folder`, following links to folders. A link to a
+ * folder containing it would make the copy endless, so it is refused.
+ */
 async function walkLinks(folder: string, visit: (link: string) => Promise<void>): Promise<void> {
   for (const entry of await readdir(folder, { withFileTypes: true })) {
     const entryPath = path.join(folder, entry.name)
     if (entry.isSymbolicLink()) {
       await visit(entryPath)
       const real = await realpath(entryPath)
-      if ((await statOrNull(real))?.isDirectory()) await walkLinks(real, visit)
+      if ((await statOrNull(real))?.isDirectory()) {
+        if (contains(real, folder)) {
+          throw new CliError(`${entryPath} leads to a folder containing it, which makes a loop.`)
+        }
+        await walkLinks(real, visit)
+      }
     } else if (entry.isDirectory()) {
       await walkLinks(entryPath, visit)
     }
