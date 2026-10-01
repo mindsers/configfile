@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { CliError, NotInitializedError } from './errors.js'
-import { writeFileAtomic } from './fsutil.js'
+import { describeJsonError, messageOf, writeFileAtomic } from './fsutil.js'
 import { resolveUserPath } from './paths.js'
 
 export interface Config {
@@ -79,27 +79,31 @@ export class ConfigStore {
   /**
    * The maximum size of the history (`history_max_size`), in bytes: a number
    * of bytes or a size such as "512KB" or "5MB"; 0 turns the history off.
-   * Never fails: the history must work before `init` and with an invalid
-   * configuration, so problems give the default and a warning.
+   * Works before `init`, without a configuration file. An invalid value gives
+   * the default and a warning. A file that cannot be read gives 0 and a
+   * warning: it may be what turns the history off.
    */
   async readHistorySize(): Promise<{ maxBytes: number; warning: string | null }> {
     let raw: RawConfig | null
     try {
       raw = await this.#readRaw()
-    } catch {
-      return { maxBytes: DEFAULT_HISTORY_SIZE, warning: null }
+    } catch (error) {
+      return {
+        maxBytes: 0,
+        warning: `${messageOf(error)} This run is not recorded in the history.`,
+      }
     }
 
     const value = raw?.history_max_size
     if (value === undefined) return { maxBytes: DEFAULT_HISTORY_SIZE, warning: null }
 
     const size = parseSize(value)
-    if (size == null) {
+    if (size == null || size > MAX_HISTORY_SIZE) {
       return {
         maxBytes: DEFAULT_HISTORY_SIZE,
         warning:
-          `"history_max_size" in ${this.path} must be a size such as 1048576, "512KB" or ` +
-          `"5MB" (0 turns the history off); using 1MB.`,
+          `"history_max_size" in ${this.path} must be a size up to 1GB, such as 1048576, ` +
+          `"512KB" or "5MB" (0 turns the history off); using 1MB.`,
       }
     }
     return { maxBytes: size, warning: null }
@@ -151,7 +155,7 @@ export class ConfigStore {
       data = JSON.parse(content)
     } catch (error) {
       throw new InvalidConfigError(
-        `Invalid configuration in ${this.path}: not valid JSON (${(error as Error).message}).`,
+        `Invalid configuration in ${this.path}: not valid JSON (${describeJsonError(error)}).`,
       )
     }
 
@@ -169,6 +173,9 @@ function ignoreInvalid(error: unknown): null {
 
 /** Default size of `history.jsonl` before it is rotated: 1 MiB. */
 export const DEFAULT_HISTORY_SIZE = 1024 * 1024
+
+/** Larger histories would be slow to read back. */
+const MAX_HISTORY_SIZE = 1024 ** 3
 
 const UNITS: Record<string, number> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3 }
 

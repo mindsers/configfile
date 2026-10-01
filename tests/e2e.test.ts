@@ -162,7 +162,9 @@ describe('built CLI', () => {
     expect(await readFile(path.join(sandbox.home, '.shared'), 'utf8')).toBe('PRECIOUS')
   })
 
-  it('keeps one whole history line per run when many runs write at once', async () => {
+  it('keeps one whole history line per run when many runs write at once', {
+    timeout: 30_000,
+  }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     await sandbox.write('home/dotfiles/scripts/ok.sh', 'exit 0\n')
@@ -192,5 +194,51 @@ describe('built CLI', () => {
     expect(
       lines.every(line => line.version === pkg.version && line.command === 'scripts run'),
     ).toBe(true)
+  })
+
+  it('loses no line when many runs rotate the history at once', { timeout: 30_000 }, async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure({ history_max_size: '8KB' })
+    await sandbox.write('home/dotfiles/scripts/ok.sh', 'exit 0\n')
+    const old = JSON.stringify({
+      v: 1,
+      time: '2026-01-01T00:00:00.000Z',
+      durationMs: 1,
+      pid: 1,
+      version: '0.0.0',
+      command: 'update',
+      options: {},
+      cwd: '/',
+      exitCode: 0,
+      changes: [],
+      unchanged: 0,
+    })
+    const count = Math.ceil(8192 / old.length) + 1
+    await sandbox.write('home/.configfile/history.jsonl', `${old}\n`.repeat(count))
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: sandbox.home, NO_COLOR: '1' }
+
+    // One rotation is due; the 16 new lines then fit under the limit.
+    await Promise.all(
+      Array.from(
+        { length: 16 },
+        () =>
+          new Promise(resolve => {
+            spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+              cwd: sandbox.cwd,
+              env,
+              stdio: 'ignore',
+            }).on('close', resolve)
+          }),
+      ),
+    )
+
+    const lines = async (name: string) =>
+      (await readFile(path.join(sandbox.home, '.configfile', name), 'utf8'))
+        .split('\n')
+        .filter(line => line !== '')
+    expect((await lines('history.1.jsonl')).length).toBeGreaterThanOrEqual(count)
+    expect([...(await lines('history.1.jsonl')), ...(await lines('history.jsonl'))]).toHaveLength(
+      count + 16,
+    )
   })
 })

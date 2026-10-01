@@ -17,6 +17,14 @@ export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * The message of a `JSON.parse` error without the start of the text it
+ * quotes, which may contain a secret.
+ */
+export function describeJsonError(error: unknown): string {
+  return messageOf(error).replace(/, "[\s\S]*"(?:\.\.\.)? is not valid JSON$/, '')
+}
+
 /** `lstat`, or `null` when nothing exists at `target`. Other errors are thrown. */
 export async function lstatOrNull(target: string): Promise<Stats | null> {
   try {

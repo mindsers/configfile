@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import {
   chmod,
@@ -8,6 +9,7 @@ import {
   readFile,
   readlink,
   rename,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -16,7 +18,7 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { READ_ONLY, RECORDED } from '../src/history.js'
+import { COMMANDS } from '../src/history.js'
 import { buildProgram } from '../src/program.js'
 import {
   createContext,
@@ -1328,18 +1330,39 @@ describe('history', () => {
     git(remote, 'add', '.')
     git(remote, 'commit', '--quiet', '-m', 'new')
 
+    const head = (cwd: string) =>
+      execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()
+    const before = head(sandbox.repo)
+    const after = head(remote)
+
     await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['update'])
+
+    const [first, second] = await readHistory(sandbox)
+    expect(before).not.toBe(after)
+    expect(first?.changes).toEqual([
+      { kind: 'saved-patch', file: expect.stringContaining('/.configfile/saved/') },
+      { kind: 'synced', folder: sandbox.repo, upstream: 'origin/main', from: before, to: after },
+    ])
+    expect(second?.changes).toEqual([
+      { kind: 'synced', folder: sandbox.repo, upstream: 'origin/main', from: after, to: after },
+    ])
+  })
+
+  it('records the clone made by init', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+
+    await runCli(sandbox, ['init', '--repo', remote])
 
     const [line] = await readHistory(sandbox)
     expect(line?.changes).toEqual([
-      { kind: 'saved-patch', file: expect.stringContaining('/.configfile/saved/') },
       {
-        kind: 'synced',
-        folder: sandbox.repo,
-        upstream: 'origin/main',
-        from: expect.any(String),
-        to: expect.any(String),
+        kind: 'cloned',
+        repository: remote,
+        folder: path.join(sandbox.home, '.configfile/dotfiles'),
       },
+      { kind: 'configured', file: path.join(sandbox.home, '.configfilerc') },
     ])
   })
 
@@ -1391,8 +1414,86 @@ describe('history', () => {
     const [line] = await readHistory(sandbox)
     expect(line).toMatchObject({
       exitCode: 130,
+      error: { expected: true },
       changes: [{ kind: 'deployed', target: path.join(sandbox.cwd, 'b') }],
     })
+  })
+
+  it('records the failures of a deployment', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify({
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'missing', target_path: '~/x', deploy: 'global' },
+          { source_path: 'a', deploy: 'global' },
+        ],
+      }),
+    )
+    await sandbox.write('home/dotfiles/files/broken/settings.json', '{')
+
+    const deployed = await runCli(sandbox, ['modules', 'deploy', '--all'])
+    await runCli(sandbox, ['modules', 'deploy', 'nope'])
+
+    expect(deployed.code).toBe(1)
+    const [all, unknown] = await readHistory(sandbox)
+    expect(all).toMatchObject({ options: { all: true }, exitCode: 1, error: { expected: true } })
+    expect(all?.changes).toEqual(
+      expect.arrayContaining([
+        { kind: 'failed', module: 'broken', reason: expect.stringContaining('not valid JSON') },
+        {
+          kind: 'failed',
+          module: 'zsh',
+          reason: expect.stringContaining('"target_path" is missing'),
+        },
+        {
+          kind: 'failed',
+          target: path.join(sandbox.home, 'x'),
+          reason: expect.stringContaining('does not exist'),
+        },
+        expect.objectContaining({ kind: 'deployed', target: path.join(sandbox.home, '.zshrc') }),
+      ]),
+    )
+    expect(unknown).toMatchObject({
+      exitCode: 1,
+      error: { message: expect.stringContaining('Unknown module: nope'), expected: true },
+      changes: [],
+    })
+  })
+
+  it('records modules chosen at a question as --all', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+
+    await runCli(sandbox, ['modules', 'deploy'], [true])
+
+    const [line] = await readHistory(sandbox)
+    expect(line?.options).toEqual({ modules: [], all: true })
+  })
+
+  it('records backups that could not be restored', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    await sandbox.write('home/.zshrc', 'mine')
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await sandbox.write('home/.zshrc.old', 'changed since')
+    await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+    await rm(`${zshrc}.old`)
+    await sandbox.write('home/.zshrc', 'mine again')
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await rm(`${zshrc}.old`)
+    await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+
+    const lines = await readHistory(sandbox)
+    expect(lines[1]?.changes).toEqual([
+      { kind: 'removed', target: zshrc, backup: { path: `${zshrc}.old`, status: 'changed' } },
+    ])
+    expect(lines[3]?.changes).toEqual([
+      { kind: 'removed', target: zshrc, backup: { path: `${zshrc}.old`, status: 'missing' } },
+    ])
   })
 
   it('never changes the exit code when the history cannot be written', async () => {
@@ -1403,7 +1504,40 @@ describe('history', () => {
     const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
 
     expect(result.code).toBe(0)
-    expect(result.stderr.match(/Cannot write .*history\.jsonl/g)).toHaveLength(1)
+    expect(
+      result.stderr.match(/could not be recorded in the history: .*history\.jsonl/g),
+    ).toHaveLength(1)
+
+    await sandbox.write('home/dotfiles/scripts/fail.sh', 'exit 4\n')
+    const failing = await runCli(sandbox, ['scripts', 'run', 'fail'])
+    expect(failing.code).toBe(4)
+    expect(failing.stderr.match(/could not be recorded/g)).toHaveLength(1)
+  })
+
+  it('warns about an invalid size, and records with the default one', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.configure({ history_max_size: 'big' })
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const history = await runCli(sandbox, ['history'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr.match(/"history_max_size" .* must be a size/g)).toHaveLength(1)
+    expect(await readHistory(sandbox)).toHaveLength(1)
+    expect(history.stderr).toContain('"history_max_size"')
+  })
+
+  it('records nothing when the configuration cannot be read, as it may turn the history off', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write('home/.configfilerc', '{"history_max_size": 0,')
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('This run is not recorded in the history.')
+    expect(existsSync(path.join(sandbox.home, '.configfile/history.jsonl'))).toBe(false)
   })
 
   it('can be turned off', async () => {
@@ -1441,10 +1575,209 @@ describe('history', () => {
       .split('\n')
       .map(text => JSON.parse(text))
     expect(lines.map(line => line.command)).toEqual(['modules deploy', 'modules deploy'])
-    expect((await runCli(sandbox, ['history', '-n', 'x'])).code).toBe(1)
+    for (const limit of ['x', '0', '-1', '1.5', '0x1', '1e1']) {
+      const result = await runCli(sandbox, ['history', '-n', limit])
+      expect(result.code, limit).toBe(1)
+    }
   })
 
-  it('classifies every command as recorded or read-only', async () => {
+  it('shows every kind of change, and why runs failed', async () => {
+    const sandbox = await createSandbox()
+    const home = (file: string) => path.join(sandbox.home, file)
+    const line = (fields: Record<string, unknown>) =>
+      JSON.stringify({
+        v: 1,
+        time: '2026-10-01T09:00:00.000Z',
+        durationMs: 1,
+        pid: 1,
+        version: '1.0.0',
+        command: 'modules deploy',
+        options: {},
+        cwd: sandbox.cwd,
+        exitCode: 0,
+        changes: [],
+        unchanged: 0,
+        ...fields,
+      })
+    await sandbox.write(
+      'home/.configfile/history.jsonl',
+      `${[
+        line({
+          options: { modules: ['zsh', 'git'], local: true, force: true },
+          exitCode: 1,
+          error: { message: '1 file, module or settings entry failed.', expected: true },
+          changes: [
+            {
+              kind: 'deployed',
+              how: 'link',
+              source: '/s',
+              target: home('.a'),
+              backup: home('.a.old'),
+            },
+            { kind: 'deployed', how: 'copy', source: '/s', target: '/work/b' },
+            { kind: 'skipped', target: '/work/c', reason: 'exists' },
+            { kind: 'failed', target: home('x'), reason: 'EACCES' },
+            { kind: 'failed', module: 'git', reason: 'settings.json has no "files" list' },
+          ],
+          unchanged: 2,
+        }),
+        line({
+          command: 'modules undeploy',
+          options: { modules: [], all: true },
+          changes: [
+            {
+              kind: 'removed',
+              target: home('.a'),
+              backup: { path: home('.a.old'), status: 'restored' },
+            },
+            {
+              kind: 'removed',
+              target: home('.b'),
+              backup: { path: home('.b.old'), status: 'missing' },
+            },
+            {
+              kind: 'removed',
+              target: home('.c'),
+              backup: { path: home('.c.old'), status: 'changed' },
+            },
+            { kind: 'removed', target: home('.d'), leftover: home('.d.tmp') },
+            { kind: 'kept', target: home('.e'), reason: 'foreign' },
+            { kind: 'kept', target: home('.f'), reason: 'modified' },
+            { kind: 'kept', target: home('.g'), reason: 'identical' },
+            { kind: 'kept', target: home('.h'), reason: 'source-missing' },
+            { kind: 'future-kind' },
+          ],
+          truncated: 3,
+        }),
+        line({
+          command: 'update',
+          changes: [
+            { kind: 'saved-patch', file: home('.configfile/saved/p.patch') },
+            {
+              kind: 'synced',
+              folder: home('.configfile/dotfiles'),
+              upstream: 'origin/main',
+              from: '7d0289a1f',
+              to: '1217e91aa',
+            },
+          ],
+        }),
+        line({
+          command: 'update',
+          changes: [
+            {
+              kind: 'synced',
+              folder: home('.configfile/dotfiles'),
+              upstream: 'origin/main',
+              from: 'abc',
+              to: 'abc',
+            },
+          ],
+        }),
+        line({
+          command: 'scripts run',
+          options: { script: 'setup', argCount: 2 },
+          exitCode: 3,
+          error: { message: 'Script "setup" exited with code 3.', expected: true },
+          changes: [{ kind: 'script', name: 'setup', file: '/s/setup.sh', exitCode: 3 }],
+        }),
+        line({
+          command: 'init',
+          options: { repo: 'https://***@host/r.git' },
+          changes: [
+            {
+              kind: 'cloned',
+              repository: 'https://***@host/r.git',
+              folder: home('.configfile/dotfiles'),
+            },
+            { kind: 'configured', file: home('.configfilerc') },
+          ],
+        }),
+        line({
+          command: 'init',
+          options: { folder: '/dotfiles' },
+          changes: [{ kind: 'reused', repository: 'git@host:r.git', folder: '/dotfiles' }],
+        }),
+        line({ command: null, exitCode: 1, error: { message: 'boom', expected: false } }),
+      ].join('\n')}\n`,
+    )
+
+    const result = await runCli(sandbox, ['history'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout.replace(/^\d{4}-\d\d-\d\d \d\d:\d\d/gm, 'TIME')).toBe(
+      [
+        'TIME  modules deploy zsh git --local --force  exit 1',
+        '  linked    ~/.a  (previous file moved to ~/.a.old)',
+        '  copied    /work/b',
+        '  skipped   /work/c  (it already existed)',
+        '  failed    ~/x  EACCES',
+        '  failed    module git  settings.json has no "files" list',
+        '  2 unchanged',
+        '  error     1 file, module or settings entry failed.',
+        '',
+        'TIME  modules undeploy --all  ok',
+        '  removed   ~/.a  (~/.a.old restored)',
+        '  removed   ~/.b  (its backup ~/.b.old no longer existed)',
+        '  removed   ~/.c  (its backup ~/.c.old had changed, not restored)',
+        '  removed   ~/.d  (left at ~/.d.tmp)',
+        '  kept      ~/.e  (not deployed by configfile)',
+        '  kept      ~/.f  (modified since it was copied)',
+        '  kept      ~/.g  (not copied by configfile)',
+        '  kept      ~/.h  (its source was missing)',
+        '  …and 1 change this configfile cannot show',
+        '  …and 3 more changes',
+        '',
+        'TIME  update  ok',
+        '  saved     local changes to ~/.configfile/saved/p.patch',
+        '  synced    ~/.configfile/dotfiles  with origin/main (7d0289a → 1217e91)',
+        '',
+        'TIME  update  ok',
+        '  synced    ~/.configfile/dotfiles  (already up to date with origin/main)',
+        '',
+        'TIME  scripts run setup (2 arguments)  exit 3',
+        '  script    setup  exit 3',
+        '  error     Script "setup" exited with code 3.',
+        '',
+        'TIME  init --repo https://***@host/r.git  ok',
+        '  cloned    https://***@host/r.git into ~/.configfile/dotfiles',
+        '  saved     configuration ~/.configfilerc',
+        '',
+        'TIME  init --folder /dotfiles  ok',
+        '  reused    /dotfiles for git@host:r.git',
+        '',
+        'TIME  (unknown command)  exit 1',
+        '  crashed   boom',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('skips damaged lines and lines of a newer format instead of failing', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const file = path.join(sandbox.home, '.configfile/history.jsonl')
+    const newer = JSON.stringify({ v: 2, time: 'later' })
+    await writeFile(
+      file,
+      `${await readFile(file, 'utf8')}not json\n{"v":1,"time":"2026-01-01T00:00:00.000Z","changes":[]}\n${newer}\n`,
+    )
+
+    const readable = await runCli(sandbox, ['history'])
+    const json = await runCli(sandbox, ['history', '--json'])
+
+    expect(readable.code).toBe(0)
+    expect(readable.stdout).toContain('modules deploy zsh  ok')
+    expect(readable.stderr).toContain('2 damaged lines of the history skipped.')
+    expect(readable.stderr).toContain('1 line written by a newer configfile skipped.')
+    expect(json.code).toBe(0)
+    expect(json.stdout.trim().split('\n').at(-1)).toBe(newer)
+    // Reading the history never records anything.
+    expect((await readFile(file, 'utf8')).trim().split('\n')).toHaveLength(4)
+  })
+
+  it('classifies every command, and only them, as recorded or read-only', async () => {
     const sandbox = await createSandbox()
     const leaves: string[] = []
     const walk = (command: ReturnType<typeof buildProgram>, prefix: string[]) => {
@@ -1456,10 +1789,7 @@ describe('history', () => {
     }
     walk(buildProgram(createContext(sandbox)), [])
 
-    expect(leaves.length).toBeGreaterThan(5)
-    for (const leaf of leaves) {
-      expect(RECORDED.has(leaf) || READ_ONLY.has(leaf), `"${leaf}" is not classified`).toBe(true)
-    }
+    expect(leaves.sort()).toEqual(Object.keys(COMMANDS).sort())
   })
 })
 

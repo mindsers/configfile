@@ -163,7 +163,7 @@ describe('ConfigStore.readHistorySize', () => {
     })
   })
 
-  it.each([-1, 1.5, 'big', '5 TB', true])(
+  it.each([-1, 1.5, 'big', '5 TB', '2GB', true])(
     'falls back to 1MB with a warning for %o',
     async value => {
       const sandbox = await createSandbox()
@@ -176,12 +176,25 @@ describe('ConfigStore.readHistorySize', () => {
     },
   )
 
-  it('works without a configuration, or with an invalid one', async () => {
+  it('works without a configuration', async () => {
+    const { home } = await createSandbox()
+
+    await expect(new ConfigStore(home).readHistorySize()).resolves.toEqual({
+      maxBytes: 1024 * 1024,
+      warning: null,
+    })
+  })
+
+  it('turns the history off, with a warning, when the configuration cannot be read', async () => {
     const { home } = await createSandbox()
     const store = new ConfigStore(home)
-    await expect(store.readHistorySize()).resolves.toEqual({ maxBytes: 1024 * 1024, warning: null })
+    await writeFile(store.path, 'me:ghp_SECRETTOKEN@host')
 
-    await writeFile(store.path, 'not json')
-    await expect(store.readHistorySize()).resolves.toEqual({ maxBytes: 1024 * 1024, warning: null })
+    const result = await store.readHistorySize()
+
+    expect(result.maxBytes).toBe(0)
+    expect(result.warning).toContain('This run is not recorded in the history.')
+    // JSON errors never quote the file: it may contain a secret.
+    expect(result.warning).not.toContain('ghp_')
   })
 })

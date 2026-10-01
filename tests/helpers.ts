@@ -172,7 +172,11 @@ export async function createRemote(sandbox: Sandbox): Promise<string> {
 
 /** Every line of the history files (rotated file first); fails on an unreadable line. */
 export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
-  const { lines, invalid } = await new History(sandbox.home).read()
-  if (invalid > 0) throw new Error(`${invalid} unreadable history lines`)
-  return lines
+  const { entries, invalid, problems } = await new History(sandbox.home).read()
+  if (invalid > 0 || problems.length > 0) throw new Error(`Unreadable history: ${problems}`)
+  return entries.map(entry => {
+    if (entry.line == null || entry.unreadableChanges > 0)
+      throw new Error(`Unreadable: ${entry.raw}`)
+    return entry.line
+  })
 }

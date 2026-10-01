@@ -403,6 +403,7 @@ async function selectModules(
     return []
   }
 
+  ctx.history.option('all', true)
   return modules
 }
 
