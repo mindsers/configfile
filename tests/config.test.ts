@@ -1,10 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
-
-import { redactUrl } from '../src/commands/init.js'
 import { ConfigStore } from '../src/config.js'
 import { CliError, NotInitializedError } from '../src/errors.js'
+import { redactUrl } from '../src/output.js'
 import { createSandbox } from './helpers.js'
 
 describe('ConfigStore', () => {
@@ -142,5 +141,47 @@ describe('redactUrl', () => {
     ['/local/path', '/local/path'],
   ])('%s', (url, expected) => {
     expect(redactUrl(url)).toBe(expected)
+  })
+})
+
+describe('ConfigStore.readHistorySize', () => {
+  it.each([
+    [undefined, 1024 * 1024],
+    [0, 0],
+    [2048, 2048],
+    ['512KB', 512 * 1024],
+    ['5 MB', 5 * 1024 * 1024],
+    ['1gb', 1024 ** 3],
+    ['100', 100],
+  ])('reads %o as %i bytes', async (value, expected) => {
+    const sandbox = await createSandbox()
+    await sandbox.configure(value === undefined ? {} : { history_max_size: value })
+
+    await expect(new ConfigStore(sandbox.home).readHistorySize()).resolves.toEqual({
+      maxBytes: expected,
+      warning: null,
+    })
+  })
+
+  it.each([-1, 1.5, 'big', '5 TB', true])(
+    'falls back to 1MB with a warning for %o',
+    async value => {
+      const sandbox = await createSandbox()
+      await sandbox.configure({ history_max_size: value })
+
+      const result = await new ConfigStore(sandbox.home).readHistorySize()
+
+      expect(result.maxBytes).toBe(1024 * 1024)
+      expect(result.warning).toContain('"history_max_size"')
+    },
+  )
+
+  it('works without a configuration, or with an invalid one', async () => {
+    const { home } = await createSandbox()
+    const store = new ConfigStore(home)
+    await expect(store.readHistorySize()).resolves.toEqual({ maxBytes: 1024 * 1024, warning: null })
+
+    await writeFile(store.path, 'not json')
+    await expect(store.readHistorySize()).resolves.toEqual({ maxBytes: 1024 * 1024, warning: null })
   })
 })

@@ -7,6 +7,7 @@ import { Writable } from 'node:stream'
 import { afterEach } from 'vitest'
 
 import type { Context, Prompts } from '../src/context.js'
+import { History, type HistoryLine } from '../src/history.js'
 import { Output } from '../src/output.js'
 import { main } from '../src/program.js'
 
@@ -117,6 +118,7 @@ export function createContext(
     cwd: sandbox.cwd,
     output: new Output(stdout, stderr),
     prompts,
+    history: new History(sandbox.home),
     stdout,
     stderr,
     asked,
@@ -166,4 +168,11 @@ export async function createRemote(sandbox: Sandbox): Promise<string> {
   git(remote, 'add', '.')
   git(remote, 'commit', '--quiet', '-m', 'first')
   return remote
+}
+
+/** Every line of the history files (rotated file first); fails on an unreadable line. */
+export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
+  const { lines, invalid } = await new History(sandbox.home).read()
+  if (invalid > 0) throw new Error(`${invalid} unreadable history lines`)
+  return lines
 }

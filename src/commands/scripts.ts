@@ -64,6 +64,8 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
 
   output.info(`Running "${name}"…`)
   const code = await runScript(script, args, ctx)
+  // The arguments are never recorded: they may contain secrets.
+  ctx.history.record({ kind: 'script', name: script.name, file: script.path, exitCode: code })
 
   if (code !== 0) {
     throw new CliError(`Script "${name}" exited with code ${code}.`, code)

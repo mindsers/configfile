@@ -219,6 +219,7 @@ async function deployAll(
         conflicts.push(file)
       } else {
         output.print(`- ${file.target} ${describeDeploy(result)}`)
+        recordDeploy(file, result, ctx)
       }
     } catch (error) {
       reportError(file, error)
@@ -238,6 +239,7 @@ async function deployAll(
     if (!replace) {
       skipped++
       output.print(`- ${file.target} (already exists, skipped)`)
+      ctx.history.record({ kind: 'skipped', target: file.target, reason: 'exists' })
       continue
     }
 
@@ -247,6 +249,7 @@ async function deployAll(
         throw new CliError('the target still exists after being moved aside.')
       }
       output.print(`- ${file.target} ${describeDeploy(result)}`)
+      recordDeploy(file, result, ctx)
     } catch (error) {
       reportError(file, error)
     }
@@ -266,10 +269,15 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   const undeployEach = async (context: DeployContext) => {
     for (const file of files) {
       try {
-        const line = options.dryRun
-          ? `(${describePlannedUndeploy(await planUndeploy(file, context))})`
-          : describeUndeploy(await undeployFile(file, context))
-        output.print(`- ${file.target} ${line}`)
+        if (options.dryRun) {
+          output.print(
+            `- ${file.target} (${describePlannedUndeploy(await planUndeploy(file, context))})`,
+          )
+          continue
+        }
+        const result = await undeployFile(file, context)
+        output.print(`- ${file.target} ${describeUndeploy(result)}`)
+        recordUndeploy(file, result, ctx)
       } catch (error) {
         failures++
         reportFileError(file, error, ctx)
@@ -314,11 +322,15 @@ async function prepare(
     if (module.error != null) {
       failures++
       output.error(`Module "${module.name}" was not ${verb}ed: ${module.error}.`)
+      ctx.history.record({ kind: 'failed', module: module.name, reason: module.error })
       continue
     }
 
     usable.push(module)
     failures += module.invalidEntries.length
+    for (const problem of module.invalidEntries) {
+      ctx.history.record({ kind: 'failed', module: module.name, reason: problem })
+    }
     reportSettings(module, ctx)
     for (const source of module.undecided) {
       output.warn(
@@ -434,7 +446,8 @@ function finish(failures: number, problems: string[], success: string, ctx: Cont
 }
 
 function reportFileError(file: ModuleFile, error: unknown, ctx: Context): void {
-  ctx.output.error(`${file.target}: ${(error as Error).message}`)
+  ctx.output.error(`${file.target}: ${messageOf(error)}`)
+  ctx.history.record({ kind: 'failed', target: file.target, reason: messageOf(error) })
   if (!(error instanceof CliError) && process.env.DEBUG != null) {
     ctx.output.stderr.write(`${(error as Error).stack}\n`)
   }
@@ -544,5 +557,49 @@ function describeUndeploy(result: UndeployResult): string {
       return '(not deployed)'
     case 'kept':
       return `(kept: ${describeKept(result.state)})`
+  }
+}
+
+/** Records a deployment in the history (files already in place are only counted). */
+function recordDeploy(
+  file: ModuleFile,
+  result: Exclude<DeployResult, { status: 'conflict' }>,
+  ctx: Context,
+): void {
+  if (result.status === 'up-to-date') {
+    ctx.history.unchanged()
+    return
+  }
+  ctx.history.record({
+    kind: 'deployed',
+    how: file.strategy === 'global' ? 'link' : 'copy',
+    source: file.source,
+    target: file.target,
+    ...(result.status === 'backed-up' && { backup: result.backup }),
+  })
+}
+
+/** Records an undeployment in the history (files that were not deployed are only counted). */
+function recordUndeploy(file: ModuleFile, result: UndeployResult, ctx: Context): void {
+  switch (result.status) {
+    case 'not-deployed':
+      ctx.history.unchanged()
+      return
+    case 'kept':
+      ctx.history.record({ kind: 'kept', target: file.target, reason: result.state.kind })
+      return
+    case 'removed':
+      ctx.history.record({
+        kind: 'removed',
+        target: file.target,
+        ...(result.backup != null && {
+          backup: {
+            path: result.backup.path,
+            status: result.backup.status === 'ok' ? 'restored' : result.backup.status,
+          },
+        }),
+        ...(result.leftover != null && { leftover: result.leftover }),
+      })
+      return
   }
 }

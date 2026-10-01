@@ -40,6 +40,7 @@ pnpm test
 - [configfile scripts list](../README.md#usage)
 - [configfile scripts run](../README.md#usage)
 - [configfile update](../README.md#usage)
+- [configfile history](../README.md#history)
 
 ## Configfiles Configuration
 

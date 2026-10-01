@@ -110,12 +110,15 @@ Scripts can be written in any language:
 - `configfile scripts list` (`s l`, or just `configfile scripts`): list available scripts.
 - `configfile scripts run <name> [-- args...]` (`s r`): run a script. Arguments after `--` are passed to the script.
 - `configfile update` (`u`): sync *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies.
+- `configfile history`: show what *configfile* changed, most recent last (see [History](#history)).
+    - `-n, --limit <count>`: number of runs to show (20 by default).
+    - `--json`: print the raw history lines (JSON Lines), for scripts.
 
-*configfile* exits with a non-zero code when a command fails, and with the script's exit code when a script fails, so it can be used from other scripts. When stdin is not a terminal, a command that would ask a question fails and names the option to pass instead (`--repo`, `--folder` and `--force` for `init`; module names or `--all` for `modules deploy` and `undeploy`). Without a terminal, `modules deploy --local` skips existing local files and exits with an error, unless `--force` is given. Ctrl+C at a question exits with code 130.
+*configfile* exits with a non-zero code when a command fails, and with the script's exit code when a script fails, so it can be used from other scripts. When stdin is not a terminal, a command that would ask a question fails and names the option to pass instead (`--repo`, `--folder` and `--force` for `init`; module names or `--all` for `modules deploy` and `undeploy`). Without a terminal, `modules deploy --local` skips existing local files and exits with an error, unless `--force` is given. Ctrl+C at a question exits with code 130. Each run that changes something is also recorded in the [history](#history).
 
 ### Configuration
 
-*configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the lock, and saved local changes (`saved/`).
+*configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the [history](#history) (`history.jsonl`), the lock, and saved local changes (`saved/`).
 
 `~/.configfilerc` is a JSON file:
 
@@ -123,11 +126,34 @@ Scripts can be written in any language:
 {
   "repo_url": "git@github.com:me/dotfiles.git",
   "folder_path": "/Users/me/.configfile/dotfiles",
-  "script_extensions": [".js", ".sh", ""]
+  "script_extensions": [".js", ".sh", ""],
+  "history_max_size": "1MB"
 }
 ```
 
-`folder_path` may start with `~`; a relative path is relative to your home folder. `script_extensions` is optional: without it, every file of `scripts/` is a script. With it, only files with one of these extensions are; the dot may be omitted (`"py"`), and `""` means files without extension.
+`folder_path` may start with `~`; a relative path is relative to your home folder. `script_extensions` is optional: without it, every file of `scripts/` is a script. With it, only files with one of these extensions are; the dot may be omitted (`"py"`), and `""` means files without extension. `history_max_size` is optional: see [History](#history).
+
+### History
+
+*configfile* records what each command changed, when, and whether it failed, in `~/.configfile/history.jsonl`: one JSON line per run of `init`, `modules deploy`, `modules undeploy`, `update` and `scripts run` (dry runs excepted), and per unexpected error of any command. Each line has the time, the *configfile* version, the command and its options, the current folder, the exit code, the error message, and the changes: files linked, copied, moved aside to `.old`, removed, restored, kept or skipped, syncs (from which commit to which, and saved patches), scripts and their exit codes.
+
+Script arguments, environment variables and file contents are never recorded, and passwords or tokens in URLs are hidden. The file is only readable by its owner.
+
+`configfile history` shows the last runs:
+
+```txt
+2026-10-01 11:12  modules deploy zsh  ok
+  linked    ~/.zshrc  (previous file moved to ~/.zshrc.old)
+  2 unchanged
+```
+
+The file is also easy to query with `jq`, for example to list the failed runs:
+
+```bash
+jq 'select(.exitCode != 0)' ~/.configfile/history.jsonl
+```
+
+When the file reaches `history_max_size` (1MB by default; a number of bytes, or a size such as `"512KB"` or `"5MB"` in `~/.configfilerc`), it is renamed to `history.1.jsonl`, replacing the previous one, so the history takes about twice that size at most. `"history_max_size": 0` turns the history off.
 
 ## Upgrading from 0.3
 
