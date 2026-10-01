@@ -161,12 +161,43 @@ export async function gitClone(
   await git(['clone', '--', url, folder], { cwd }, 'git clone')
 }
 
-/** Fast-forwards the repository in `folder` to its upstream branch. */
-export async function gitPull(folder: string): Promise<void> {
-  await git(['pull', '--ff-only'], { cwd: folder }, 'git pull')
+/**
+ * Runs git and returns its output, without showing it. Fails with git's own
+ * message unless `allowFailure` is set (then `null` is returned on failure).
+ */
+export async function gitOutput(
+  args: string[],
+  { cwd, allowFailure = false }: { cwd: string; allowFailure?: boolean },
+): Promise<string | null> {
+  const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', chunk => {
+        stdout += chunk
+      })
+      child.stderr.on('data', chunk => {
+        stderr += chunk
+      })
+      child.once('error', error => {
+        reject(
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? new CliError('git is not installed or not in PATH.')
+            : error,
+        )
+      })
+      child.once('close', code => resolve({ code, stdout, stderr }))
+    },
+  )
+
+  if (result.code === 0) return result.stdout
+  if (allowFailure) return null
+  throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || `exit code ${result.code}`}`)
 }
 
-async function git(args: string[], { cwd }: { cwd: string }, label: string): Promise<void> {
+/** Runs git with its output shown to the user. */
+export async function git(args: string[], { cwd }: { cwd: string }, label: string): Promise<void> {
   let code: number
   try {
     code = await run('git', args, { cwd })

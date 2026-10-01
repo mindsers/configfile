@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved
   versions it made (recorded in `~/.configfile/`).
 - The `modules status` command to see which files are deployed.
-- The `update` command to pull the latest version of the dotfiles repository.
+- The `update` command to sync with the latest version of the dotfiles repository.
 - A preview of the changes with `--dry-run` on `modules deploy` and `modules undeploy`.
 - Options to use configfile in scripts without questions: `--repo`, `--folder` and `--force`
   on `init`, `--all` and `--force` on `modules deploy`, `--all` on `modules undeploy`.
@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   in a `"files"` key.
 - `~/.configfilerc` is only readable by its owner.
 - `init` reuses a folder that already contains the repository.
+- `init` only asks for the repository URL and clones it into `~/.configfile/dotfiles`, a copy
+  configfile keeps in sync; `--folder` chooses another location.
+- `update` makes configfile's copy identical to the remote, so it never fails on conflicts or
+  unpushed work; local changes found in the copy are first saved as a patch in
+  `~/.configfile/saved/`.
 
 ### Fixed
 - Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
