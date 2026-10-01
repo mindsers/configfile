@@ -1464,6 +1464,37 @@ describe('init', () => {
     }
   })
 
+  it('checks git before asking for the URL when the folder to clone into is empty', async () => {
+    const sandbox = await createSandbox()
+    const empty = path.join(sandbox.root, 'empty')
+    await mkdir(empty)
+    vi.stubEnv('PATH', '/nonexistent')
+
+    try {
+      const result = await runCli(
+        sandbox,
+        ['init', '--folder', empty],
+        ['https://example.com/r.git'],
+      )
+
+      expect(result).toMatchObject({ code: 1, asked: [] })
+      expect(result.stderr).toContain('git is not installed.')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('works with a home folder that does not exist yet', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+    await rm(sandbox.home, { recursive: true })
+
+    const result = await runCli(sandbox, ['init', '--repo', remote])
+
+    expect(result.code).toBe(0)
+    expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/files/.gitkeep'))).toBe(true)
+  })
+
   it('reuses an existing repository without git', async () => {
     const sandbox = await createSandbox()
     await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })

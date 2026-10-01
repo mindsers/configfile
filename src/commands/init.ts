@@ -64,9 +64,9 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       ? resolveUserPath(options.folder.trim(), ctx)
       : (previous.folderPath ?? own.dotfiles)
   const folder = await inspectFolder(folderPath)
-  // A clone needs git: checked before asking anything else, so a missing git is
-  // found before the URL is typed, and before any folder is created.
-  if (folder === 'missing' || folder === 'empty') await ensureGit({ cwd: ctx.home })
+  // A clone needs git: checked before asking for the URL, so a missing git is
+  // found before the URL is typed and before the folder to clone into is created.
+  if (folder === 'missing' || folder === 'empty') await ensureGit()
 
   const repoUrl = (
     options.repo ??

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -69,11 +69,14 @@ describe('ensureGit', () => {
   })
 
   it('says how to install git on this system when it is missing', async () => {
-    const sandbox = await createSandbox()
+    // Computed first: the rejection must be awaited as soon as it exists.
+    const message = await missingGitMessage()
 
-    await expect(
-      ensureGit({ cwd: sandbox.home, command: 'configfile-no-such-git' }),
-    ).rejects.toThrow(await missingGitMessage())
+    await expect(ensureGit({ command: 'configfile-no-such-git' })).rejects.toThrow(message)
+  })
+
+  it('needs no particular folder', async () => {
+    await expect(ensureGit()).resolves.toBeUndefined()
   })
 
   it.each([
@@ -96,6 +99,28 @@ describe('ensureGit', () => {
 
     await expect(failure).rejects.toThrow(
       /^git needs Apple's command line developer tools \(.+\)\. Install them with: xcode-select --install/,
+    )
+  })
+
+  it('reports a removed Xcode as it is', async () => {
+    const options = await fakeGit(
+      'echo "xcrun: error: invalid active developer path (/Applications/Xcode.app/Contents/Developer)" >&2; exit 1',
+    )
+
+    await expect(ensureGit(options)).rejects.toThrow(
+      'git does not work: xcrun: error: invalid active developer path (/Applications/Xcode.app/Contents/Developer)',
+    )
+  })
+
+  it('quotes only the first line of the developer tools message', async () => {
+    const options = await fakeGit(
+      'echo "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)" >&2; echo "second line" >&2; exit 1',
+    )
+
+    const failure = ensureGit(options)
+
+    await expect(failure).rejects.toThrow(
+      "git needs Apple's command line developer tools (xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)). Install them with: xcode-select --install",
     )
   })
 
@@ -131,11 +156,44 @@ describe('ensureGit', () => {
     )
   })
 
-  it('says when git is found but cannot be executed', async () => {
+  it('stops waiting on time even when something git started keeps its output open', async () => {
+    const sandbox = await createSandbox()
+    const pidFile = path.join(sandbox.root, 'escaped.pid')
+    // A child that leaves git's process group, so the group kill misses it.
+    const command = await sandbox.write(
+      'bin/git',
+      `#!/bin/sh\nperl -e 'use POSIX; setsid(); sleep 20' &\necho $! > "${pidFile}"\nsleep 30\n`,
+      0o755,
+    )
+    const started = Date.now()
+
+    try {
+      await expect(ensureGit({ command, timeoutMs: 300 })).rejects.toThrow(
+        'git did not answer within 0.3 seconds',
+      )
+      expect(Date.now() - started).toBeLessThan(3000)
+    } finally {
+      const pid = Number(await readFile(pidFile, 'utf8').catch(() => ''))
+      if (pid > 0) process.kill(pid, 'SIGKILL')
+    }
+  })
+
+  it('leaves no timer behind once git has answered', async () => {
+    const timers = () => process.getActiveResourcesInfo().filter(name => name === 'Timeout').length
+    const before = timers()
+
+    await ensureGit()
+
+    expect(timers()).toBe(before)
+  })
+
+  it('says when git cannot be executed', async () => {
     const options = await fakeGit('exit 0', 0o644)
+    const hint = gitInstallHint(process.platform, await osRelease())
 
     await expect(ensureGit(options)).rejects.toThrow(
-      /^git was found but cannot be executed \(permission denied\)/,
+      'git cannot be executed (permission denied). Check the git found in PATH and the ' +
+        `permissions of the folders in PATH, or reinstall git. ${hint}`,
     )
   })
 })
@@ -157,15 +215,21 @@ describe('git and gitOutput', () => {
     await expect(git(['status'], { cwd: sandbox.root }, 'git status')).rejects.toThrow(message)
   })
 
-  it('never blame git for a missing working folder', async () => {
+  it('never blame git for a working folder that cannot be used', async () => {
     const sandbox = await createSandbox()
     const missing = path.join(sandbox.root, 'gone')
+    const brokenLink = path.join(sandbox.root, 'broken-link')
+    await symlink(path.join(sandbox.root, 'nowhere'), brokenLink)
+    const file = await sandbox.write('a-file', '')
 
-    await expect(gitOutput(['status'], { cwd: missing })).rejects.toThrow(
-      `Cannot run git in ${missing}: the folder does not exist.`,
-    )
-    await expect(git(['status'], { cwd: missing }, 'git status')).rejects.toThrow(
-      `Cannot run git in ${missing}: the folder does not exist.`,
-    )
+    for (const [cwd, problem] of [
+      [missing, 'the folder does not exist'],
+      [brokenLink, 'the folder does not exist'],
+      [file, 'it is not a folder'],
+    ] as const) {
+      const message = `Cannot run git in ${cwd}: ${problem}.`
+      await expect(gitOutput(['status'], { cwd })).rejects.toThrow(message)
+      await expect(git(['status'], { cwd }, 'git status')).rejects.toThrow(message)
+    }
   })
 })

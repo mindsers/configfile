@@ -155,6 +155,41 @@ describe('built CLI', () => {
     expect(result.stdout).not.toContain('Syncing')
   })
 
+  it('stops a hung git check on Ctrl+C, leaving nothing running', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
+    const pidFile = path.join(sandbox.root, 'git.pid')
+    await sandbox.write('bin/git', `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 60\n`, 0o755)
+
+    const child = spawn(process.execPath, [cli, 'update'], {
+      cwd: sandbox.cwd,
+      env: {
+        ...process.env,
+        HOME: sandbox.home,
+        NO_COLOR: '1',
+        PATH: `${path.join(sandbox.root, 'bin')}:/usr/bin:/bin`,
+      },
+      stdio: 'ignore',
+    })
+    const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve =>
+      child.on('close', (code, signal) => resolve({ code, signal })),
+    )
+    let gitPid = 0
+    while (gitPid === 0) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      gitPid = Number(await readFile(pidFile, 'utf8').catch(() => '0'))
+    }
+
+    // Only configfile gets the signal: the hung git is in its own process group.
+    child.kill('SIGINT')
+    const result = await ended
+
+    expect(result).toEqual({ code: null, signal: 'SIGINT' })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(() => process.kill(gitPid, 0)).toThrow()
+  })
+
   it('never loses a file when several configfile processes deploy at once', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()

@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { constants } from 'node:fs'
-import { access, open, readFile } from 'node:fs/promises'
+import { constants, type Stats } from 'node:fs'
+import { access, open, readFile, stat } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
 
 import { CliError } from './errors.ts'
-import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
+import { errnoCode, messageOf } from './fsutil.ts'
 import type { Script } from './repository.ts'
 
 /**
@@ -186,8 +186,13 @@ interface Captured {
 
 /**
  * Runs a command and resolves with what it did, without showing its output.
- * Rejects when the command cannot be started (`ENOENT`, `EACCES`…). With
- * `timeoutMs`, the command is killed if it runs longer.
+ * Rejects when the command cannot be started (`ENOENT`, `EACCES`…).
+ *
+ * With `timeoutMs`, the command runs in its own process group: when the time
+ * is up, the whole group is killed and the result is given at once, even if
+ * something it started (outside the group) still holds its output open. The
+ * terminal's signals no longer reach that group, so while it runs, configfile
+ * passes Ctrl+C, SIGTERM and SIGHUP on to it before ending as usual.
  */
 function capture(
   command: string,
@@ -195,27 +200,55 @@ function capture(
   { cwd, timeoutMs }: { cwd: string; timeoutMs?: number },
 ): Promise<Captured> {
   return new Promise((resolve, reject) => {
-    // With a time limit, the command gets its own process group, so that
-    // everything it started can be killed with it.
+    const grouped = timeoutMs != null
     const child = spawn(command, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: timeoutMs != null,
+      detached: grouped,
     })
     let stdout = ''
     let stderr = ''
-    let timedOut = false
-    const timer =
-      timeoutMs == null
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true
-            try {
-              if (child.pid != null) process.kill(-child.pid, 'SIGKILL')
-            } catch {
-              child.kill('SIGKILL')
-            }
-          }, timeoutMs)
+    let settled = false
+
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (child.pid != null) process.kill(-child.pid, signal)
+      } catch {
+        child.kill(signal)
+      }
+    }
+    // Ends configfile the way the signal would have, once the group is gone.
+    const forward = (signal: NodeJS.Signals) => {
+      killGroup(signal)
+      cleanup()
+      process.kill(process.pid, signal)
+    }
+    const signals: NodeJS.Signals[] = grouped ? ['SIGINT', 'SIGTERM', 'SIGHUP'] : []
+    for (const signal of signals) process.on(signal, forward)
+
+    const timer = grouped
+      ? setTimeout(() => {
+          killGroup('SIGKILL')
+          finish({ code: null, signal: 'SIGKILL', timedOut: true })
+        }, timeoutMs)
+      : undefined
+
+    function cleanup() {
+      clearTimeout(timer)
+      for (const signal of signals) process.off(signal, forward)
+    }
+    function finish(end: Pick<Captured, 'code' | 'signal' | 'timedOut'>) {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (end.timedOut) {
+        // Something outside the group may still hold the pipes: stop reading them.
+        child.stdout.destroy()
+        child.stderr.destroy()
+      }
+      resolve({ ...end, stdout, stderr })
+    }
+
     child.stdout.on('data', chunk => {
       stdout += chunk
     })
@@ -223,13 +256,12 @@ function capture(
       stderr += chunk
     })
     child.once('error', error => {
-      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      cleanup()
       reject(error)
     })
-    child.once('close', (code, signal) => {
-      clearTimeout(timer)
-      resolve({ code, signal, timedOut, stdout, stderr })
-    })
+    child.once('close', (code, signal) => finish({ code, signal, timedOut: false }))
   })
 }
 
@@ -263,20 +295,21 @@ const VERSION_TIMEOUT_MS = 10_000
  * Checks that git runs (`git --version`) before configfile needs it, so that
  * nothing is started with a git that cannot work. A missing git, and on macOS
  * the `/usr/bin/git` that only offers to install Apple's command line developer
- * tools, fail with how to install them on this system; any other failure with
- * git's own message. `command` and `timeoutMs` replace `git` and the time
- * allowed, for tests.
+ * tools, fail with how to install them on this system. Any other failure says
+ * what went wrong: git's own message when it printed one, otherwise how it
+ * ended, or the time limit. `command` and `timeoutMs` replace `git` and the
+ * time allowed, for tests.
  */
 export async function ensureGit({
-  cwd,
+  cwd = '/',
   command = 'git',
   timeoutMs = VERSION_TIMEOUT_MS,
 }: {
-  /** An existing folder: `git --version` does not depend on it. */
-  cwd: string
+  /** `git --version` does not depend on it: `/` always exists, unlike a new home folder. */
+  cwd?: string
   command?: string
   timeoutMs?: number
-}): Promise<void> {
+} = {}): Promise<void> {
   const result = await capture(command, ['--version'], { cwd, timeoutMs }).catch(async error => {
     throw await startFailure(error, cwd)
   })
@@ -314,24 +347,46 @@ function firstLine(text: string): string {
  * reports a missing working folder as `ENOENT`, so that is checked first.
  */
 async function startFailure(error: unknown, cwd: string): Promise<Error> {
-  const code = errnoCode(error)
-  if (code === 'ENOENT' && (await lstatOrNull(cwd).catch(() => null)) == null) {
-    return new CliError(`Cannot run git in ${cwd}: the folder does not exist.`, { cause: error })
+  // Node reports a working folder it cannot enter like a missing or
+  // forbidden command: the folder is checked first, so git is not blamed.
+  const folder = await folderProblem(cwd)
+  if (folder != null) return new CliError(`Cannot run git in ${cwd}: ${folder}.`, { cause: error })
+
+  const hint = gitInstallHint(process.platform, await osRelease())
+  switch (errnoCode(error)) {
+    case 'ENOENT':
+      return gitMissing(error)
+    case 'EACCES':
+      return new CliError(
+        'git cannot be executed (permission denied). Check the git found in PATH and the ' +
+          `permissions of the folders in PATH, or reinstall git. ${hint}`,
+        { cause: error },
+      )
+    default:
+      return new CliError(`Cannot run git: ${messageOf(error)}`, { cause: error })
   }
-  if (code === 'ENOENT') return gitMissing()
-  if (code === 'EACCES') {
-    return new CliError(
-      'git was found but cannot be executed (permission denied). Check the permissions of the ' +
-        `git found in PATH, or reinstall git. ${gitInstallHint(process.platform, await osRelease())}`,
-      { cause: error },
-    )
-  }
-  return new CliError(`Cannot run git: ${messageOf(error)}`, { cause: error })
 }
 
-async function gitMissing(): Promise<CliError> {
+/** Why a command cannot run in `folder`, or `null` when it can. */
+async function folderProblem(folder: string): Promise<string | null> {
+  const stats = await stat(folder).catch((error: unknown) => error)
+  if (stats instanceof Error) {
+    return errnoCode(stats) === 'ENOENT'
+      ? 'the folder does not exist'
+      : `the folder cannot be used (${messageOf(stats)})`
+  }
+  if (!(stats as Stats).isDirectory()) return 'it is not a folder'
+  const usable = await access(folder, constants.X_OK).then(
+    () => true,
+    () => false,
+  )
+  return usable ? null : 'the folder cannot be opened (permission denied)'
+}
+
+async function gitMissing(cause?: unknown): Promise<CliError> {
   return new CliError(
     `git is not installed. ${gitInstallHint(process.platform, await osRelease())}`,
+    cause === undefined ? {} : { cause },
   )
 }
 
