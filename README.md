@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![CI](https://img.shields.io/github/actions/workflow/status/mindsers/configfile/ci.yml?branch=develop&style=flat-square)](https://github.com/mindsers/configfile/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/mindsers/configfile/blob/develop/LICENSE)
-[![Patreon](https://img.shields.io/badge/support-patreon-F96854.svg?logo=patreon&style=flat-square)](https://www.patreon.com/bePatron?u=9715649)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/mindsers?logo=githubsponsors&style=flat-square)](https://github.com/sponsors/mindsers)
 
 *configfile* is a command line tool that helps you manage your configuration files (dotfiles) and setup scripts from a git repository.
 
@@ -177,18 +177,19 @@ When the file reaches `history_max_size` (1MB by default; a number of bytes, or 
 
 ## Contribution
 
-Contributions to the source code of *configfile* are welcome and greatly appreciated. For help on how to contribute to this project, please refer to [How to contribute to Configfile](https://github.com/mindsers/configfile/blob/develop/CONTRIBUTING.md).
+Contributions are welcome and greatly appreciated. Read [How to contribute to configfile](https://github.com/mindsers/configfile/blob/develop/CONTRIBUTING.md) before opening a pull request, and follow the [code of conduct](https://github.com/mindsers/configfile/blob/develop/CODE_OF_CONDUCT.md).
+
+- **Questions and bugs:** [open an issue](https://github.com/mindsers/configfile/issues/new/choose).
+- **Security vulnerabilities:** never in a public issue. See the [security policy](https://github.com/mindsers/configfile/blob/develop/SECURITY.md).
 
 ## Support
 
-*configfile* is licensed under an Apache-2.0 license, which means that it's a completely free open source software. Unfortunately, *configfile* doesn't make itself.
+*configfile* is free and open source software, under the Apache-2.0 license, built on my free time.
 
-If you're using *configfile* and want to support the development, you now have the chance! Go on my [Patreon page](https://www.patreon.com/mindsers) and become my joyful patron!!
+If you use it and want to support its development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/mindsers). Thank you!
 
-[![Become a Patron!](https://c5.patreon.com/external/logo/become_a_patron_button.png)](https://www.patreon.com/bePatron?u=9715649)
-
-For help on how to support Configfile, please refer to [The awesome people who support Configfile](https://github.com/mindsers/configfile/blob/develop/SPONSORS.md).
+The people who support *configfile* are listed in [SPONSORS.md](https://github.com/mindsers/configfile/blob/develop/SPONSORS.md).
 
 ## License
 
-This project is under Apache-2.0 license. See LICENSE file.
+This project is under the Apache-2.0 license. See the [LICENSE](https://github.com/mindsers/configfile/blob/develop/LICENSE) file.

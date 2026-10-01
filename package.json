@@ -1,7 +1,7 @@
 {
   "name": "configfile",
   "version": "0.3.1",
-  "description": "Personal config files manager",
+  "description": "Manage your dotfiles and setup scripts from a git repository.",
   "keywords": [
     "dotfiles",
     "config",
@@ -10,11 +10,12 @@
   ],
   "homepage": "https://github.com/mindsers/configfile#readme",
   "bugs": "https://github.com/mindsers/configfile/issues",
+  "funding": "https://github.com/sponsors/mindsers",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mindsers/configfile.git"
   },
-  "author": "Mindsers <dev@nathanaelcherrier.com>",
+  "author": "Mindsers <nathanael@cherrier.dev> (https://nathanaelcherrier.dev)",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {

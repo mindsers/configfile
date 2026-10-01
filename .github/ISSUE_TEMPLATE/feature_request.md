@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Suggest an idea for configfile
 title: ''
 labels: 'type: enhancement'
 assignees: ''
@@ -11,10 +11,10 @@ assignees: ''
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
 **Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+What you want to happen, for example the command or setting you would use.
 
 **Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+Other solutions or workarounds you've considered.
 
 **Additional context**
-Add any other context or screenshots about the feature request here.
+Anything else about the feature request.
