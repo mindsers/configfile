@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { COMMANDS } from '../src/history.ts'
 import { buildProgram } from '../src/program.ts'
@@ -1447,6 +1447,42 @@ describe('init', () => {
     expect(existsSync(path.join(mirror, 'files/.gitkeep'))).toBe(true)
     expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: mirror })
     expect((await stat(path.join(sandbox.home, '.configfile'))).mode & 0o777).toBe(0o700)
+  })
+
+  it('checks git before asking for the repository URL', async () => {
+    const sandbox = await createSandbox()
+    vi.stubEnv('PATH', '/nonexistent')
+
+    try {
+      const result = await runCli(sandbox, ['init'], ['https://example.com/dotfiles.git'])
+
+      expect(result).toMatchObject({ code: 1, asked: [] })
+      expect(result.stderr).toContain('git is not installed.')
+      expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles'))).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('reuses an existing repository without git', async () => {
+    const sandbox = await createSandbox()
+    await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
+    vi.stubEnv('PATH', '/nonexistent')
+
+    try {
+      const result = await runCli(sandbox, [
+        'init',
+        '--repo',
+        'https://example.com/dotfiles.git',
+        '--folder',
+        sandbox.repo,
+      ])
+
+      expect(result.code).toBe(0)
+      expect(result.stdout).toContain('already contains a git repository')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('can run without prompts', async () => {

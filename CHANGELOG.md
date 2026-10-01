@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#36](https://github.com/mindsers/configfile/issues/36)).
 - The `settings.json` format is documented in the README.
 - Releases are published to npm with a provenance statement, which `npm audit signatures` checks.
-- When git is missing, configfile says how to install it on your system, before changing
-  anything.
+- `init` and `update` say how to install git when it is missing, or Apple's command line
+  developer tools on macOS, before cloning or syncing (`init` checks before asking for the URL).
 
 ### Changed
 - **Breaking:** Node.js 24.11 or later is required, and only macOS and Linux are supported.

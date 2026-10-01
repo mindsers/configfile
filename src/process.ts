@@ -5,7 +5,7 @@ import { constants as osConstants } from 'node:os'
 import path from 'node:path'
 
 import { CliError } from './errors.ts'
-import { errnoCode } from './fsutil.ts'
+import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
 import type { Script } from './repository.ts'
 
 /**
@@ -173,66 +173,160 @@ export async function gitClone(
   await git(['clone', '--', url, folder], { cwd }, 'git clone')
 }
 
-/** Runs a command and returns its exit code and output, without showing them. */
+/** What a command run by `capture` did. */
+interface Captured {
+  /** `null` when the command was stopped by a signal. */
+  code: number | null
+  signal: NodeJS.Signals | null
+  /** It did not end within the time allowed, and was killed. */
+  timedOut: boolean
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Runs a command and resolves with what it did, without showing its output.
+ * Rejects when the command cannot be started (`ENOENT`, `EACCES`…). With
+ * `timeoutMs`, the command is killed if it runs longer.
+ */
 function capture(
   command: string,
   args: string[],
-  { cwd }: { cwd: string },
-): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  { cwd, timeoutMs }: { cwd: string; timeoutMs?: number },
+): Promise<Captured> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    // With a time limit, the command gets its own process group, so that
+    // everything it started can be killed with it.
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: timeoutMs != null,
+    })
     let stdout = ''
     let stderr = ''
+    let timedOut = false
+    const timer =
+      timeoutMs == null
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true
+            try {
+              if (child.pid != null) process.kill(-child.pid, 'SIGKILL')
+            } catch {
+              child.kill('SIGKILL')
+            }
+          }, timeoutMs)
     child.stdout.on('data', chunk => {
       stdout += chunk
     })
     child.stderr.on('data', chunk => {
       stderr += chunk
     })
-    child.once('error', reject)
-    child.once('close', code => resolve({ code, stdout, stderr }))
+    child.once('error', error => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.once('close', (code, signal) => {
+      clearTimeout(timer)
+      resolve({ code, signal, timedOut, stdout, stderr })
+    })
   })
 }
 
+/** How a command that ran ended, for messages: "exit code 2" or "stopped by SIGKILL". */
+function describeEnd({ code, signal }: Pick<Captured, 'code' | 'signal'>): string {
+  return code == null ? `stopped by ${signal ?? 'a signal'}` : `exit code ${code}`
+}
+
 /**
- * Runs git and returns its output, without showing it. Fails with git's own
- * message unless `allowFailure` is set (then `null` is returned on failure).
+ * Runs git and returns its output, without showing it. When git exits with an
+ * error, fails with git's own message, or returns `null` with `allowFailure`.
+ * Git that cannot be started always fails, saying why (see `startFailure`).
  */
 export async function gitOutput(
   args: string[],
   { cwd, allowFailure = false }: { cwd: string; allowFailure?: boolean },
 ): Promise<string | null> {
   const result = await capture('git', args, { cwd }).catch(async error => {
-    throw errnoCode(error) === 'ENOENT' ? await gitMissing() : error
+    throw await startFailure(error, cwd)
   })
 
   if (result.code === 0) return result.stdout
   if (allowFailure) return null
-  throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || `exit code ${result.code}`}`)
+  throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || describeEnd(result)}`)
+}
+
+/** Time allowed to `git --version`: it answers at once unless something is wrong. */
+const VERSION_TIMEOUT_MS = 10_000
+
+/**
+ * Checks that git runs (`git --version`) before configfile needs it, so that
+ * nothing is started with a git that cannot work. A missing git, and on macOS
+ * the `/usr/bin/git` that only offers to install Apple's command line developer
+ * tools, fail with how to install them on this system; any other failure with
+ * git's own message. `command` and `timeoutMs` replace `git` and the time
+ * allowed, for tests.
+ */
+export async function ensureGit({
+  cwd,
+  command = 'git',
+  timeoutMs = VERSION_TIMEOUT_MS,
+}: {
+  /** An existing folder: `git --version` does not depend on it. */
+  cwd: string
+  command?: string
+  timeoutMs?: number
+}): Promise<void> {
+  const result = await capture(command, ['--version'], { cwd, timeoutMs }).catch(async error => {
+    throw await startFailure(error, cwd)
+  })
+  if (result.code === 0) return
+
+  const output = `${result.stderr}\n${result.stdout}`.trim()
+  if (result.timedOut) {
+    throw new CliError(
+      `git did not answer within ${timeoutMs / 1000} seconds (git --version). ` +
+        'Check the git found in PATH, or reinstall it.',
+    )
+  }
+  // What macOS's git prints when the developer tools are not installed (it may
+  // also open a window offering to install them). Other xcrun errors, such as a
+  // wrong DEVELOPER_DIR or a removed Xcode, are reported as they are.
+  if (
+    /invalid active developer path \(\/Library\/Developer\/CommandLineTools\)|No developer tools were found/.test(
+      output,
+    )
+  ) {
+    throw new CliError(
+      `git needs Apple's command line developer tools (${firstLine(output)}). Install them with: ` +
+        'xcode-select --install (a window offering to install them may already be open).',
+    )
+  }
+  throw new CliError(`git does not work: ${output === '' ? describeEnd(result) : output}`)
+}
+
+function firstLine(text: string): string {
+  return text.split('\n', 1)[0] ?? ''
 }
 
 /**
- * Checks that git can run, before configfile needs it. Missing git, and the
- * macOS `git` that only offers to install Apple's developer tools, fail with
- * the command that installs it on this machine.
+ * Why git could not be started: not installed, or not executable. Node also
+ * reports a missing working folder as `ENOENT`, so that is checked first.
  */
-export async function ensureGit({ command = 'git' }: { command?: string } = {}): Promise<void> {
-  let result: Awaited<ReturnType<typeof capture>>
-  try {
-    result = await capture(command, ['--version'], { cwd: process.cwd() })
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') throw await gitMissing()
-    throw new CliError(`Cannot run git: ${(error as Error).message}`, { cause: error })
+async function startFailure(error: unknown, cwd: string): Promise<Error> {
+  const code = errnoCode(error)
+  if (code === 'ENOENT' && (await lstatOrNull(cwd).catch(() => null)) == null) {
+    return new CliError(`Cannot run git in ${cwd}: the folder does not exist.`, { cause: error })
   }
-  if (result.code === 0) return
-
-  const output = `${result.stderr}\n${result.stdout}`
-  if (/xcrun: error|xcode-select|developer tools/i.test(output)) {
-    throw new CliError(
-      "git needs Apple's command line developer tools. Install them with: xcode-select --install",
+  if (code === 'ENOENT') return gitMissing()
+  if (code === 'EACCES') {
+    return new CliError(
+      'git was found but cannot be executed (permission denied). Check the permissions of the ' +
+        `git found in PATH, or reinstall git. ${gitInstallHint(process.platform, await osRelease())}`,
+      { cause: error },
     )
   }
-  throw new CliError(`git does not work: ${output.trim() || `exit code ${result.code}`}`)
+  return new CliError(`Cannot run git: ${messageOf(error)}`, { cause: error })
 }
 
 async function gitMissing(): Promise<CliError> {
@@ -276,7 +370,7 @@ export async function git(args: string[], { cwd }: { cwd: string }, label: strin
   try {
     code = await run('git', args, { cwd })
   } catch (error) {
-    throw errnoCode(error) === 'ENOENT' ? await gitMissing() : error
+    throw await startFailure(error, cwd)
   }
 
   if (code !== 0) {

@@ -56,6 +56,18 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     }
   }
 
+  // configfile's copy is a mirror it keeps in sync, not a working copy: by
+  // default it lives in configfile's own folder. An existing one is kept.
+  const own = configfilePaths(ctx.home)
+  const folderPath =
+    options.folder != null
+      ? resolveUserPath(options.folder.trim(), ctx)
+      : (previous.folderPath ?? own.dotfiles)
+  const folder = await inspectFolder(folderPath)
+  // A clone needs git: checked before asking anything else, so a missing git is
+  // found before the URL is typed, and before any folder is created.
+  if (folder === 'missing' || folder === 'empty') await ensureGit({ cwd: ctx.home })
+
   const repoUrl = (
     options.repo ??
     (await prompts.input({
@@ -72,18 +84,11 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     )
   }
 
-  // configfile's copy is a mirror it keeps in sync, not a working copy: by
-  // default it lives in configfile's own folder. An existing one is kept.
-  const own = configfilePaths(ctx.home)
-  const folderPath =
-    options.folder != null
-      ? resolveUserPath(options.folder.trim(), ctx)
-      : (previous.folderPath ?? own.dotfiles)
   if (folderPath === own.dotfiles) {
     await mkdir(own.dir, { recursive: true, mode: 0o700 })
   }
 
-  switch (await inspectFolder(folderPath)) {
+  switch (folder) {
     case 'not-a-directory':
       throw new CliError(`${folderPath} exists and is not a folder.`)
     case 'not-empty':
@@ -96,8 +101,6 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       break
     case 'missing':
     case 'empty':
-      // Before anything is created: a clone without git would leave an empty folder.
-      await ensureGit()
       await mkdir(folderPath, { recursive: true }).catch(error => {
         throw new CliError(`Cannot create ${folderPath}: ${(error as Error).message}`, {
           cause: error,

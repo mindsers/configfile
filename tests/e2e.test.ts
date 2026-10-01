@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -137,6 +137,22 @@ describe('built CLI', () => {
     expect(result.stderr).toMatch(/git is not installed\. Install it with/)
     expect(result.stdout).not.toContain('Cloning')
     expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles'))).toBe(false)
+  })
+
+  it('checks git before syncing', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
+
+    const result = spawnSync(process.execPath, [cli, 'update'], {
+      cwd: sandbox.cwd,
+      env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toMatch(/git is not installed\. Install it with/)
+    expect(result.stdout).not.toContain('Syncing')
   })
 
   it('never loses a file when several configfile processes deploy at once', async () => {

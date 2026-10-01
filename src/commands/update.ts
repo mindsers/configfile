@@ -36,7 +36,7 @@ async function update(ctx: Context): Promise<void> {
     throw new CliError(`Cannot read ${folderPath}: ${messageOf(error)}`, { cause: error })
   }
 
-  await ensureGit()
+  await ensureGit({ cwd: ctx.home })
   output.info(`Syncing ${folderPath}…`)
   const result = await syncMirror(folderPath, configfilePaths(ctx.home).saved, {
     onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
