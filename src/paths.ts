@@ -25,6 +25,21 @@ export function contains(parent: string, child: string): boolean {
 }
 
 /** Where configfile keeps its own files. Deployments must never touch them. */
-export function configfilePaths(home: string): { rc: string; dir: string } {
-  return { rc: path.join(home, '.configfilerc'), dir: path.join(home, '.configfile') }
+export function configfilePaths(home: string): {
+  /** The configuration. */
+  rc: string
+  /** configfile's working folder: lock, record, mirror, saved changes. */
+  dir: string
+  /** Default location of the mirror of the dotfiles repository. */
+  repository: string
+  /** Local changes found in the mirror, saved before syncing. */
+  saved: string
+} {
+  const dir = path.join(home, '.configfile')
+  return {
+    rc: path.join(home, '.configfilerc'),
+    dir,
+    repository: path.join(dir, 'repository'),
+    saved: path.join(dir, 'saved'),
+  }
 }

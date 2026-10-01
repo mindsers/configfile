@@ -7,10 +7,8 @@ import type { Command } from 'commander'
 import { ConfigStore } from '../config.js'
 import type { Context } from '../context.js'
 import { CliError } from '../errors.js'
-import { resolveUserPath } from '../paths.js'
+import { configfilePaths, resolveUserPath } from '../paths.js'
 import { gitClone } from '../process.js'
-
-const DEFAULT_FOLDER = '~/.dotfiles'
 
 interface InitOptions {
   force?: boolean
@@ -22,10 +20,10 @@ export function registerInitCommand(program: Command, ctx: Context): void {
   program
     .command('init')
     .alias('i')
-    .description('clone your dotfiles repository and save its location')
+    .description('clone your dotfiles repository, which configfile then keeps in sync')
     .option('-f, --force', 'overwrite the existing configuration without asking')
     .option('--repo <url>', 'dotfiles repository URL (skips the question)')
-    .option('--folder <path>', 'where to clone the repository (skips the question)')
+    .option('--folder <path>', 'where to clone the repository (default: ~/.configfile/repository)')
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -38,7 +36,6 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     const missing = [
       store.exists() && options.force !== true && '--force (a configuration already exists)',
       options.repo == null && '--repo <url>',
-      options.folder == null && '--folder <path>',
     ].filter(Boolean)
     if (missing.length > 0) {
       throw new CliError(
@@ -74,14 +71,16 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     )
   }
 
-  const folderInput =
-    options.folder ??
-    (await prompts.input({
-      message: 'Local folder for the repository:',
-      required: true,
-      default: previous.folderPath ?? DEFAULT_FOLDER,
-    }))
-  const folderPath = resolveUserPath(folderInput.trim(), ctx)
+  // configfile's copy is a mirror it keeps in sync, not a working copy: by
+  // default it lives in configfile's own folder. An existing one is kept.
+  const own = configfilePaths(ctx.home)
+  const folderPath =
+    options.folder != null
+      ? resolveUserPath(options.folder.trim(), ctx)
+      : (previous.folderPath ?? own.repository)
+  if (folderPath === own.repository) {
+    await mkdir(own.dir, { recursive: true, mode: 0o700 })
+  }
 
   switch (await inspectFolder(folderPath)) {
     case 'not-a-directory':

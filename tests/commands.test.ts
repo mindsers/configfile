@@ -4,11 +4,13 @@ import {
   copyFile,
   lstat,
   mkdir,
+  readdir,
   readFile,
   readlink,
   rename,
   stat,
   symlink,
+  writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -904,11 +906,14 @@ describe('init', () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
 
-    const result = await runCli(sandbox, ['init'], [remote, '~/dotfiles'])
+    const result = await runCli(sandbox, ['init'], [remote])
 
-    expect(result.code).toBe(0)
-    expect(existsSync(path.join(sandbox.repo, 'files/.gitkeep'))).toBe(true)
-    expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: sandbox.repo })
+    // Only the URL is asked: the mirror lives in configfile's own folder.
+    const mirror = path.join(sandbox.home, '.configfile/repository')
+    expect(result).toMatchObject({ code: 0, asked: ['Dotfiles repository URL:'] })
+    expect(existsSync(path.join(mirror, 'files/.gitkeep'))).toBe(true)
+    expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: mirror })
+    expect((await stat(path.join(sandbox.home, '.configfile'))).mode & 0o777).toBe(0o700)
   })
 
   it('can run without prompts', async () => {
@@ -980,11 +985,12 @@ describe('init', () => {
     const remote = await withRemote(sandbox)
     await sandbox.configure({ repo_url: 'old' })
 
-    const result = await runCli(sandbox, ['init'], [true, remote, '~/dotfiles'])
+    const result = await runCli(sandbox, ['init'], [true, remote])
 
     expect(result.code).toBe(0)
-    expect(result.asked).toHaveLength(3)
-    expect((await readConfig(sandbox)).repo_url).toBe(remote)
+    expect(result.asked).toHaveLength(2)
+    // The existing folder_path is kept.
+    expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: sandbox.repo })
   })
 
   it.each([
@@ -1012,7 +1018,7 @@ describe('init', () => {
   it('does not save the configuration when cancelled', async () => {
     const sandbox = await createSandbox()
 
-    const result = await runCli(sandbox, ['init'], ['url', exitPromptError()])
+    const result = await runCli(sandbox, ['init'], [exitPromptError()])
 
     expect(result.code).toBe(130)
     expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(false)
@@ -1083,54 +1089,115 @@ describe('init', () => {
 })
 
 describe('update', () => {
-  it('pulls the dotfiles repository', async () => {
-    const sandbox = await createSandbox()
+  /** A remote, configfile's mirror of it, and a function to commit in the remote. */
+  async function withMirror(sandbox: Sandbox) {
     const remote = await createRemote(sandbox)
     git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
     await sandbox.configure()
+    const commitInRemote = async (file: string, content: string) => {
+      await sandbox.write(`remote/${file}`, content)
+      git(remote, 'add', '.')
+      git(remote, 'commit', '--quiet', '-m', `change ${file}`)
+    }
+    return { remote, commitInRemote }
+  }
 
-    await sandbox.write('remote/files/new-file', 'new')
-    git(remote, 'add', '.')
-    git(remote, 'commit', '--quiet', '-m', 'second')
+  const savedPatches = async (sandbox: Sandbox) => {
+    const folder = path.join(sandbox.home, '.configfile/saved')
+    return existsSync(folder) ? (await readdir(folder)).map(name => path.join(folder, name)) : []
+  }
+
+  it('syncs the mirror with the remote', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/new-file', 'new')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain('Synced with origin/main')
+    expect(await readFile(path.join(sandbox.repo, 'files/new-file'), 'utf8')).toBe('new')
+    expect(await savedPatches(sandbox)).toEqual([])
+  })
+
+  it('says when the mirror is already up to date', async () => {
+    const sandbox = await createSandbox()
+    await withMirror(sandbox)
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result).toMatchObject({ code: 0 })
+    expect(result.stdout).toContain('Already up to date with origin/main.')
+  })
+
+  it('saves local commits, edits and new files as a patch, then syncs anyway', async () => {
+    const sandbox = await createSandbox()
+    const { remote, commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/remote-change', 'remote')
+    await sandbox.write('home/dotfiles/files/committed', 'committed locally')
+    git(sandbox.repo, 'add', '.')
+    git(sandbox.repo, 'commit', '--quiet', '-m', 'local commit')
+    await sandbox.write('home/dotfiles/files/.gitkeep', 'edited, not committed')
+    await sandbox.write('home/dotfiles/files/untracked', 'new file')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    const [patch] = await savedPatches(sandbox)
+    expect(result.stderr).toContain(`had local changes: they were saved to ${patch}`)
+    expect(result.stderr).toContain(`git am ${patch}`)
+    // The mirror is now exactly the remote.
+    expect(await readFile(path.join(sandbox.repo, 'files/remote-change'), 'utf8')).toBe('remote')
+    expect(existsSync(path.join(sandbox.repo, 'files/committed'))).toBe(false)
+    expect(existsSync(path.join(sandbox.repo, 'files/untracked'))).toBe(false)
+    expect(await readFile(path.join(sandbox.repo, 'files/.gitkeep'), 'utf8')).toBe('')
+
+    // The saved patch brings everything back in a working copy.
+    const workingCopy = path.join(sandbox.root, 'working-copy')
+    git(sandbox.root, 'clone', '--quiet', remote, workingCopy)
+    git(workingCopy, 'am', '--quiet', patch ?? '')
+    expect(await readFile(path.join(workingCopy, 'files/committed'), 'utf8')).toBe(
+      'committed locally',
+    )
+    expect(await readFile(path.join(workingCopy, 'files/untracked'), 'utf8')).toBe('new file')
+    expect(await readFile(path.join(workingCopy, 'files/.gitkeep'), 'utf8')).toBe(
+      'edited, not committed',
+    )
+  })
+
+  it('saves an edit made through a deployed link before syncing', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'from remote')
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'edited through the link')
+    await commitInRemote('files/zsh/zshrc', 'newer from remote')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('newer from remote')
+    const [patch] = await savedPatches(sandbox)
+    expect(await readFile(patch ?? '', 'utf8')).toContain('+edited through the link')
+  })
+
+  it('follows the remote default branch when the mirror has no upstream', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    git(sandbox.repo, 'branch', '--unset-upstream')
+    await commitInRemote('files/new-file', 'new')
 
     const result = await runCli(sandbox, ['update'])
 
     expect(result.code).toBe(0)
     expect(await readFile(path.join(sandbox.repo, 'files/new-file'), 'utf8')).toBe('new')
-  })
-
-  it('refuses to merge when the histories diverged (fast-forward only)', async () => {
-    const sandbox = await createSandbox()
-    const remote = await createRemote(sandbox)
-    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
-    await sandbox.configure()
-    await sandbox.write('remote/files/remote-change', 'remote')
-    git(remote, 'add', '.')
-    git(remote, 'commit', '--quiet', '-m', 'remote')
-    await sandbox.write('home/dotfiles/files/local-change', 'local')
-    git(sandbox.repo, 'add', '.')
-    git(sandbox.repo, 'commit', '--quiet', '-m', 'local')
-
-    // Without --ff-only, this configuration would let git pull create a merge commit.
-    const gitConfig = {
-      GIT_CONFIG_COUNT: '3',
-      GIT_CONFIG_KEY_0: 'pull.rebase',
-      GIT_CONFIG_VALUE_0: 'false',
-      GIT_CONFIG_KEY_1: 'user.name',
-      GIT_CONFIG_VALUE_1: 'test',
-      GIT_CONFIG_KEY_2: 'user.email',
-      GIT_CONFIG_VALUE_2: 'test@example.com',
-    }
-    Object.assign(process.env, gitConfig)
-    try {
-      const result = await runCli(sandbox, ['update'])
-
-      expect(result.code).not.toBe(0)
-      expect(result.stderr).toContain('git pull failed')
-      expect(existsSync(path.join(sandbox.repo, 'files/remote-change'))).toBe(false)
-    } finally {
-      for (const key of Object.keys(gitConfig)) delete process.env[key]
-    }
   })
 
   it('fails when the dotfiles folder is not a git repository', async () => {

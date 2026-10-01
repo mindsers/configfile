@@ -18,10 +18,10 @@ Generating first configuration:
 configfile init
 ```
 
-It asks for your repository URL and where to clone it. To set it up without questions (in a script, for example):
+It asks for your repository URL and clones it into `~/.configfile/repository`, a copy configfile keeps in sync with the remote (edit your dotfiles in your own working copy). To set it up without questions (in a script, for example):
 
 ```bash
-configfile init --repo git@github.com:me/dotfiles.git --folder ~/.dotfiles
+configfile init --repo git@github.com:me/dotfiles.git
 ```
 
 ### Running unit tests
