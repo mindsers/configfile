@@ -73,7 +73,9 @@ When a local file already exists and differs from the one in the repository, *co
 
 *configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links and the local copies *configfile* made (unless they were modified since), and moves the most recent backup it made back in place, if that backup is unchanged. Anything else is left untouched: files it did not create (even when identical to the repository), local copies that were modified or saved again by an editor since, and `.old` files you made yourself.
 
-When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. To stay safe, files of a module whose `settings.json` is broken or has invalid entries, and entries without a deployment strategy, are never counted as removed; links deployed by 0.3 were not recorded, so they are not found either. Local copies are only undeployed when unchanged and their source is still in the repository to compare them with.
+When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a copy whose source is gone) is left where it is, and *configfile* stops tracking it.
+
+To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose `settings.json` cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
 
 Only one *configfile* at a time changes files: a second one waits for the first to finish (the lock is `~/.configfile/lock`).
 
@@ -109,7 +111,7 @@ Scripts can be written in any language:
     - `-n, --dry-run`: show what would be done, without changing anything.
 - `configfile modules undeploy [modules...]` (`m u`): remove the deployed global files of the given modules and restore their backups. Without module names, asks to undeploy all modules.
     - `-a, --all`: undeploy every module without asking, and the files the repository no longer deploys.
-    - `--removed`: only undeploy the files the repository no longer deploys (see [Modules](#modules)).
+    - `--removed`: only undeploy the files the repository no longer deploys (see [Modules](#modules)); with `--local`, the copies made in the current folder.
     - `-l, --local` and `-n, --dry-run`: as for `deploy`.
 - `configfile scripts list` (`s l`, or just `configfile scripts`): list available scripts.
 - `configfile scripts run <name> [-- args...]` (`s r`): run a script. Arguments after `--` are passed to the script.

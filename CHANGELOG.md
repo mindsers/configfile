@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved
   versions it made (recorded in `~/.configfile/`).
 - The `modules status` command to see which files are deployed.
-- Files deployed for entries that left the repository are listed by `modules status`, reported
-  by `update`, and removed with `modules undeploy --removed` (or `--all`), which restores the files
-  they replaced.
+- `modules undeploy --removed` to remove the files deployed for entries that left the repository
+  and restore what they replaced (`--all` does it too); `modules status` lists these files and
+  `update` warns about them.
 - The `update` command to sync with the latest version of the dotfiles repository.
 - A preview of the changes with `--dry-run` on `modules deploy` and `modules undeploy`.
 - Options to use configfile in scripts without questions: `--repo`, `--folder` and `--force`

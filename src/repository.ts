@@ -19,6 +19,23 @@ export interface ModuleFile {
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
   readonly module: string
+  /** The settings.json entry of the file, recorded when it is deployed. */
+  readonly entry?: Entry
+}
+
+/**
+ * Where a deployed file comes from, recorded with it: this is how configfile
+ * later tells whether the repository still deploys it.
+ */
+export interface Entry {
+  /** The module folder, relative to the repository (`files/zsh`). */
+  readonly module: string
+  /** `source_path`, relative to the module folder. */
+  readonly source: string
+  /** `target_path`, as written. */
+  readonly target: string
+  /** The folder `target` is resolved from: the home folder (global) or the current folder (local). */
+  readonly folder: string
 }
 
 interface ModuleBase {
@@ -215,6 +232,12 @@ async function readModuleFiles(
       strategy,
       repository,
       module: modulePath,
+      entry: {
+        module: path.relative(repository, modulePath),
+        source: path.relative(modulePath, resolvedSource),
+        target: target.trim(),
+        folder: strategy === 'global' ? env.home : env.cwd,
+      },
     })
   }
 

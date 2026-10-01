@@ -75,19 +75,21 @@ async function warnAboutRemovedFiles(ctx: Context): Promise<void> {
   try {
     const { repository, modules } = await loadRepository(ctx)
     const record = await DeploymentRecord.load(ctx.home)
-    const find = (strategy: 'global' | 'local') =>
-      findRemovedFiles(record, modules, { repository, strategy })
+    const find = async (strategy: 'global' | 'local') =>
+      (await findRemovedFiles(record, modules, { repository, home: ctx.home, strategy })).removed
     const global = await find('global')
     const local = await find('local')
-    if (global.length + local.length === 0) return
-
     const count = global.length + local.length
+    if (count === 0) return
+
     const one = count === 1
     const targets = [...global, ...local].map(file => file.target).join(', ')
+    // A local copy is undeployed from the folder it was copied into.
+    const folders = [...new Set(local.map(file => file.folder))].filter(folder => folder != null)
     const steps = [
       global.length > 0 ? 'run "configfile modules undeploy --removed"' : null,
       local.length > 0
-        ? 'run "configfile modules undeploy --removed --local" in the folders of the local copies'
+        ? `run "configfile modules undeploy --removed --local" in ${folders.join(', ')}`
         : null,
     ].filter(step => step != null)
     output.warn(
@@ -97,5 +99,8 @@ async function warnAboutRemovedFiles(ctx: Context): Promise<void> {
     )
   } catch (error) {
     output.warn(`Cannot check for files the repository no longer deploys: ${messageOf(error)}`)
+    if (!(error instanceof CliError) && process.env.DEBUG != null) {
+      output.stderr.write(`${(error as Error).stack}\n`)
+    }
   }
 }

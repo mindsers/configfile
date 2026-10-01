@@ -141,7 +141,8 @@ function describeChange(change: Change): string {
         identical: 'not copied by configfile',
         'source-missing': 'its source was missing',
       }
-      return line('kept', `${change.target}  (${reason[change.reason]})`)
+      const forgotten = change.forgotten === true ? '; configfile no longer tracks it' : ''
+      return line('kept', `${change.target}  (${reason[change.reason]}${forgotten})`)
     }
     case 'failed':
       return line(
