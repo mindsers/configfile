@@ -5,7 +5,9 @@
   "assignees": ["mindsers"],
   "labels": ["type: dependencies"],
   "minimumReleaseAge": "1 day",
-  "lockFileMaintenance": { "enabled": true },
+  "lockFileMaintenance": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Development tools in one weekly pull request",
@@ -31,6 +33,17 @@
       "matchPackageNames": ["@types/node"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "The mise version installed by jdx/mise-action in the workflows",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["version: (?<currentValue>\\S+) # mise version"],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ]
 }

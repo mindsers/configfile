@@ -17,6 +17,8 @@ jobs:
           persist-credentials: false
       # Tool versions come from mise.toml.
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
@@ -41,6 +43,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
+          version: 2026.9.18 # mise version, updated by Renovate
           # One cache per Node.js version: the override is not part of mise.toml.
           cache_key_prefix: mise-node-${{ matrix.node }}
       - run: pnpm install --frozen-lockfile
@@ -54,6 +57,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
       - run: pnpm install --frozen-lockfile
       - run: pnpm pack --out "$RUNNER_TEMP/configfile.tgz"
       - name: Install and run the packed package
