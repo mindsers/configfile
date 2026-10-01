@@ -31,9 +31,10 @@
     "darwin",
     "linux"
   ],
-  "packageManager": "pnpm@12.6.0",
+  "packageManager": "pnpm@12.8.1",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev": "node src/cli.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
@@ -49,10 +50,10 @@
     "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
-    "@types/node": "22.20.4",
-    "@vitest/coverage-v8": "5.0.2",
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
     "typescript": "7.0.2",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

@@ -12,26 +12,55 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/setup@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          cache: true
-          require-lockfile: true
+          persist-credentials: false
+      # Tool versions come from mise.toml.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - name: Check the workflows
+        run: |
+          actionlint
+          zizmor --persona regular .github/workflows
 
   test:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: [24, 26]
+        # The oldest supported version (mise.toml) and the newest.
+        node: ['24', '26']
     runs-on: ${{ matrix.os }}
+    env:
+      MISE_NODE_VERSION: ${{ matrix.node }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/setup@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          runtime: node@${{ matrix.node }}
-          cache: true
-          require-lockfile: true
-      - run: pnpm test
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          # One cache per Node.js version: the override is not part of mise.toml.
+          cache_key_prefix: mise-node-${{ matrix.node }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:coverage
+
+  package:
+    # Installs the package as users get it, and runs it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm pack --out "$RUNNER_TEMP/configfile.tgz"
+      - name: Install and run the packed package
+        working-directory: ${{ runner.temp }}
+        # Installing the package just built is what this job tests.
+        run: | # zizmor: ignore[adhoc-packages]
+          npm install --global ./configfile.tgz
+          configfile --version
+          configfile --help
+          HOME="$RUNNER_TEMP/home" configfile history

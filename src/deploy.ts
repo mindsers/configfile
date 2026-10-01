@@ -2,7 +2,7 @@ import { lstatSync } from 'node:fs'
 import { cp, mkdir, open, readdir, readlink, realpath, rename, rm, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
-import { CliError } from './errors.js'
+import { CliError } from './errors.ts'
 import {
   type Identity,
   identityOf,
@@ -14,11 +14,11 @@ import {
   sameIdentity,
   siblingName,
   statOrNull,
-} from './fsutil.js'
-import { configfilePaths, contains } from './paths.js'
-import type { RecordedFile } from './removed.js'
-import type { ModuleFile } from './repository.js'
-import { type Backup, type DeploymentRecord, isBackupPathOf } from './state.js'
+} from './fsutil.ts'
+import { configfilePaths, contains } from './paths.ts'
+import type { RecordedFile } from './removed.ts'
+import type { ModuleFile } from './repository.ts'
+import { type Backup, type DeploymentRecord, isBackupPathOf } from './state.ts'
 
 /**
  * A file undeploy can work on: a file of a module, or one the repository no
@@ -268,7 +268,9 @@ export async function undeployFile(
       await rename(backup.path, file.target)
     } catch (error) {
       await rename(removed, file.target).catch(() => {})
-      throw new CliError(`Cannot put the backup ${backup.path} back: ${messageOf(error)}`)
+      throw new CliError(`Cannot put the backup ${backup.path} back: ${messageOf(error)}`, {
+        cause: error,
+      })
     }
   }
 
@@ -309,7 +311,9 @@ export function nextBackupPath(target: string): string {
  */
 export async function assertUsableSource(file: ModuleFile): Promise<void> {
   const stats = await statOrNull(file.source).catch(error => {
-    throw new CliError(`Cannot read source file ${file.source}: ${messageOf(error)}`)
+    throw new CliError(`Cannot read source file ${file.source}: ${messageOf(error)}`, {
+      cause: error,
+    })
   })
   if (stats == null) throw new CliError(`Source file ${file.source} does not exist.`)
 
@@ -494,6 +498,7 @@ async function putBackAfterFailure(
     return new CliError(
       `${reason} The previous file is in ${backup} (it could not be put back: ` +
         `${messageOf(restoreError)}).`,
+      { cause: restoreError },
     )
   }
 }
@@ -507,7 +512,9 @@ async function checkLatestBackup(
   if (backup == null || !isBackupPathOf(target, backup.path)) return null
 
   const stats = await lstatOrNull(backup.path).catch(error => {
-    throw new CliError(`Cannot check the backup ${backup.path}: ${messageOf(error)}`)
+    throw new CliError(`Cannot check the backup ${backup.path}: ${messageOf(error)}`, {
+      cause: error,
+    })
   })
   if (stats == null) return { path: backup.path, status: 'missing' }
   const replaced =
@@ -550,23 +557,20 @@ async function sameContent(source: string, target: string): Promise<boolean> {
 
 /** Compares two files of the same size by chunks, whatever their size. */
 async function sameBytes(a: string, b: string): Promise<boolean> {
-  const [handleA, handleB] = await Promise.all([open(a, 'r'), open(b, 'r')])
-  try {
-    const size = 64 * 1024
-    const bufferA = Buffer.alloc(size)
-    const bufferB = Buffer.alloc(size)
-    for (;;) {
-      const [readA, readB] = await Promise.all([
-        handleA.read(bufferA, 0, size, null),
-        handleB.read(bufferB, 0, size, null),
-      ])
-      if (readA.bytesRead !== readB.bytesRead) return false
-      if (readA.bytesRead === 0) return true
-      if (!bufferA.subarray(0, readA.bytesRead).equals(bufferB.subarray(0, readB.bytesRead))) {
-        return false
-      }
+  await using handleA = await open(a, 'r')
+  await using handleB = await open(b, 'r')
+  const size = 64 * 1024
+  const bufferA = Buffer.alloc(size)
+  const bufferB = Buffer.alloc(size)
+  for (;;) {
+    const [readA, readB] = await Promise.all([
+      handleA.read(bufferA, 0, size, null),
+      handleB.read(bufferB, 0, size, null),
+    ])
+    if (readA.bytesRead !== readB.bytesRead) return false
+    if (readA.bytesRead === 0) return true
+    if (!bufferA.subarray(0, readA.bytesRead).equals(bufferB.subarray(0, readB.bytesRead))) {
+      return false
     }
-  } finally {
-    await Promise.all([handleA.close(), handleB.close()])
   }
 }

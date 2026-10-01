@@ -3,16 +3,16 @@ import path from 'node:path'
 
 import type { Command } from 'commander'
 
-import { ConfigStore } from '../config.js'
-import type { Context } from '../context.js'
-import { CliError } from '../errors.js'
-import { errnoCode, messageOf } from '../fsutil.js'
-import { plural } from '../output.js'
-import { configfilePaths } from '../paths.js'
-import { findRemovedFiles } from '../removed.js'
-import { loadRepository } from '../repository.js'
-import { DeploymentRecord } from '../state.js'
-import { syncMirror } from '../sync.js'
+import { ConfigStore } from '../config.ts'
+import type { Context } from '../context.ts'
+import { CliError } from '../errors.ts'
+import { errnoCode, messageOf } from '../fsutil.ts'
+import { plural } from '../output.ts'
+import { configfilePaths } from '../paths.ts'
+import { findRemovedFiles } from '../removed.ts'
+import { loadRepository } from '../repository.ts'
+import { DeploymentRecord } from '../state.ts'
+import { syncMirror } from '../sync.ts'
 
 export function registerUpdateCommand(program: Command, ctx: Context): void {
   program
@@ -32,7 +32,7 @@ async function update(ctx: Context): Promise<void> {
     if (errnoCode(error) === 'ENOENT') {
       throw new CliError(`${folderPath} is not a git repository. Run "configfile init --force".`)
     }
-    throw new CliError(`Cannot read ${folderPath}: ${messageOf(error)}`)
+    throw new CliError(`Cannot read ${folderPath}: ${messageOf(error)}`, { cause: error })
   }
 
   output.info(`Syncing ${folderPath}…`)

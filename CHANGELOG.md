@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.configfile/history.jsonl`, and the `history` command to see it
   ([#36](https://github.com/mindsers/configfile/issues/36)).
 - The `settings.json` format is documented in the README.
+- Releases are published to npm with a provenance statement, which `npm audit signatures` checks.
 
 ### Changed
 - **Breaking:** Node.js 24.11 or later is required, and only macOS and Linux are supported.
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed in 2.0.
 - Configfile is rewritten in TypeScript ([!281](https://github.com/mindsers/configfile/pull/281)).
 - Commands exit with an error code when something fails, so configfile can be used in scripts.
+- With `DEBUG=1`, an error also shows the system error behind it.
 - Files replaced by `modules deploy --local` are saved as `.old` files, like global files.
 - Configfile no longer makes scripts executable: scripts that are not executable run with the
   interpreter of their first line (`#!`), or with `node` or `sh` for `.js` and `.sh` files.

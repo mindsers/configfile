@@ -2,9 +2,9 @@ import { mkdir, open, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-import { CliError } from './errors.js'
-import { errnoCode } from './fsutil.js'
-import { configfilePaths } from './paths.js'
+import { CliError } from './errors.ts'
+import { errnoCode } from './fsutil.ts'
+import { configfilePaths } from './paths.ts'
 
 const RETRY_DELAY_MS = 100
 const MAX_WAIT_MS = 10_000
@@ -26,9 +26,8 @@ export async function withLock<T>(
   const started = Date.now()
   for (;;) {
     try {
-      const handle = await open(lock, 'wx', 0o600)
+      await using handle = await open(lock, 'wx', 0o600)
       await handle.writeFile(String(process.pid))
-      await handle.close()
       break
     } catch (error) {
       if (errnoCode(error) !== 'EEXIST') throw error

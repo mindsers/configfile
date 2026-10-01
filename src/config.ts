@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { CliError, NotInitializedError } from './errors.js'
-import { describeJsonError, messageOf, writeFileAtomic } from './fsutil.js'
-import { resolveUserPath } from './paths.js'
+import { CliError, NotInitializedError } from './errors.ts'
+import { describeJsonError, messageOf, writeFileAtomic } from './fsutil.ts'
+import { resolveUserPath } from './paths.ts'
 
 export interface Config {
   /** URL of the dotfiles git repository. */
@@ -124,6 +124,7 @@ export class ConfigStore {
     } catch (error) {
       throw new CliError(
         `Cannot save the configuration to ${this.path}: ${(error as Error).message}`,
+        { cause: error },
       )
     }
   }
@@ -147,7 +148,7 @@ export class ConfigStore {
       content = await readFile(this.path, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw new CliError(`Cannot read ${this.path}: ${(error as Error).message}`)
+      throw new CliError(`Cannot read ${this.path}: ${(error as Error).message}`, { cause: error })
     }
 
     let data: unknown

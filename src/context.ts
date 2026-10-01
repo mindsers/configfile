@@ -1,5 +1,5 @@
-import type { History } from './history.js'
-import type { Output } from './output.js'
+import type { History } from './history.ts'
+import type { Output } from './output.ts'
 
 export interface Prompts {
   /** `false` when questions cannot be asked (stdin is not a terminal). */

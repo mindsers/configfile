@@ -1,10 +1,10 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
-import { ConfigStore } from '../src/config.js'
-import { CliError, NotInitializedError } from '../src/errors.js'
-import { redactUrl } from '../src/output.js'
-import { createSandbox } from './helpers.js'
+import { ConfigStore } from '../src/config.ts'
+import { CliError, NotInitializedError } from '../src/errors.ts'
+import { redactUrl } from '../src/output.ts'
+import { createSandbox } from './helpers.ts'
 
 describe('ConfigStore', () => {
   it('reports a missing configuration', async () => {

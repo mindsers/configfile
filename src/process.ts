@@ -1,11 +1,11 @@
-import { spawn } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, open } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
 
-import { CliError } from './errors.js'
-import type { Script } from './repository.js'
+import { CliError } from './errors.ts'
+import type { Script } from './repository.ts'
 
 /**
  * Runs a command with inherited stdio and resolves with its exit code.
@@ -17,10 +17,15 @@ import type { Script } from './repository.js'
  */
 export function run(command: string, args: string[], { cwd }: { cwd: string }): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: 'inherit' })
-
+    // Installed before the child starts: a signal arriving in between would
+    // otherwise end configfile and leave the script running on its own.
+    let child: ChildProcess | undefined
+    let pending: NodeJS.Signals | undefined
     const ignore = () => {}
-    const forward = (signal: NodeJS.Signals) => child.kill(signal)
+    const forward = (signal: NodeJS.Signals) => {
+      if (child == null) pending = signal
+      else child.kill(signal)
+    }
     const handlers: [NodeJS.Signals, (signal: NodeJS.Signals) => void][] = [
       ['SIGINT', ignore],
       ['SIGQUIT', ignore],
@@ -31,6 +36,15 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
     const cleanup = () => {
       for (const [signal, handler] of handlers) process.off(signal, handler)
     }
+
+    try {
+      child = spawn(command, args, { cwd, stdio: 'inherit' })
+    } catch (error) {
+      cleanup()
+      reject(error)
+      return
+    }
+    if (pending != null) child.kill(pending)
 
     child.once('error', error => {
       cleanup()
@@ -116,31 +130,28 @@ function launchError(script: Script, interpreter: string | undefined, error: unk
         `Permission denied when running script "${script.name}" (${script.path}).`,
       )
     default:
-      return new CliError(`Cannot run script "${script.name}": ${(error as Error).message}`)
+      return new CliError(`Cannot run script "${script.name}": ${(error as Error).message}`, {
+        cause: error,
+      })
   }
 }
 
 /** Returns the interpreter and its arguments from a `#!` first line, if any. */
 async function readShebang(script: Script): Promise<[string, ...string[]] | null> {
-  let handle: Awaited<ReturnType<typeof open>>
-  try {
-    handle = await open(script.path, 'r')
-  } catch (error) {
-    throw new CliError(`Cannot read script "${script.name}": ${(error as Error).message}`)
-  }
+  await using handle = await open(script.path, 'r').catch(error => {
+    throw new CliError(`Cannot read script "${script.name}": ${(error as Error).message}`, {
+      cause: error,
+    })
+  })
 
-  try {
-    const buffer = Buffer.alloc(512)
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-    const [firstLine = ''] = buffer.toString('utf8', 0, bytesRead).split(/\r?\n/)
+  const buffer = Buffer.alloc(512)
+  const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+  const [firstLine = ''] = buffer.toString('utf8', 0, bytesRead).split(/\r?\n/)
 
-    if (!firstLine.startsWith('#!')) return null
+  if (!firstLine.startsWith('#!')) return null
 
-    const [interpreter, ...interpreterArgs] = firstLine.slice(2).trim().split(/\s+/)
-    return interpreter ? [interpreter, ...interpreterArgs] : null
-  } finally {
-    await handle.close()
-  }
+  const [interpreter, ...interpreterArgs] = firstLine.slice(2).trim().split(/\s+/)
+  return interpreter ? [interpreter, ...interpreterArgs] : null
 }
 
 async function isExecutable(file: string): Promise<boolean> {
@@ -209,6 +220,6 @@ export async function git(args: string[], { cwd }: { cwd: string }, label: strin
   }
 
   if (code !== 0) {
-    throw new CliError(`${label} failed (exit code ${code}).`, code)
+    throw new CliError(`${label} failed (exit code ${code}).`, { exitCode: code })
   }
 }

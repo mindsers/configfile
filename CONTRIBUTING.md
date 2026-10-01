@@ -77,15 +77,19 @@ The documentation lives with the source code: the [README](README.md) for users,
 
 ### Development setup
 
-*Configfile* is written in TypeScript and uses [pnpm](https://pnpm.io). Use the Node.js version from `.node-version` (24.11 or later is supported).
+*Configfile* is written in TypeScript and uses [pnpm](https://pnpm.io). Tool versions (Node.js, pnpm, and the workflow linters) are pinned in `mise.toml`: with [mise](https://mise.jdx.dev), run `mise install` once in the repository. Node.js 24.11 or later is supported.
 
 ```bash
 pnpm install
-pnpm check        # lint, type check and tests
-pnpm test:watch   # tests in watch mode
-pnpm build        # compile to dist/
+pnpm check            # lint, type check and tests
+pnpm test:watch       # tests in watch mode
+pnpm test:coverage    # tests with coverage (CI fails below the thresholds in vitest.config.ts)
+pnpm dev --help       # run the TypeScript source directly
+pnpm build            # compile to dist/
 node dist/cli.js --help
 ```
+
+`pnpm-workspace.yaml` protects installs: a newly published version is only installed after a day, a version with weaker provenance than earlier ones is refused, and no dependency may run install scripts. So `pnpm update` or `pnpm add` cannot pick a version published in the last 24 hours (`ERR_PNPM_NO_MATCHING_VERSION`): wait, or pick an older version.
 
 ### Branches and pull requests
 
@@ -93,7 +97,7 @@ The project uses [git-flow](https://nvie.com/posts/a-successful-git-branching-mo
 
 * Create your branch from `develop`: `feature/<name>` for a feature or a documentation change, `bugfix/<name>` for a fix.
 
-* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer.
+* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer: a version tag pushed on `master` publishes the package to npm, with provenance (`.github/workflows/publish.yml`).
 
 * Describe the change for a reviewer who doesn't know the code: why it is needed, what changes for users, how to test it. The pull request template has the sections.
 
@@ -105,7 +109,8 @@ The project uses [git-flow](https://nvie.com/posts/a-successful-git-branching-mo
 
 Formatting and linting are handled by [Biome](https://biomejs.dev), configured in `biome.json`. Run `pnpm format` before committing; `pnpm lint` must pass.
 
-* Relative imports use the `.js` extension (`import { x } from './x.js'`).
+* Relative imports use the `.ts` extension (`import { x } from './x.ts'`), so Node.js runs the source directly; the build rewrites them to `.js`. Only erasable TypeScript syntax is allowed (no `enum`, `namespace` or constructor parameter properties).
+* Wrapping an error keeps it as the `cause` (`new CliError(message, { cause: error })`): `DEBUG=1` shows it.
 * Expected failures throw a `CliError` (exit code and message for the user); never call `process.exit`.
 * Commands get everything from the injected `Context` (home, cwd, output, prompts, history) so they can be tested. The only exception is the `DEBUG` environment variable, read where stack traces are printed.
 * Bug fixes come with a test that reproduces the bug.

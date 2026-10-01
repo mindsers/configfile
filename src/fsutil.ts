@@ -89,11 +89,9 @@ export async function writeFileAtomic(
   { mode }: { mode: number },
 ): Promise<void> {
   const temporary = siblingName(file, 'write')
-  const handle = await open(temporary, 'wx', mode)
-  try {
+  {
+    await using handle = await open(temporary, 'wx', mode)
     await handle.writeFile(content)
-  } finally {
-    await handle.close()
   }
   try {
     await rename(temporary, file)

@@ -1,9 +1,9 @@
 import type { Command } from 'commander'
 
-import type { Context } from '../context.js'
-import { CliError } from '../errors.js'
-import type { Change, HistoryLine, KeptReason } from '../history.js'
-import { plural } from '../output.js'
+import type { Context } from '../context.ts'
+import { CliError } from '../errors.ts'
+import type { Change, HistoryLine, KeptReason } from '../history.ts'
+import { plural } from '../output.ts'
 
 const DEFAULT_LIMIT = 20
 

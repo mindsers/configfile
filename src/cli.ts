@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import os from 'node:os'
 
-import { History } from './history.js'
-import { Output } from './output.js'
-import { main } from './program.js'
-import { interactivePrompts, nonInteractivePrompts } from './prompts.js'
+import { History } from './history.ts'
+import { Output } from './output.ts'
+import { main } from './program.ts'
+import { interactivePrompts, nonInteractivePrompts } from './prompts.ts'
 
 const home = os.homedir()
 

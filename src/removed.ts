@@ -1,10 +1,10 @@
 import { realpath } from 'node:fs/promises'
 import path from 'node:path'
 
-import { lstatOrNull } from './fsutil.js'
-import { contains, resolveUserPath } from './paths.js'
-import type { Entry, Module, ModuleFile } from './repository.js'
-import type { DeploymentRecord, TargetRecord } from './state.js'
+import { lstatOrNull } from './fsutil.ts'
+import { contains, resolveUserPath } from './paths.ts'
+import type { Entry, Module, ModuleFile } from './repository.ts'
+import type { DeploymentRecord, TargetRecord } from './state.ts'
 
 /**
  * A file configfile deployed for an entry the repository no longer deploys,

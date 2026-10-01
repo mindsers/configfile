@@ -6,10 +6,10 @@ import { Writable } from 'node:stream'
 
 import { afterEach } from 'vitest'
 
-import type { Context, Prompts } from '../src/context.js'
-import { History, type HistoryLine } from '../src/history.js'
-import { Output } from '../src/output.js'
-import { main } from '../src/program.js'
+import type { Context, Prompts } from '../src/context.ts'
+import { History, type HistoryLine } from '../src/history.ts'
+import { Output } from '../src/output.ts'
+import { main } from '../src/program.ts'
 
 const sandboxes: string[] = []
 

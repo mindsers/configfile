@@ -7,8 +7,12 @@ export class CliError extends Error {
   /** Always 1–255: an error must never end the process with success. */
   readonly exitCode: number
 
-  constructor(message: string, exitCode = 1) {
-    super(message)
+  /** `cause`: the error behind this one, shown with `DEBUG=1`. */
+  constructor(
+    message: string,
+    { exitCode = 1, cause }: { exitCode?: number; cause?: unknown } = {},
+  ) {
+    super(message, cause === undefined ? undefined : { cause })
     this.exitCode = Number.isInteger(exitCode) && exitCode > 0 && exitCode < 256 ? exitCode : 1
   }
 }

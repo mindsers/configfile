@@ -1,6 +1,8 @@
+import { inspect } from 'node:util'
+
 import type { Command } from 'commander'
 
-import type { Context } from '../context.js'
+import type { Context } from '../context.ts'
 import {
   type BackupCheck,
   type DeployContext,
@@ -17,14 +19,14 @@ import {
   type UndeployDecision,
   type UndeployResult,
   undeployFile,
-} from '../deploy.js'
-import { CliError } from '../errors.js'
-import { messageOf } from '../fsutil.js'
-import { withLock } from '../lock.js'
-import { plural } from '../output.js'
-import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.js'
-import { loadRepository, type Module, type ModuleFile } from '../repository.js'
-import { DeploymentRecord } from '../state.js'
+} from '../deploy.ts'
+import { CliError } from '../errors.ts'
+import { messageOf } from '../fsutil.ts'
+import { withLock } from '../lock.ts'
+import { plural } from '../output.ts'
+import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
+import { loadRepository, type Module, type ModuleFile } from '../repository.ts'
+import { DeploymentRecord } from '../state.ts'
 
 type Strategy = ModuleFile['strategy']
 type UsableModule = Extract<Module, { error: null }>
@@ -567,8 +569,12 @@ function finish(failures: number, problems: string[], success: string, ctx: Cont
 function reportFileError(file: { target: string }, error: unknown, ctx: Context): void {
   ctx.output.error(`${file.target}: ${messageOf(error)}`)
   ctx.history.record({ kind: 'failed', target: file.target, reason: messageOf(error) })
-  if (!(error instanceof CliError) && process.env.DEBUG != null) {
-    ctx.output.stderr.write(`${(error as Error).stack}\n`)
+  if (process.env.DEBUG != null) {
+    if (!(error instanceof CliError)) {
+      ctx.output.stderr.write(`${(error as Error).stack}\n`)
+    } else if (error.cause !== undefined) {
+      ctx.output.stderr.write(`Caused by: ${inspect(error.cause)}\n`)
+    }
   }
 }
 

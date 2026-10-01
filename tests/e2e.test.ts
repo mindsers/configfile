@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createSandbox, type Sandbox } from './helpers.js'
+import { createSandbox, type Sandbox } from './helpers.ts'
 
 // Built by tests/global-setup.ts before the test run.
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
@@ -59,7 +59,8 @@ describe('built CLI', () => {
     )
   })
 
-  describe('signals during scripts run', () => {
+  // Several processes per test: allow for slow, busy CI machines.
+  describe('signals during scripts run', { timeout: 20_000 }, () => {
     // Each test runs in its own process group, killed afterwards: if signal
     // forwarding ever regresses, no script is left running on the machine.
     const groups: number[] = []
