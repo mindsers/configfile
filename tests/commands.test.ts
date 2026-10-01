@@ -909,7 +909,7 @@ describe('init', () => {
     const result = await runCli(sandbox, ['init'], [remote])
 
     // Only the URL is asked: the mirror lives in configfile's own folder.
-    const mirror = path.join(sandbox.home, '.configfile/repository')
+    const mirror = path.join(sandbox.home, '.configfile/dotfiles')
     expect(result).toMatchObject({ code: 0, asked: ['Dotfiles repository URL:'] })
     expect(existsSync(path.join(mirror, 'files/.gitkeep'))).toBe(true)
     expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: mirror })

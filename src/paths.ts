@@ -31,7 +31,7 @@ export function configfilePaths(home: string): {
   /** configfile's working folder: lock, record, mirror, saved changes. */
   dir: string
   /** Default location of the mirror of the dotfiles repository. */
-  repository: string
+  dotfiles: string
   /** Local changes found in the mirror, saved before syncing. */
   saved: string
 } {
@@ -39,7 +39,7 @@ export function configfilePaths(home: string): {
   return {
     rc: path.join(home, '.configfilerc'),
     dir,
-    repository: path.join(dir, 'repository'),
+    dotfiles: path.join(dir, 'dotfiles'),
     saved: path.join(dir, 'saved'),
   }
 }

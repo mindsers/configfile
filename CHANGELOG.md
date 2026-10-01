@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   in a `"files"` key.
 - `~/.configfilerc` is only readable by its owner.
 - `init` reuses a folder that already contains the repository.
-- `init` only asks for the repository URL and clones it into `~/.configfile/repository`, a copy
+- `init` only asks for the repository URL and clones it into `~/.configfile/dotfiles`, a copy
   configfile keeps in sync; `--folder` chooses another location.
 - `update` makes configfile's copy identical to the remote, so it never fails on conflicts or
   unpushed work; local changes found in the copy are first saved as a patch in

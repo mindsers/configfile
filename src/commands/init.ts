@@ -23,7 +23,7 @@ export function registerInitCommand(program: Command, ctx: Context): void {
     .description('clone your dotfiles repository, which configfile then keeps in sync')
     .option('-f, --force', 'overwrite the existing configuration without asking')
     .option('--repo <url>', 'dotfiles repository URL (skips the question)')
-    .option('--folder <path>', 'where to clone the repository (default: ~/.configfile/repository)')
+    .option('--folder <path>', 'where to clone the repository (default: ~/.configfile/dotfiles)')
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -77,8 +77,8 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   const folderPath =
     options.folder != null
       ? resolveUserPath(options.folder.trim(), ctx)
-      : (previous.folderPath ?? own.repository)
-  if (folderPath === own.repository) {
+      : (previous.folderPath ?? own.dotfiles)
+  if (folderPath === own.dotfiles) {
     await mkdir(own.dir, { recursive: true, mode: 0o700 })
   }
 

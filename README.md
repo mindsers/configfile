@@ -24,7 +24,7 @@ npm install --global configfile
 
 This tool **does not store** configuration files for you. A git repository ([dotfiles](https://github.com/topics/dotfiles)) is needed to store your configuration files.
 
-You edit your dotfiles in your own working copy of that repository and push them. *configfile* keeps its own copy, a mirror of the remote repository in `~/.configfile/repository`, and deploys from it: `configfile update` makes the mirror identical to the remote, so unpushed or conflicting work never blocks it. Don't edit the mirror (or deployed links, which point into it): see [`update`](#usage) for what happens to such changes.
+You edit your dotfiles in your own working copy of that repository and push them. *configfile* keeps its own copy, a mirror of the remote repository in `~/.configfile/dotfiles`, and deploys from it: `configfile update` makes the mirror identical to the remote, so unpushed or conflicting work never blocks it. Don't edit the mirror (or deployed links, which point into it): see [`update`](#usage) for what happens to such changes.
 
 The repository must have this structure:
 
@@ -93,10 +93,10 @@ Scripts can be written in any language:
 
 ## Usage
 
-- `configfile init` (`i`): ask for the URL of your dotfiles repository, clone it into `~/.configfile/repository` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
+- `configfile init` (`i`): ask for the URL of your dotfiles repository, clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
     - `-f, --force`: overwrite an existing configuration without asking.
     - `--repo <url>`: give the URL from the command line, for non-interactive setups.
-    - `--folder <path>`: clone somewhere else than `~/.configfile/repository`.
+    - `--folder <path>`: clone somewhere else than `~/.configfile/dotfiles`.
 - `configfile modules list` (`m l`, or just `configfile modules`): list available modules.
 - `configfile modules status [modules...]` (`m st`): show whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file.
     - `-l, --local`: check the local files, in the current folder.
@@ -115,14 +115,14 @@ Scripts can be written in any language:
 
 ### Configuration
 
-*configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`repository/`), the record of deployments (`state.json`), the lock, and saved local changes (`saved/`).
+*configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the lock, and saved local changes (`saved/`).
 
 `~/.configfilerc` is a JSON file:
 
 ```json
 {
   "repo_url": "git@github.com:me/dotfiles.git",
-  "folder_path": "/Users/me/.configfile/repository",
+  "folder_path": "/Users/me/.configfile/dotfiles",
   "script_extensions": [".js", ".sh", ""]
 }
 ```
@@ -140,7 +140,7 @@ Scripts can be written in any language:
 - Targets inside the dotfiles repository, or containing it, are now refused.
 - `modules undeploy` only removes what 1.0 or later deployed, and only restores backups it made (recorded in `~/.configfile/state.json`): local copies and `.old` files made by 0.3 stay where they are.
 - A `source_path` must stay inside its module folder.
-- `init` clones into `~/.configfile/repository` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (your previous files come back), then `configfile init --force --repo <url> --folder ~/.configfile/repository`, then `configfile modules deploy --all` (links now point to the copy).
+- `init` clones into `~/.configfile/dotfiles` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (your previous files come back), then `configfile init --force --repo <url> --folder ~/.configfile/dotfiles`, then `configfile modules deploy --all` (links now point to the copy).
 - With `script_extensions` set, only files with one of these extensions are scripts, and `""` means files without extension (0.3 matched any file containing the text).
 - Commands now exit with a non-zero code on failure.
 
