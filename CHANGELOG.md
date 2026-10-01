@@ -1,12 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
-and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 ### Added
-- Add new contributor to SPONSORS.md
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved
   versions it made (recorded in `~/.configfile/`).
 - The `modules status` command to see which files are deployed.
@@ -20,7 +19,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - A script can be a folder containing an `index` file.
 - A history of what configfile changed, when, and whether it failed, in
   `~/.configfile/history.jsonl`, and the `history` command to see it
-  ([#36](https://github.com/Mindsers/configfile/issues/36)).
+  ([#36](https://github.com/mindsers/configfile/issues/36)).
 - The `settings.json` format is documented in the README.
 
 ### Changed
@@ -49,8 +48,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   `~/.configfile/saved/`.
 
 ### Fixed
-- Git URL verification in `init` command is less strict. ([#48](https://github.com/Mindsers/configfile/issues/48))
-- Script standard outputs are correctly displayed ([!57](https://github.com/Mindsers/configfile/pull/57), [#13](https://github.com/Mindsers/configfile/issues/13))
+- Git URL verification in `init` command is less strict. ([#48](https://github.com/mindsers/configfile/issues/48))
+- Script standard outputs are correctly displayed ([!57](https://github.com/mindsers/configfile/pull/57), [#13](https://github.com/mindsers/configfile/issues/13))
 - A failed `init` saved the configuration anyway.
 - Deploying a module could overwrite a previously saved `.old` file.
 - Hidden files such as `.DS_Store` were listed as scripts.
@@ -102,10 +101,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - The `run` command to run custom and saved scripts. Scripts can be write in all languages.
 - The README file to give first information on the project (installation, usage, etc.).
 
-[Unreleased]: https://github.com/Mindsers/configfile/tree/develop
-[0.3.1]: https://github.com/Mindsers/configfile/tree/0.3.1
-[0.3.0]: https://github.com/Mindsers/configfile/tree/0.3.0
-[0.2.1]: https://github.com/Mindsers/configfile/tree/0.2.1
-[0.2.0]: https://github.com/Mindsers/configfile/tree/0.2.0
-[0.1.1]: https://github.com/Mindsers/configfile/tree/0.1.1
-[0.1.0]: https://github.com/Mindsers/configfile/tree/0.1.0
+[Unreleased]: https://github.com/mindsers/configfile/tree/develop
+[0.3.1]: https://github.com/mindsers/configfile/tree/0.3.1
+[0.3.0]: https://github.com/mindsers/configfile/tree/0.3.0
+[0.2.1]: https://github.com/mindsers/configfile/tree/0.2.1
+[0.2.0]: https://github.com/mindsers/configfile/tree/0.2.0
+[0.1.1]: https://github.com/mindsers/configfile/tree/0.1.1
+[0.1.0]: https://github.com/mindsers/configfile/tree/0.1.0

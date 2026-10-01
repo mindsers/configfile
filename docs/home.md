@@ -24,12 +24,14 @@ It asks for your repository URL and clones it into `~/.configfile/dotfiles`, a c
 configfile init --repo git@github.com:me/dotfiles.git
 ```
 
-### Running unit tests
+### Running the tests
 
 ```bash
 pnpm install
-pnpm test
+pnpm check   # lint, type check and tests
 ```
+
+See [How to contribute](../CONTRIBUTING.md) for the development setup.
 
 ### Additional commands
 
@@ -48,3 +50,12 @@ pnpm test
 - [Module settings](../README.md#modules)
 - [Scripts](../README.md#scripts)
 - [~/.configfilerc](../README.md#configuration)
+- [History](../README.md#history)
+
+## Project
+
+- [How to contribute](../CONTRIBUTING.md)
+- [Code of conduct](../CODE_OF_CONDUCT.md)
+- [Security policy](../SECURITY.md)
+- [Changelog](../CHANGELOG.md)
+- [Support configfile on GitHub Sponsors](https://github.com/sponsors/mindsers)

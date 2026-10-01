@@ -1,38 +1,41 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Something configfile does wrong
 title: ''
 labels: 'type: bug'
 assignees: ''
 
 ---
 
+<!-- Security vulnerabilities must not be reported here: see SECURITY.md. -->
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**To reproduce**
+The commands you ran, in order, for example:
+1. `configfile init --repo <url>`
+2. `configfile modules deploy zsh`
+
+If the bug depends on a module, add its `settings.json` (remove anything private).
 
 **Expected behavior**
-A clear and concise description of what you expected to happen.
+What you expected to happen.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Output**
+What configfile printed. Running the command again with `DEBUG=1` adds details to unexpected errors.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+```txt
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+```
+
+The last runs of `configfile history` often help too. Check them for paths or names you would rather not share.
+
+**Environment**
+- configfile version (`configfile --version`):
+- Node.js version (`node --version`):
+- Operating system and version:
+- Installed with (npm, pnpm, yarn…):
 
 **Additional context**
-Add any other context about the problem here.
+Anything else about the problem.
