@@ -45,6 +45,7 @@ export async function main(args: string[], ctx: Context): Promise<number> {
 
   const program = buildProgram(ctx)
   // Runs before the action of any command, nested ones included (not for --help or usage errors).
+  // A run killed by a signal (Ctrl+C outside a question) ends before its line is written.
   program.hook('preAction', (_, action) => {
     invocation = describeInvocation(action)
   })
@@ -62,7 +63,12 @@ export async function main(args: string[], ctx: Context): Promise<number> {
     })
     const { warning } = await ctx.history.settings()
     if (warning != null) ctx.output.warn(warning)
-    if (failed != null) ctx.output.warn(`Cannot write ${ctx.history.file}: ${messageOf(failed)}`)
+    if (failed != null) {
+      ctx.output.warn(
+        `This run could not be recorded in the history: ${messageOf(failed)}. ` +
+          'Fix the file, or set "history_max_size" to 0 in ~/.configfilerc to turn the history off.',
+      )
+    }
   }
   return code
 }

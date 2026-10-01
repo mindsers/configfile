@@ -2,10 +2,13 @@ import type { Command } from 'commander'
 
 import type { Context } from '../context.js'
 import { CliError } from '../errors.js'
-import type { Change, HistoryLine } from '../history.js'
+import type { Change, HistoryLine, KeptReason } from '../history.js'
 import { plural } from '../output.js'
 
 const DEFAULT_LIMIT = 20
+
+/** Width of the verb that starts each change line. */
+const VERB_WIDTH = 9
 
 interface HistoryOptions {
   limit?: string
@@ -24,48 +27,67 @@ export function registerHistoryCommand(program: Command, ctx: Context): void {
 async function history(options: HistoryOptions, ctx: Context): Promise<void> {
   const { output } = ctx
   const limit = parseLimit(options.limit)
-  const { lines, invalid } = await ctx.history.read({ limit })
+  const [{ entries, invalid, problems }, settings] = await Promise.all([
+    ctx.history.read(),
+    ctx.history.settings(),
+  ])
 
-  if (invalid > 0) {
-    output.warn(`${plural(invalid, 'unreadable line')} of ${ctx.history.file} skipped.`)
-  }
+  if (settings.warning != null) output.warn(settings.warning)
+  for (const problem of problems) output.warn(problem)
+  if (invalid > 0) output.warn(`${plural(invalid, 'damaged line')} of the history skipped.`)
 
   if (options.json === true) {
-    for (const line of lines) output.stdout.write(`${JSON.stringify(line)}\n`)
+    // The lines as written, newer formats included: scripts decide what they read.
+    for (const entry of entries.slice(-limit)) output.stdout.write(`${entry.raw}\n`)
     return
   }
 
-  if (lines.length === 0) {
-    const { maxBytes } = await ctx.history.settings()
-    output.info(
-      maxBytes === 0
-        ? 'The history is turned off ("history_max_size" is 0 in ~/.configfilerc).'
-        : 'No history yet.',
+  const readable = entries.filter(entry => entry.line != null)
+  const newer = entries.length - readable.length
+  if (newer > 0) {
+    output.warn(
+      `${plural(newer, 'line')} written by a newer configfile skipped. Update configfile to see them.`,
     )
+  }
+
+  if (readable.length === 0) {
+    if (settings.maxBytes === 0 && settings.warning == null) {
+      output.info('The history is turned off ("history_max_size" is 0 in ~/.configfilerc).')
+    } else {
+      output.info(
+        entries.length + invalid + problems.length > 0 ? 'No readable history.' : 'No history yet.',
+      )
+    }
     return
   }
 
   const show = (text: string) => shortenHome(text, ctx.home)
-  for (const [index, line] of lines.entries()) {
+  for (const [index, { line, unreadableChanges }] of readable.slice(-limit).entries()) {
+    if (line == null) continue
     if (index > 0) output.print('')
     output.print(
       `${formatTime(line.time)}  ${show(describeRun(line))}  ${line.exitCode === 0 ? 'ok' : `exit ${line.exitCode}`}`,
     )
-    if (line.error != null && !line.error.expected) {
-      output.print(`  error     ${show(line.error.message)}`)
-    }
     for (const change of line.changes) {
       output.print(`  ${show(describeChange(change))}`)
     }
+    if (unreadableChanges > 0) {
+      output.print(`  …and ${plural(unreadableChanges, 'change')} this configfile cannot show`)
+    }
     if (line.truncated != null) output.print(`  …and ${line.truncated} more changes`)
     if (line.unchanged > 0) output.print(`  ${line.unchanged} unchanged`)
+    if (line.error != null) {
+      // Expected errors explain most failures (a held lock, a failed git fetch…).
+      const label = line.error.expected ? 'error' : 'crashed'
+      output.print(`  ${label.padEnd(VERB_WIDTH)} ${show(line.error.message)}`)
+    }
   }
 }
 
 function parseLimit(value: string | undefined): number {
   if (value == null) return DEFAULT_LIMIT
   const limit = Number(value)
-  if (!Number.isInteger(limit) || limit <= 0) {
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(limit) || limit <= 0) {
     throw new CliError(`--limit must be a positive number, not "${value}".`)
   }
   return limit
@@ -91,7 +113,7 @@ function describeRun(line: HistoryLine): string {
 
 /** One change, as an aligned line: a verb, then what it applies to. */
 function describeChange(change: Change): string {
-  const line = (verb: string, text: string) => `${verb.padEnd(9)} ${text}`
+  const line = (verb: string, text: string) => `${verb.padEnd(VERB_WIDTH)} ${text}`
 
   switch (change.kind) {
     case 'deployed': {
@@ -113,18 +135,18 @@ function describeChange(change: Change): string {
       return line('removed', `${change.target}${backup}${leftover}`)
     }
     case 'kept': {
-      const reason = {
+      const reason: Record<KeptReason, string> = {
         foreign: 'not deployed by configfile',
         modified: 'modified since it was copied',
         identical: 'not copied by configfile',
         'source-missing': 'its source was missing',
-      }[change.reason]
-      return line('kept', `${change.target}  (${reason})`)
+      }
+      return line('kept', `${change.target}  (${reason[change.reason]})`)
     }
     case 'failed':
       return line(
         'failed',
-        `${change.target ?? `module ${change.module ?? '?'}`}  ${change.reason}`,
+        `${'target' in change ? change.target : `module ${change.module}`}  ${change.reason}`,
       )
     case 'synced':
       return line(

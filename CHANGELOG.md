@@ -18,9 +18,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   or `"none"` to keep a file in the repository without deploying it.
 - Arguments can be passed to scripts: `configfile scripts run <name> -- <arguments>`.
 - A script can be a folder containing an `index` file.
-- configfile records what each command changed, when, and whether it failed, in
-  `~/.configfile/history.jsonl` ([#36](https://github.com/mindsers/configfile/issues/36)).
-- The `history` command to see what configfile changed.
+- A history of what configfile changed, when, and whether it failed, in
+  `~/.configfile/history.jsonl`, and the `history` command to see it
+  ([#36](https://github.com/Mindsers/configfile/issues/36)).
 - The `settings.json` format is documented in the README.
 
 ### Changed

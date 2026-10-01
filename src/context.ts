@@ -14,6 +14,6 @@ export interface Context {
   readonly cwd: string
   readonly output: Output
   readonly prompts: Prompts
-  /** What this run changes, saved to `~/.configfile/history.jsonl` when it ends. */
+  /** What this run changes, saved to `~/.configfile/history.jsonl` when it ends if it is recorded (see `shouldRecord`). */
   readonly history: History
 }

@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import type { Context } from './context.js'
 import { CliError } from './errors.js'
+import { describeJsonError } from './fsutil.js'
 import { configfilePaths, contains, resolveUserPath, slugify } from './paths.js'
 
 export interface ModuleFile {
@@ -124,7 +125,7 @@ async function readModuleFiles(
   try {
     settings = JSON.parse(await readFile(settingsPath, 'utf8'))
   } catch (error) {
-    return { error: `settings.json is not valid JSON (${(error as Error).message})` }
+    return { error: `settings.json is not valid JSON (${describeJsonError(error)})` }
   }
 
   // configfile 0.3.1 wrote the list of files at the top level of settings.json.

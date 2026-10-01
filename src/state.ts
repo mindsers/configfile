@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { CliError } from './errors.js'
 import {
+  describeJsonError,
   type Identity,
   identityOf,
   lstatOrNull,
@@ -86,7 +87,7 @@ export class DeploymentRecord {
     try {
       state = JSON.parse(content)
     } catch (error) {
-      throw new CliError(`${filePath} is not valid JSON (${messageOf(error)}).`)
+      throw new CliError(`${filePath} is not valid JSON (${describeJsonError(error)}).`)
     }
     if (state == null || typeof state !== 'object' || Array.isArray(state)) {
       throw new CliError(`${filePath} is not a valid configfile state file.`)
