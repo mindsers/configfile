@@ -2,6 +2,7 @@ import type { Dirent, Stats } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import { ConfigStore } from './config.js'
 import type { Context } from './context.js'
 import { CliError } from './errors.js'
 import { describeJsonError } from './fsutil.js'
@@ -52,6 +53,19 @@ export interface Script {
 }
 
 type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void }
+
+/** The modules, and the folder of the repository they come from. */
+export async function loadRepository(
+  ctx: Context,
+): Promise<{ repository: string; modules: Module[] }> {
+  const { folderPath } = await new ConfigStore(ctx.home).read()
+  const modules = await listModules(folderPath, {
+    home: ctx.home,
+    cwd: ctx.cwd,
+    warn: message => ctx.output.warn(message),
+  })
+  return { repository: folderPath, modules }
+}
 
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`

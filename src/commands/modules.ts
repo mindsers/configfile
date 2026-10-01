@@ -22,7 +22,8 @@ import { CliError } from '../errors.js'
 import { messageOf } from '../fsutil.js'
 import { withLock } from '../lock.js'
 import { plural } from '../output.js'
-import { listModules, type Module, type ModuleFile } from '../repository.js'
+import { findRemovedFiles } from '../removed.js'
+import { loadRepository, type Module, type ModuleFile } from '../repository.js'
 import { DeploymentRecord } from '../state.js'
 
 type Strategy = ModuleFile['strategy']
@@ -34,6 +35,7 @@ interface RawOptions {
   all?: boolean
   force?: boolean
   dryRun?: boolean
+  removed?: boolean
 }
 
 /** Options once normalized at the command boundary. */
@@ -42,6 +44,8 @@ interface Options {
   all: boolean
   force: boolean
   dryRun: boolean
+  /** Undeploy: the files the repository no longer deploys. */
+  removed: boolean
 }
 
 function normalize(options: RawOptions): Options {
@@ -50,6 +54,7 @@ function normalize(options: RawOptions): Options {
     all: options.all === true,
     force: options.force === true,
     dryRun: options.dryRun === true,
+    removed: options.removed === true,
   }
 }
 
@@ -90,18 +95,34 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
     .argument('[modules...]', 'modules to undeploy (use --all, or answer a question, when omitted)')
     .description('remove the deployed files of one or more modules and restore their backups')
     .option('-l, --local', 'remove the local copies of the modules instead of global links')
-    .option('-a, --all', 'undeploy every module without asking')
+    .option(
+      '-a, --all',
+      'undeploy every module without asking, and the files the repository no longer deploys',
+    )
+    .option('--removed', 'only undeploy the files the repository no longer deploys')
     .option('-n, --dry-run', 'show what would be done, without changing anything')
     .action((names: string[], options: RawOptions) => undeploy(names, normalize(options), ctx))
 }
 
 async function loadModules(ctx: Context): Promise<Module[]> {
-  const config = await new ConfigStore(ctx.home).read()
+  return (await loadRepository(ctx)).modules
+}
 
-  return listModules(config.folderPath, {
-    home: ctx.home,
-    cwd: ctx.cwd,
-    warn: message => ctx.output.warn(message),
+/**
+ * Files the repository no longer deploys, for `strategy`: local copies only
+ * in the current folder, like the other local commands.
+ */
+function removedFiles(
+  record: DeploymentRecord,
+  modules: readonly Module[],
+  repository: string,
+  strategy: Strategy,
+  ctx: Context,
+): Promise<ModuleFile[]> {
+  return findRemovedFiles(record, modules, {
+    repository,
+    strategy,
+    ...(strategy === 'local' && { within: ctx.cwd }),
   })
 }
 
@@ -122,16 +143,19 @@ async function list(ctx: Context): Promise<void> {
 
 async function status(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output } = ctx
-  const modules = await loadModules(ctx)
+  const { repository, modules } = await loadRepository(ctx)
   const selected = names.length === 0 ? modules : pickModules(modules, names)
 
-  if (selected.length === 0) {
+  // Read only: status never changes files or the record.
+  const record = await DeploymentRecord.load(ctx.home)
+  const removed =
+    names.length === 0 ? await removedFiles(record, modules, repository, options.strategy, ctx) : []
+
+  if (selected.length === 0 && removed.length === 0) {
     output.info('No module found.')
     return
   }
 
-  // Read only: status never changes files or the record.
-  const record = await DeploymentRecord.load(ctx.home)
   for (const module of selected) {
     output.print(`${module.name}:`)
 
@@ -158,12 +182,27 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
       output.print(`  no ${options.strategy} file`)
     }
   }
+
+  if (removed.length > 0) {
+    output.print(
+      'No longer deployed by the repository (run "configfile modules undeploy --removed"):',
+    )
+    for (const file of removed) {
+      let state: string
+      try {
+        state = describeState(await inspectFile(file, record))
+      } catch (error) {
+        state = `cannot be checked: ${messageOf(error)}`
+      }
+      output.print(`  ${file.target} (${state})`)
+    }
+  }
 }
 
 async function deploy(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output, prompts } = ctx
   const run = await prepare('deploy', names, options, ctx)
-  if (run == null) return
+  if (run == null || run.files.length === 0) return
 
   const { files } = run
   let failures = run.failures
@@ -260,14 +299,42 @@ async function deployAll(
 
 async function undeploy(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output } = ctx
-  const run = await prepare('undeploy', names, options, ctx)
-  if (run == null) return
+  if (options.removed && names.length > 0) {
+    throw new CliError('Give module names or --removed, not both.')
+  }
 
-  const { files } = run
-  let failures = run.failures
+  const run =
+    options.removed && !options.all
+      ? { ...(await loadRepository(ctx)), files: [], failures: 0, all: false }
+      : await prepare('undeploy', names, options, ctx)
+  // Undeploying every module also undeploys what the repository no longer deploys.
+  const withRemoved = options.removed || options.all || run?.all === true
+  if (run == null && !withRemoved) return
+
+  const { repository, modules } = run ?? {
+    repository: (await new ConfigStore(ctx.home).read()).folderPath,
+    modules: [],
+  }
+  let failures = run?.failures ?? 0
 
   const undeployEach = async (context: DeployContext) => {
-    for (const file of files) {
+    const removed = withRemoved
+      ? await removedFiles(context.record, modules, repository, options.strategy, ctx)
+      : []
+    if (removed.length > 0) {
+      output.info(
+        options.dryRun
+          ? 'Files the repository no longer deploys would be undeployed:'
+          : 'Undeploying the files the repository no longer deploys…',
+      )
+    } else if ((run?.files.length ?? 0) === 0) {
+      if (options.removed) {
+        output.info(`Every deployed ${options.strategy} file is still deployed by the repository.`)
+      }
+      return false
+    }
+
+    for (const file of [...(run?.files ?? []), ...removed]) {
       try {
         if (options.dryRun) {
           output.print(
@@ -283,13 +350,13 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
         reportFileError(file, error, ctx)
       }
     }
+    return true
   }
 
-  if (options.dryRun) {
-    await undeployEach(await deployContext(ctx))
-  } else {
-    await withLock(ctx.home, async () => undeployEach(await deployContext(ctx)))
-  }
+  const undeployed = options.dryRun
+    ? await undeployEach(await deployContext(ctx))
+    : await withLock(ctx.home, async () => undeployEach(await deployContext(ctx)))
+  if (!undeployed) return
   finish(failures, [], options.dryRun ? 'Dry run finished.' : 'Undeployment finished.', ctx)
 }
 
@@ -311,9 +378,17 @@ async function prepare(
   names: string[],
   options: Options,
   ctx: Context,
-): Promise<{ files: ModuleFile[]; failures: number } | null> {
+): Promise<{
+  files: ModuleFile[]
+  failures: number
+  /** Every module was selected (with --all, or at the question). */
+  all: boolean
+  repository: string
+  modules: Module[]
+} | null> {
   const { output } = ctx
-  const selected = await selectModules(verb, await loadModules(ctx), names, options, ctx)
+  const { repository, modules } = await loadRepository(ctx)
+  const { selected, all } = await selectModules(verb, modules, names, options, ctx)
   if (selected.length === 0) return null
 
   let failures = 0
@@ -351,7 +426,7 @@ async function prepare(
         `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry')} failed.`,
       )
     output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
-    return null
+    return { files, failures, all, repository, modules }
   }
 
   const action = verb === 'deploy' ? 'Deploying' : 'Undeploying'
@@ -360,7 +435,7 @@ async function prepare(
       ? `Dry run, nothing is changed. ${action} ${moduleNames} would do:`
       : `${action} ${moduleNames}…`,
   )
-  return { files, failures }
+  return { files, failures, all, repository, modules }
 }
 
 async function selectModules(
@@ -369,7 +444,7 @@ async function selectModules(
   names: string[],
   options: Options,
   ctx: Context,
-): Promise<Module[]> {
+): Promise<{ selected: Module[]; all: boolean }> {
   if (names.length > 0) {
     if (options.all) {
       throw new CliError('Give module names or --all, not both.')
@@ -380,15 +455,15 @@ async function selectModules(
     if (broken?.error != null) {
       throw new CliError(`Module "${broken.name}" cannot be ${verb}ed: ${broken.error}.`)
     }
-    return selected
+    return { selected, all: false }
   }
 
   if (modules.length === 0) {
     ctx.output.info('No module found.')
-    return []
+    return { selected: [], all: options.all }
   }
 
-  if (options.all) return modules
+  if (options.all) return { selected: modules, all: true }
 
   if (!ctx.prompts.interactive) {
     throw new CliError(`No module given. Pass module names, or --all to ${verb} every module.`)
@@ -400,11 +475,11 @@ async function selectModules(
   })
   if (!confirmed) {
     ctx.output.info(`Nothing ${verb}ed.`)
-    return []
+    return { selected: [], all: false }
   }
 
   ctx.history.option('all', true)
-  return modules
+  return { selected: modules, all: true }
 }
 
 /** The modules named on the command line, in repository order. Fails on unknown names. */

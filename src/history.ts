@@ -134,7 +134,7 @@ export function describeInvocation(action: Command): Invocation {
     case 'modules undeploy':
     case 'modules status':
       options.modules = Array.isArray(args[0]) ? args[0] : []
-      copy('local', 'all', 'force', 'dryRun')
+      copy('local', 'all', 'force', 'dryRun', 'removed')
       break
     case 'scripts run':
       options.script = args[0]

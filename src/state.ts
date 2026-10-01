@@ -123,6 +123,11 @@ export class DeploymentRecord {
     return null
   }
 
+  /** Every recorded target. */
+  targets(): readonly TargetRecord[] {
+    return Object.values(this.#state.targets)
+  }
+
   async addBackup(target: string, backup: Backup): Promise<void> {
     await this.#update(target, record => ({ ...record, backups: [...record.backups, backup] }))
   }
