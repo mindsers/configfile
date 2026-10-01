@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { constants } from 'node:fs'
-import { access, open } from 'node:fs/promises'
+import { access, open, readFile } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
 
 import { CliError } from './errors.ts'
+import { errnoCode } from './fsutil.ts'
 import type { Script } from './repository.ts'
 
 /**
@@ -172,6 +173,27 @@ export async function gitClone(
   await git(['clone', '--', url, folder], { cwd }, 'git clone')
 }
 
+/** Runs a command and returns its exit code and output, without showing them. */
+function capture(
+  command: string,
+  args: string[],
+  { cwd }: { cwd: string },
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', chunk => {
+      stdout += chunk
+    })
+    child.stderr.on('data', chunk => {
+      stderr += chunk
+    })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, stdout, stderr }))
+  })
+}
+
 /**
  * Runs git and returns its output, without showing it. Fails with git's own
  * message unless `allowFailure` is set (then `null` is returned on failure).
@@ -180,31 +202,72 @@ export async function gitOutput(
   args: string[],
   { cwd, allowFailure = false }: { cwd: string; allowFailure?: boolean },
 ): Promise<string | null> {
-  const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
-    (resolve, reject) => {
-      const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-      let stdout = ''
-      let stderr = ''
-      child.stdout.on('data', chunk => {
-        stdout += chunk
-      })
-      child.stderr.on('data', chunk => {
-        stderr += chunk
-      })
-      child.once('error', error => {
-        reject(
-          (error as NodeJS.ErrnoException).code === 'ENOENT'
-            ? new CliError('git is not installed or not in PATH.')
-            : error,
-        )
-      })
-      child.once('close', code => resolve({ code, stdout, stderr }))
-    },
-  )
+  const result = await capture('git', args, { cwd }).catch(async error => {
+    throw errnoCode(error) === 'ENOENT' ? await gitMissing() : error
+  })
 
   if (result.code === 0) return result.stdout
   if (allowFailure) return null
   throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || `exit code ${result.code}`}`)
+}
+
+/**
+ * Checks that git can run, before configfile needs it. Missing git, and the
+ * macOS `git` that only offers to install Apple's developer tools, fail with
+ * the command that installs it on this machine.
+ */
+export async function ensureGit({ command = 'git' }: { command?: string } = {}): Promise<void> {
+  let result: Awaited<ReturnType<typeof capture>>
+  try {
+    result = await capture(command, ['--version'], { cwd: process.cwd() })
+  } catch (error) {
+    if (errnoCode(error) === 'ENOENT') throw await gitMissing()
+    throw new CliError(`Cannot run git: ${(error as Error).message}`, { cause: error })
+  }
+  if (result.code === 0) return
+
+  const output = `${result.stderr}\n${result.stdout}`
+  if (/xcrun: error|xcode-select|developer tools/i.test(output)) {
+    throw new CliError(
+      "git needs Apple's command line developer tools. Install them with: xcode-select --install",
+    )
+  }
+  throw new CliError(`git does not work: ${output.trim() || `exit code ${result.code}`}`)
+}
+
+async function gitMissing(): Promise<CliError> {
+  return new CliError(
+    `git is not installed. ${gitInstallHint(process.platform, await osRelease())}`,
+  )
+}
+
+/** How to install git on this system; `osRelease` is the content of `/etc/os-release`. */
+export function gitInstallHint(platform: NodeJS.Platform, osRelease: string | null): string {
+  if (platform === 'darwin') {
+    return 'Install it with: xcode-select --install (or: brew install git)'
+  }
+  const field = (name: string) =>
+    new RegExp(`^${name}=["']?([^"'\n]*)`, 'm').exec(osRelease ?? '')?.[1]?.toLowerCase() ?? ''
+  const ids = [field('ID'), ...field('ID_LIKE').split(/\s+/)]
+  const commands: [string[], string][] = [
+    [['debian', 'ubuntu'], 'sudo apt install git'],
+    [['fedora', 'rhel', 'centos'], 'sudo dnf install git'],
+    [['alpine'], 'sudo apk add git'],
+    [['arch'], 'sudo pacman -S git'],
+    [['suse', 'opensuse'], 'sudo zypper install git'],
+  ]
+  const known = commands.find(([names]) => names.some(name => ids.includes(name)))
+  return known == null
+    ? 'Install it with the package manager of your system.'
+    : `Install it with: ${known[1]}`
+}
+
+async function osRelease(): Promise<string | null> {
+  for (const file of ['/etc/os-release', '/usr/lib/os-release']) {
+    const content = await readFile(file, 'utf8').catch(() => null)
+    if (content != null) return content
+  }
+  return null
 }
 
 /** Runs git with its output shown to the user. */
@@ -213,10 +276,7 @@ export async function git(args: string[], { cwd }: { cwd: string }, label: strin
   try {
     code = await run('git', args, { cwd })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new CliError('git is not installed or not in PATH.')
-    }
-    throw error
+    throw errnoCode(error) === 'ENOENT' ? await gitMissing() : error
   }
 
   if (code !== 0) {

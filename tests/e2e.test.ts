@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -117,6 +118,25 @@ describe('built CLI', () => {
 
       expect(result).toEqual({ code: 7, signal: null })
     })
+  })
+
+  it('says how to install git when it is missing, before changing anything', async () => {
+    const sandbox = await createSandbox()
+
+    const result = spawnSync(
+      process.execPath,
+      [cli, 'init', '--repo', 'https://example.com/dotfiles.git'],
+      {
+        cwd: sandbox.cwd,
+        env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
+        encoding: 'utf8',
+      },
+    )
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toMatch(/git is not installed\. Install it with/)
+    expect(result.stdout).not.toContain('Cloning')
+    expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles'))).toBe(false)
   })
 
   it('never loses a file when several configfile processes deploy at once', async () => {

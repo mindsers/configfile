@@ -12,7 +12,7 @@
 
 - macOS or Linux
 - Node.js 24.11 or later
-- git
+- git (when it is missing, *configfile* says how to install it on your system)
 
 ## Installation
 

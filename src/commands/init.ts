@@ -9,7 +9,7 @@ import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
-import { gitClone } from '../process.ts'
+import { ensureGit, gitClone } from '../process.ts'
 
 interface InitOptions {
   force?: boolean
@@ -96,6 +96,8 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       break
     case 'missing':
     case 'empty':
+      // Before anything is created: a clone without git would leave an empty folder.
+      await ensureGit()
       await mkdir(folderPath, { recursive: true }).catch(error => {
         throw new CliError(`Cannot create ${folderPath}: ${(error as Error).message}`, {
           cause: error,

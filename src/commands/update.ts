@@ -9,6 +9,7 @@ import { CliError } from '../errors.ts'
 import { errnoCode, messageOf } from '../fsutil.ts'
 import { plural } from '../output.ts'
 import { configfilePaths } from '../paths.ts'
+import { ensureGit } from '../process.ts'
 import { findRemovedFiles } from '../removed.ts'
 import { loadRepository } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
@@ -35,6 +36,7 @@ async function update(ctx: Context): Promise<void> {
     throw new CliError(`Cannot read ${folderPath}: ${messageOf(error)}`, { cause: error })
   }
 
+  await ensureGit()
   output.info(`Syncing ${folderPath}…`)
   const result = await syncMirror(folderPath, configfilePaths(ctx.home).saved, {
     onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
