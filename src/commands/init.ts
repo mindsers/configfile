@@ -7,6 +7,7 @@ import type { Command } from 'commander'
 import { ConfigStore } from '../config.js'
 import type { Context } from '../context.js'
 import { CliError } from '../errors.js'
+import { redactUrl } from '../output.js'
 import { configfilePaths, resolveUserPath } from '../paths.js'
 import { gitClone } from '../process.js'
 
@@ -91,6 +92,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       )
     case 'git-repository':
       output.info(`${folderPath} already contains a git repository. It is used as is.`)
+      ctx.history.record({ kind: 'reused', repository: redactUrl(repoUrl), folder: folderPath })
       break
     case 'missing':
     case 'empty':
@@ -99,6 +101,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       })
       output.info(`Cloning ${redactUrl(repoUrl)} into ${folderPath}…`)
       await gitClone(repoUrl, folderPath, ctx)
+      ctx.history.record({ kind: 'cloned', repository: redactUrl(repoUrl), folder: folderPath })
       break
   }
 
@@ -110,6 +113,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
         '"configfile init" again, it will reuse it.',
     )
   }
+  ctx.history.record({ kind: 'configured', file: store.path })
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
 }
 
@@ -135,18 +139,4 @@ async function inspectFolder(folderPath: string) {
   if (existsSync(path.join(folderPath, '.git'))) return 'git-repository'
   if ((await readdir(folderPath).catch(fail)).length > 0) return 'not-empty'
   return 'empty'
-}
-
-/** The URL with its password or token (`https://user:token@host/…`) hidden. */
-export function redactUrl(url: string): string {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return url // Not a URL (for example git@host:repo.git or a local path).
-  }
-  if (parsed.password === '' && (parsed.username === '' || parsed.protocol === 'ssh:')) return url
-  parsed.username = parsed.username === '' ? '' : '***'
-  parsed.password = parsed.password === '' ? '' : '***'
-  return parsed.toString()
 }

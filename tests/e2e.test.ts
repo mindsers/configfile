@@ -161,4 +161,36 @@ describe('built CLI', () => {
     }
     expect(await readFile(path.join(sandbox.home, '.shared'), 'utf8')).toBe('PRECIOUS')
   })
+
+  it('keeps one whole history line per run when many runs write at once', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/scripts/ok.sh', 'exit 0\n')
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: sandbox.home, NO_COLOR: '1' }
+
+    const runs = Array.from(
+      { length: 16 },
+      () =>
+        new Promise<number | null>(resolve => {
+          const child = spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+            cwd: sandbox.cwd,
+            env,
+            stdio: 'ignore',
+          })
+          child.on('close', resolve)
+        }),
+    )
+    expect(new Set(await Promise.all(runs))).toEqual(new Set([0]))
+
+    const lines = (await readFile(path.join(sandbox.home, '.configfile/history.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map(text => JSON.parse(text))
+    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(lines).toHaveLength(16)
+    expect(new Set(lines.map(line => line.pid)).size).toBe(16)
+    expect(
+      lines.every(line => line.version === pkg.version && line.command === 'scripts run'),
+    ).toBe(true)
+  })
 })

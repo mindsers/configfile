@@ -76,6 +76,35 @@ export class ConfigStore {
     return partial
   }
 
+  /**
+   * The maximum size of the history (`history_max_size`), in bytes: a number
+   * of bytes or a size such as "512KB" or "5MB"; 0 turns the history off.
+   * Never fails: the history must work before `init` and with an invalid
+   * configuration, so problems give the default and a warning.
+   */
+  async readHistorySize(): Promise<{ maxBytes: number; warning: string | null }> {
+    let raw: RawConfig | null
+    try {
+      raw = await this.#readRaw()
+    } catch {
+      return { maxBytes: DEFAULT_HISTORY_SIZE, warning: null }
+    }
+
+    const value = raw?.history_max_size
+    if (value === undefined) return { maxBytes: DEFAULT_HISTORY_SIZE, warning: null }
+
+    const size = parseSize(value)
+    if (size == null) {
+      return {
+        maxBytes: DEFAULT_HISTORY_SIZE,
+        warning:
+          `"history_max_size" in ${this.path} must be a size such as 1048576, "512KB" or ` +
+          `"5MB" (0 turns the history off); using 1MB.`,
+      }
+    }
+    return { maxBytes: size, warning: null }
+  }
+
   /** Saves the configuration. Unknown keys of a valid existing file are kept. */
   async write(config: { repoUrl: string; folderPath: string }): Promise<void> {
     const previous = (await this.#readRaw().catch(ignoreInvalid)) ?? {}
@@ -136,4 +165,18 @@ export class ConfigStore {
 function ignoreInvalid(error: unknown): null {
   if (error instanceof InvalidConfigError) return null
   throw error
+}
+
+/** Default size of `history.jsonl` before it is rotated: 1 MiB. */
+export const DEFAULT_HISTORY_SIZE = 1024 * 1024
+
+const UNITS: Record<string, number> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3 }
+
+/** Bytes from 1048576, "1048576", "512KB" or "5 MB"; `null` when invalid. */
+function parseSize(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isInteger(value) && value >= 0 ? value : null
+  if (typeof value !== 'string') return null
+  const match = /^\s*(\d+)\s*(B|KB|MB|GB)?\s*$/i.exec(value)
+  if (match == null) return null
+  return Number(match[1]) * (UNITS[(match[2] ?? 'B').toUpperCase()] ?? 1)
 }

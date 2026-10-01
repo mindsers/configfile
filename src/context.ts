@@ -1,3 +1,4 @@
+import type { History } from './history.js'
 import type { Output } from './output.js'
 
 export interface Prompts {
@@ -13,4 +14,6 @@ export interface Context {
   readonly cwd: string
   readonly output: Output
   readonly prompts: Prompts
+  /** What this run changes, saved to `~/.configfile/history.jsonl` when it ends. */
+  readonly history: History
 }

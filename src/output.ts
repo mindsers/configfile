@@ -79,3 +79,17 @@ export function escapeControls(text: string): string {
     }
   })
 }
+
+/** The URL with its password or token (`https://user:token@host/…`) hidden. */
+export function redactUrl(url: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url // Not a URL (for example git@host:repo.git or a local path).
+  }
+  if (parsed.password === '' && (parsed.username === '' || parsed.protocol === 'ssh:')) return url
+  parsed.username = parsed.username === '' ? '' : '***'
+  parsed.password = parsed.password === '' ? '' : '***'
+  return parsed.toString()
+}

@@ -32,7 +32,11 @@ const SAVE_COMMIT = [
  * `savedFolder`, so that nothing is lost, then the mirror is reset. Syncing
  * never stops on conflicts.
  */
-export async function syncMirror(folder: string, savedFolder: string): Promise<SyncResult> {
+export async function syncMirror(
+  folder: string,
+  savedFolder: string,
+  { onSaved }: { onSaved?: (file: string) => void } = {},
+): Promise<SyncResult> {
   const cwd = folder
   await git(['fetch', '--prune', '--quiet'], { cwd }, 'git fetch')
 
@@ -63,6 +67,8 @@ export async function syncMirror(folder: string, savedFolder: string): Promise<S
       )
     }
     saved = await savePatch(folder, upstream, savedFolder)
+    // Reported before resetting, so the patch is never lost if the reset fails.
+    onSaved?.(saved)
   }
 
   await gitOutput(['reset', '--hard', '--quiet', upstream], { cwd })

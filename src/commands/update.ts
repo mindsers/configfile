@@ -32,7 +32,16 @@ async function update(ctx: Context): Promise<void> {
   }
 
   output.info(`Syncing ${folderPath}…`)
-  const result = await syncMirror(folderPath, configfilePaths(ctx.home).saved)
+  const result = await syncMirror(folderPath, configfilePaths(ctx.home).saved, {
+    onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
+  })
+  ctx.history.record({
+    kind: 'synced',
+    folder: folderPath,
+    upstream: result.upstream,
+    from: result.before,
+    to: result.after,
+  })
 
   if (result.saved != null) {
     output.warn(
