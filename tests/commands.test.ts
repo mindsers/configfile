@@ -424,6 +424,12 @@ describe('modules status, dry run and undeploy', () => {
             strategy: 'global',
             source: path.join(sandbox.repo, 'files/zsh/zshrc'),
             identity: { dev: expect.any(Number), ino: expect.any(Number) },
+            entry: {
+              module: 'files/zsh',
+              source: 'zshrc',
+              target: '~/.zshrc',
+              folder: sandbox.home,
+            },
           },
           backups: [
             {
@@ -583,6 +589,30 @@ describe('modules status, dry run and undeploy', () => {
     expect(await readFile(path.join(sandbox.home, '.ssh/id_rsa'), 'utf8')).toBe('PRIVATE KEY')
   })
 
+  it('refuses a state file whose deployed record is malformed', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({
+        version: 2,
+        targets: {
+          [zshrc]: {
+            target: zshrc,
+            deployed: { strategy: 'global', source: 42, identity: { dev: 1, ino: 2 } },
+            backups: [],
+          },
+        },
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('is not a valid configfile state file')
+  })
+
   it('shows control characters from settings.json as escapes', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
@@ -687,6 +717,497 @@ describe('modules status, dry run and undeploy', () => {
     expect(result.code).toBe(0)
     expect(result.stderr).toContain('"global": true | false is deprecated')
     expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
+  })
+})
+
+describe('files the repository no longer deploys', () => {
+  /** A module with two global files, deployed over an existing ~/.aliases. */
+  async function withDeployedModule(sandbox: Sandbox) {
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write('home/dotfiles/files/zsh/aliases', 'aliases')
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
+    ])
+    await sandbox.write('home/.aliases', 'mine')
+    expect((await runCli(sandbox, ['modules', 'deploy', 'zsh'])).code).toBe(0)
+    return {
+      aliases: path.join(sandbox.home, '.aliases'),
+      zshrc: path.join(sandbox.home, '.zshrc'),
+    }
+  }
+
+  const writeSettings = (sandbox: Sandbox, module: string, files: unknown) =>
+    sandbox.write(`home/dotfiles/files/${module}/settings.json`, JSON.stringify({ files }))
+
+  it('lists, then undeploys a removed entry and restores what it replaced', async () => {
+    const sandbox = await createSandbox()
+    const { aliases, zshrc } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+    ])
+    await rm(path.join(sandbox.repo, 'files/zsh/aliases'))
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const dryRun = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--dry-run'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(status.stdout).toContain(
+      `No longer deployed by the repository (run "configfile modules undeploy --removed"):\n` +
+        `  ${aliases} (deployed, but its source is missing from the repository)\n`,
+    )
+    expect(dryRun.stdout).toContain(`- ${aliases} (would be removed, ${aliases}.old restored)\n`)
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`- ${aliases} (removed, ${aliases}.old restored)\n`)
+    expect(result.stdout).not.toContain(zshrc)
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+    expect(await readlink(zshrc)).toBe(path.join(sandbox.repo, 'files/zsh/zshrc'))
+    expect((await runCli(sandbox, ['modules', 'status'])).stdout).not.toContain('No longer')
+
+    const [, undeployed] = await readHistory(sandbox)
+    expect(undeployed).toMatchObject({
+      command: 'modules undeploy',
+      options: { modules: [], removed: true },
+      changes: [
+        {
+          kind: 'removed',
+          target: aliases,
+          backup: { path: `${aliases}.old`, status: 'restored' },
+        },
+      ],
+    })
+  })
+
+  it('undeploys them with --all, also when their module was deleted', async () => {
+    const sandbox = await createSandbox()
+    const { aliases, zshrc } = await withDeployedModule(sandbox)
+    await sandbox.write('home/dotfiles/files/git/gitconfig', 'git')
+    await writeSettings(sandbox, 'git', [
+      { source_path: 'gitconfig', target_path: '~/.gitconfig', deploy: 'global' },
+    ])
+    await rm(path.join(sandbox.repo, 'files/zsh'), { recursive: true })
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`- ${aliases} (removed, ${aliases}.old restored)`)
+    expect(result.stdout).toContain(`- ${zshrc} (removed)`)
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+    expect(existsSync(zshrc)).toBe(false)
+  })
+
+  it('undeploys them when all modules are chosen at the question', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+    ])
+
+    const result = await runCli(sandbox, ['modules', 'undeploy'], [true])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+  })
+
+  it('counts an entry set to "deploy": "none" as no longer deployed', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'none' },
+    ])
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(status.stdout).toContain(`  ${aliases} (deployed)\n`)
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+  })
+
+  it('counts a changed target as no longer deployed at the old one', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'aliases', target_path: '~/.zsh_aliases', deploy: 'global' },
+    ])
+
+    await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+  })
+
+  it.each([
+    ['whose settings.json is broken', '{'],
+    [
+      'with an invalid entry',
+      JSON.stringify({
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'aliases', deploy: 'global' },
+        ],
+      }),
+    ],
+    [
+      'with an entry without strategy',
+      JSON.stringify({
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'aliases', target_path: '~/.aliases' },
+        ],
+      }),
+    ],
+  ])('never counts the files of a module %s as removed', async (_, settings) => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', settings)
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+    const all = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(status.stdout).not.toContain('No longer deployed')
+    expect(status.stdout).toContain(
+      `configfile cannot tell whether the repository still deploys them:\n  ${aliases} (`,
+    )
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(`${aliases} was not checked: `)
+    expect(result.stdout).not.toContain(`- ${aliases}`)
+    expect(all.stdout).not.toContain(`- ${aliases}`)
+    expect(await readlink(aliases)).toBe(path.join(sandbox.repo, 'files/zsh/aliases'))
+  })
+
+  it('never counts the files of a module that was not loaded as removed', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh!/aliases', 'aliases')
+    await writeSettings(sandbox, 'zsh!', [
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    // Same module name: "zsh!" is now ignored, with a warning.
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+    ])
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(status.stderr).toContain('is ignored: another module is already named "zsh"')
+    expect(status.stdout).not.toContain('No longer deployed')
+    expect(await readlink(path.join(sandbox.home, '.aliases'))).toBe(
+      path.join(sandbox.repo, 'files/zsh!/aliases'),
+    )
+  })
+
+  it('keeps a removed local copy whose source is gone: it cannot be compared', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'])
+    await writeSettings(sandbox, 'web', [])
+    await rm(path.join(sandbox.repo, 'files/web/editorconfig'))
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--local'])
+
+    expect(result.stdout).toContain(
+      `- ${path.join(sandbox.cwd, '.editorconfig')} (kept: its source is missing from the repository, so it cannot be compared; configfile no longer tracks it)`,
+    )
+    expect(existsSync(path.join(sandbox.cwd, '.editorconfig'))).toBe(true)
+    // It is the user's file now: no more warnings about it.
+    const again = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--local'])
+    expect(again.stdout).toContain('Every deployed local file is still deployed by the repository.')
+  })
+
+  it('undeploys removed local copies of the current folder only, unless modified', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await sandbox.write('home/dotfiles/files/web/prettierrc', '{}')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+      { source_path: 'prettierrc', target_path: '.prettierrc', deploy: 'local' },
+    ])
+    const other = path.join(sandbox.root, 'other')
+    await mkdir(other)
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'], [], { cwd: other })
+    await sandbox.write('cwd/.prettierrc', '{ "semi": false }')
+    await writeSettings(sandbox, 'web', [])
+
+    const status = await runCli(sandbox, ['modules', 'status', '--local'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--local'])
+
+    expect(status.stdout).toContain(`  ${path.join(sandbox.cwd, '.editorconfig')} (deployed)`)
+    expect(status.stdout).not.toContain(other)
+    expect(result.stdout).toContain(`- ${path.join(sandbox.cwd, '.editorconfig')} (removed)`)
+    expect(result.stdout).toContain(
+      `- ${path.join(sandbox.cwd, '.prettierrc')} (kept: it was modified since it was copied; configfile no longer tracks it)`,
+    )
+    expect(existsSync(path.join(sandbox.cwd, '.editorconfig'))).toBe(false)
+    expect(existsSync(path.join(other, '.editorconfig'))).toBe(true)
+  })
+
+  it('still matches local copies after the repository moved', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'])
+    const moved = path.join(sandbox.root, 'moved')
+    await rename(sandbox.repo, moved)
+    await sandbox.configure({ folder_path: moved })
+
+    const status = await runCli(sandbox, ['modules', 'status', '--local'])
+
+    expect(status.code).toBe(0)
+    expect(status.stdout).not.toContain('No longer deployed')
+  })
+
+  it('keeps a link whose parent folder, a symbolic link, now leads elsewhere', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/app/apprc', 'app')
+    await writeSettings(sandbox, 'app', [
+      { source_path: 'apprc', target_path: '~/.cfg/apprc', deploy: 'global' },
+    ])
+    await mkdir(path.join(sandbox.home, 'real-a'))
+    await symlink(path.join(sandbox.home, 'real-a'), path.join(sandbox.home, '.cfg'))
+    await runCli(sandbox, ['modules', 'deploy', 'app'])
+    // ~/.cfg moved elsewhere (Dropbox, iCloud…), its link updated.
+    await rename(path.join(sandbox.home, 'real-a'), path.join(sandbox.home, 'real-b'))
+    await rm(path.join(sandbox.home, '.cfg'))
+    await symlink(path.join(sandbox.home, 'real-b'), path.join(sandbox.home, '.cfg'))
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(status.stdout).not.toContain('No longer deployed')
+    expect(await readlink(path.join(sandbox.home, '.cfg/apprc'))).toBe(
+      path.join(sandbox.repo, 'files/app/apprc'),
+    )
+  })
+
+  it('keeps a link whose target is now written with other letter case', async ({ skip }) => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/case-check', '')
+    // Only meaningful on a case-insensitive file system (macOS by default).
+    if (!existsSync(path.join(sandbox.home, 'CASE-CHECK'))) skip()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/app/apprc', 'app')
+    await writeSettings(sandbox, 'app', [
+      { source_path: 'apprc', target_path: '~/.apprc', deploy: 'global' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', 'app'])
+    await writeSettings(sandbox, 'app', [
+      { source_path: 'apprc', target_path: '~/.AppRc', deploy: 'global' },
+    ])
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+
+    expect(status.stdout).not.toContain('No longer deployed')
+  })
+
+  it('holds back the files of a module folder that is a broken symbolic link', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const external = path.join(sandbox.root, 'external-work')
+    await sandbox.write('external-work/workrc', 'work')
+    await sandbox.write(
+      'external-work/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'workrc', target_path: '~/.workrc', deploy: 'global' }],
+      }),
+    )
+    await mkdir(path.join(sandbox.repo, 'files'), { recursive: true })
+    await symlink(external, path.join(sandbox.repo, 'files/work'))
+    await runCli(sandbox, ['modules', 'deploy', 'work'])
+    // The drive is not mounted.
+    await rename(external, `${external}-unmounted`)
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const all = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(status.stdout).toContain(
+      `  ${path.join(sandbox.home, '.workrc')} (files/work is in the repository but is not a usable module)`,
+    )
+    expect(all.stdout).not.toContain('.workrc (removed')
+    expect(existsSync(path.join(sandbox.home, '.workrc'))).toBe(false)
+    expect((await lstat(path.join(sandbox.home, '.workrc'))).isSymbolicLink()).toBe(true)
+  })
+
+  it('holds back the files of a module that is not loaded after the repository moved', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    const moved = path.join(sandbox.root, 'moved')
+    await rename(sandbox.repo, moved)
+    await sandbox.configure({ folder_path: moved })
+    // A folder listed first now gives the same module name: "zsh" is ignored.
+    await sandbox.write('moved/files/!zsh/settings.json', JSON.stringify({ files: [] }))
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(result.stderr).toContain('"zsh" is ignored: another module is already named "zsh"')
+    expect(result.stderr).toContain(
+      `${aliases} was not checked: files/zsh is in the repository but is not a usable module.`,
+    )
+    expect(result.stdout).not.toContain(`- ${aliases}`)
+    expect((await lstat(aliases)).isSymbolicLink()).toBe(true)
+  })
+
+  it('forgets a removed file replaced by the user, and stops warning about it', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+    ])
+    await rm(aliases)
+    await sandbox.write('home/.aliases', 'my own')
+
+    const dryRun = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--dry-run'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+    const again = await runCli(sandbox, ['modules', 'status'])
+
+    expect(dryRun.stdout).toContain(
+      `- ${aliases} (would be kept: the file there was not deployed by configfile; configfile would stop tracking it)`,
+    )
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(
+      `- ${aliases} (kept: the file there was not deployed by configfile; configfile no longer tracks it)`,
+    )
+    expect(await readFile(aliases, 'utf8')).toBe('my own')
+    expect(again.stdout).not.toContain('No longer deployed')
+    // Its backup stays recorded, untouched.
+    expect(await readFile(`${aliases}.old`, 'utf8')).toBe('mine')
+    const [, undeployed] = await readHistory(sandbox)
+    expect(undeployed?.changes).toEqual([
+      { kind: 'kept', target: aliases, reason: 'foreign', forgotten: true },
+    ])
+    expect((await runCli(sandbox, ['history', '-n', '1'])).stdout).toContain(
+      'kept      ~/.aliases  (not deployed by configfile; configfile no longer tracks it)',
+    )
+  })
+
+  it('leaves out targets deleted by hand: there is nothing to undeploy', async () => {
+    const sandbox = await createSandbox()
+    const { aliases } = await withDeployedModule(sandbox)
+    await writeSettings(sandbox, 'zsh', [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+    ])
+    await rm(aliases)
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(result.stdout).toContain(
+      'Every deployed global file is still deployed by the repository.',
+    )
+  })
+
+  it('undeploys them with --all when no module is left, and previews it', async () => {
+    const sandbox = await createSandbox()
+    const { aliases, zshrc } = await withDeployedModule(sandbox)
+    await rm(path.join(sandbox.repo, 'files/zsh'), { recursive: true })
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const dryRun = await runCli(sandbox, ['modules', 'undeploy', '--all', '--dry-run'])
+    expect(await readlink(zshrc)).toBe(path.join(sandbox.repo, 'files/zsh/zshrc'))
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(status.stdout).toContain(`No longer deployed by the repository`)
+    expect(status.stdout).toContain(`  ${zshrc} (`)
+    expect(dryRun.stdout).toContain(`- ${aliases} (would be removed, ${aliases}.old restored)`)
+    expect(result).toMatchObject({ code: 0 })
+    expect(result.stdout).toContain('Undeployment finished.')
+    expect(await readFile(aliases, 'utf8')).toBe('mine')
+    expect(existsSync(zshrc)).toBe(false)
+  })
+
+  it('keeps a local copy whose entry changed source but not target', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await sandbox.write('home/dotfiles/files/web/editorconfig.ini', 'root = true')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'])
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig.ini', target_path: '.editorconfig', deploy: 'local' },
+    ])
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--local'])
+
+    expect(result.stdout).toContain(
+      'Every deployed local file is still deployed by the repository.',
+    )
+    expect(existsSync(path.join(sandbox.cwd, '.editorconfig'))).toBe(true)
+  })
+
+  it('undeploys the old copy of a local entry whose target changed', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+    ])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'])
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: 'config/.editorconfig', deploy: 'local' },
+    ])
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--local'])
+
+    expect(result.stdout).toContain(`- ${path.join(sandbox.cwd, '.editorconfig')} (removed)`)
+  })
+
+  it('only reaches the local copies made in the current folder, not in its subfolders', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/web/editorconfig', 'root = true')
+    await writeSettings(sandbox, 'web', [
+      { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+    ])
+    const project = path.join(sandbox.cwd, 'project')
+    await mkdir(project)
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'], [], { cwd: project })
+    await writeSettings(sandbox, 'web', [])
+
+    const fromParent = await runCli(sandbox, ['modules', 'status', '--local'])
+    const fromProject = await runCli(sandbox, ['modules', 'status', '--local'], [], {
+      cwd: project,
+    })
+
+    expect(fromParent.stdout).not.toContain('No longer deployed')
+    expect(fromProject.stdout).toContain(
+      'No longer deployed by the repository (run "configfile modules undeploy --removed --local"):',
+    )
+  })
+
+  it('refuses --removed with --all', async () => {
+    const sandbox = await createSandbox()
+    await withDeployedModule(sandbox)
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', '--all'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('Give --all or --removed, not both')
+  })
+
+  it('refuses module names with --removed', async () => {
+    const sandbox = await createSandbox()
+    await withDeployedModule(sandbox)
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed', 'zsh'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('Give module names or --removed, not both.')
   })
 })
 
@@ -1212,6 +1733,96 @@ describe('update', () => {
     expect(await readFile(path.join(sandbox.repo, 'files/new-file'), 'utf8')).toBe('new')
   })
 
+  it('warns about deployed files the repository no longer deploys', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await commitInRemote('files/zsh/settings.json', JSON.stringify({ files: [] }))
+
+    const result = await runCli(sandbox, ['update'])
+    const again = await runCli(sandbox, ['update'])
+
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    const warning =
+      `1 deployed file is no longer deployed by the repository: ${zshrc}. To remove it and ` +
+      'restore what it replaced, run "configfile modules undeploy --removed".'
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(warning)
+    // Until the file is undeployed.
+    expect(again.stderr).toContain(warning)
+  })
+
+  it('names the folders of removed local copies', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    await commitInRemote('files/zsh/editorconfig', 'root = true')
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
+        ],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'zsh'])
+    await commitInRemote('files/zsh/settings.json', JSON.stringify({ files: [] }))
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).toContain(
+      `2 deployed files are no longer deployed by the repository: ${path.join(sandbox.home, '.zshrc')}, ` +
+        `${path.join(sandbox.cwd, '.editorconfig')}. To remove them and restore what they replaced, ` +
+        `run "configfile modules undeploy --removed", and run "configfile modules undeploy --removed --local" in ${sandbox.cwd}.`,
+    )
+  })
+
+  it('checks local copies against the folder they were copied into', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/web/editorconfig', 'root = true')
+    await commitInRemote(
+      'files/web/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    const project = path.join(sandbox.root, 'project')
+    await mkdir(project)
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'web'], [], { cwd: project })
+
+    // Run from another folder: the entry still deploys project/.editorconfig.
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).not.toContain('no longer deployed')
+  })
+
+  it('still succeeds when the synced repository cannot be read', async () => {
+    const sandbox = await createSandbox()
+    const { remote } = await withMirror(sandbox)
+    await rm(path.join(remote, 'files'), { recursive: true })
+    await sandbox.write('remote/files', 'a file, not a folder')
+    git(remote, 'add', '-A')
+    git(remote, 'commit', '--quiet', '-m', 'no files')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain('Cannot check for files the repository no longer deploys')
+  })
+
   it('fails when the dotfiles folder is not a git repository', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
@@ -1623,7 +2234,7 @@ describe('history', () => {
         }),
         line({
           command: 'modules undeploy',
-          options: { modules: [], all: true },
+          options: { modules: [], all: true, removed: true },
           changes: [
             {
               kind: 'removed',
@@ -1716,7 +2327,7 @@ describe('history', () => {
         '  2 unchanged',
         '  error     1 file, module or settings entry failed.',
         '',
-        'TIME  modules undeploy --all  ok',
+        'TIME  modules undeploy --all --removed  ok',
         '  removed   ~/.a  (~/.a.old restored)',
         '  removed   ~/.b  (its backup ~/.b.old no longer existed)',
         '  removed   ~/.c  (its backup ~/.c.old had changed, not restored)',

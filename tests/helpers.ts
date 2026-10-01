@@ -81,6 +81,8 @@ export interface FakeContext extends Context {
 export interface CliOptions {
   /** `false` simulates stdin not being a terminal. Defaults to `true`. */
   interactive?: boolean
+  /** The current folder. Defaults to `<sandbox>/cwd`. */
+  cwd?: string
 }
 
 /**
@@ -91,7 +93,7 @@ export interface CliOptions {
 export function createContext(
   sandbox: Sandbox,
   answers: Array<boolean | string | Error> = [],
-  { interactive = true }: CliOptions = {},
+  { interactive = true, cwd = sandbox.cwd }: CliOptions = {},
 ): FakeContext {
   const stdout = new Capture()
   const stderr = new Capture()
@@ -115,7 +117,7 @@ export function createContext(
 
   return {
     home: sandbox.home,
-    cwd: sandbox.cwd,
+    cwd,
     output: new Output(stdout, stderr),
     prompts,
     history: new History(sandbox.home),

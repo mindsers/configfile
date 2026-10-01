@@ -7,7 +7,11 @@ import { ConfigStore } from '../config.js'
 import type { Context } from '../context.js'
 import { CliError } from '../errors.js'
 import { errnoCode, messageOf } from '../fsutil.js'
+import { plural } from '../output.js'
 import { configfilePaths } from '../paths.js'
+import { findRemovedFiles } from '../removed.js'
+import { loadRepository } from '../repository.js'
+import { DeploymentRecord } from '../state.js'
 import { syncMirror } from '../sync.js'
 
 export function registerUpdateCommand(program: Command, ctx: Context): void {
@@ -53,10 +57,50 @@ async function update(ctx: Context): Promise<void> {
 
   if (result.before === result.after) {
     output.success(`Already up to date with ${result.upstream}.`)
-    return
+  } else {
+    output.success(
+      `Synced with ${result.upstream} (${result.after.slice(0, 7)}). Global files are links, so ` +
+        'they are up to date; run "configfile modules deploy --all" for new files.',
+    )
   }
-  output.success(
-    `Synced with ${result.upstream} (${result.after.slice(0, 7)}). Global files are links, so ` +
-      'they are up to date; run "configfile modules deploy --all" for new files.',
-  )
+  await warnAboutRemovedFiles(ctx)
+}
+
+/**
+ * Deployed files whose entry left the repository stay in place until they are
+ * undeployed: says so. Never fails, the sync is already done.
+ */
+async function warnAboutRemovedFiles(ctx: Context): Promise<void> {
+  const { output } = ctx
+  try {
+    const { repository, modules } = await loadRepository(ctx)
+    const record = await DeploymentRecord.load(ctx.home)
+    const find = async (strategy: 'global' | 'local') =>
+      (await findRemovedFiles(record, modules, { repository, home: ctx.home, strategy })).removed
+    const global = await find('global')
+    const local = await find('local')
+    const count = global.length + local.length
+    if (count === 0) return
+
+    const one = count === 1
+    const targets = [...global, ...local].map(file => file.target).join(', ')
+    // A local copy is undeployed from the folder it was copied into.
+    const folders = [...new Set(local.map(file => file.folder))].filter(folder => folder != null)
+    const steps = [
+      global.length > 0 ? 'run "configfile modules undeploy --removed"' : null,
+      local.length > 0
+        ? `run "configfile modules undeploy --removed --local" in ${folders.join(', ')}`
+        : null,
+    ].filter(step => step != null)
+    output.warn(
+      `${plural(count, 'deployed file')} ${one ? 'is' : 'are'} no longer deployed by the ` +
+        `repository: ${targets}. To remove ${one ? 'it' : 'them'} and restore what ` +
+        `${one ? 'it' : 'they'} replaced, ${steps.join(', and ')}.`,
+    )
+  } catch (error) {
+    output.warn(`Cannot check for files the repository no longer deploys: ${messageOf(error)}`)
+    if (!(error instanceof CliError) && process.env.DEBUG != null) {
+      output.stderr.write(`${(error as Error).stack}\n`)
+    }
+  }
 }

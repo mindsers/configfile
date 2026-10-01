@@ -102,7 +102,7 @@ function describeRun(line: HistoryLine): string {
   if (typeof options.script === 'string') words.push(options.script)
   if (typeof options.repo === 'string') words.push('--repo', options.repo)
   if (typeof options.folder === 'string') words.push('--folder', options.folder)
-  for (const flag of ['local', 'all', 'force'] as const) {
+  for (const flag of ['local', 'all', 'force', 'removed'] as const) {
     if (options[flag] === true) words.push(`--${flag}`)
   }
   if (typeof options.argCount === 'number' && options.argCount > 0) {
@@ -141,7 +141,8 @@ function describeChange(change: Change): string {
         identical: 'not copied by configfile',
         'source-missing': 'its source was missing',
       }
-      return line('kept', `${change.target}  (${reason[change.reason]})`)
+      const forgotten = change.forgotten === true ? '; configfile no longer tracks it' : ''
+      return line('kept', `${change.target}  (${reason[change.reason]}${forgotten})`)
     }
     case 'failed':
       return line(

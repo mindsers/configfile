@@ -13,6 +13,7 @@ import {
   writeFileAtomic,
 } from './fsutil.js'
 import { configfilePaths } from './paths.js'
+import type { Entry } from './repository.js'
 
 /** A file configfile moved aside, as it was when moved. */
 export interface Backup {
@@ -33,6 +34,8 @@ export interface Deployed {
   readonly strategy: 'global' | 'local'
   readonly source: string
   readonly identity: Identity
+  /** The settings.json entry it was deployed for (missing in records made before it was kept). */
+  readonly entry?: Entry
 }
 
 /** Everything configfile knows about one target. */
@@ -123,6 +126,11 @@ export class DeploymentRecord {
     return null
   }
 
+  /** Every recorded target, including those with only backups (`deployed` is null). A snapshot. */
+  targets(): readonly TargetRecord[] {
+    return Object.values(this.#state.targets)
+  }
+
   async addBackup(target: string, backup: Backup): Promise<void> {
     await this.#update(target, record => ({ ...record, backups: [...record.backups, backup] }))
   }
@@ -202,6 +210,7 @@ function isTargets(value: unknown): value is Record<string, TargetRecord> {
       typeof record === 'object' &&
       typeof record.target === 'string' &&
       path.isAbsolute(record.target) &&
+      isDeployed(record.deployed) &&
       Array.isArray(record.backups) &&
       record.backups.every(
         (backup: unknown) =>
@@ -209,6 +218,24 @@ function isTargets(value: unknown): value is Record<string, TargetRecord> {
           typeof backup === 'object' &&
           isBackupPathOf(record.target, (backup as Backup).path),
       ),
+  )
+}
+
+function isDeployed(value: unknown): boolean {
+  if (value === null) return true
+  if (value == null || typeof value !== 'object') return false
+  const { strategy, source, identity, entry } = value as Record<string, unknown>
+  const isObject = (item: unknown): item is Record<string, unknown> =>
+    item != null && typeof item === 'object'
+  return (
+    (strategy === 'global' || strategy === 'local') &&
+    typeof source === 'string' &&
+    isObject(identity) &&
+    typeof identity.dev === 'number' &&
+    typeof identity.ino === 'number' &&
+    (entry === undefined ||
+      (isObject(entry) &&
+        ['module', 'source', 'target', 'folder'].every(key => typeof entry[key] === 'string')))
   )
 }
 

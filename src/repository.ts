@@ -2,6 +2,7 @@ import type { Dirent, Stats } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import { ConfigStore } from './config.js'
 import type { Context } from './context.js'
 import { CliError } from './errors.js'
 import { describeJsonError } from './fsutil.js'
@@ -18,6 +19,23 @@ export interface ModuleFile {
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
   readonly module: string
+  /** The settings.json entry of the file, recorded when it is deployed. */
+  readonly entry?: Entry
+}
+
+/**
+ * Where a deployed file comes from, recorded with it: this is how configfile
+ * later tells whether the repository still deploys it.
+ */
+export interface Entry {
+  /** The module folder, relative to the repository (`files/zsh`). */
+  readonly module: string
+  /** `source_path`, relative to the module folder. */
+  readonly source: string
+  /** `target_path`, as written. */
+  readonly target: string
+  /** The folder `target` is resolved from: the home folder (global) or the current folder (local). */
+  readonly folder: string
 }
 
 interface ModuleBase {
@@ -52,6 +70,19 @@ export interface Script {
 }
 
 type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void }
+
+/** The modules, and the folder of the repository they come from. */
+export async function loadRepository(
+  ctx: Context,
+): Promise<{ repository: string; modules: Module[] }> {
+  const { folderPath } = await new ConfigStore(ctx.home).read()
+  const modules = await listModules(folderPath, {
+    home: ctx.home,
+    cwd: ctx.cwd,
+    warn: message => ctx.output.warn(message),
+  })
+  return { repository: folderPath, modules }
+}
 
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`
@@ -201,6 +232,12 @@ async function readModuleFiles(
       strategy,
       repository,
       module: modulePath,
+      entry: {
+        module: path.relative(repository, modulePath),
+        source: path.relative(modulePath, resolvedSource),
+        target: target.trim(),
+        folder: strategy === 'global' ? env.home : env.cwd,
+      },
     })
   }
 

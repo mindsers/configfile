@@ -47,7 +47,8 @@ export type Change =
       backup?: { path: string; status: 'restored' | 'missing' | 'changed' }
       leftover?: string
     }
-  | { kind: 'kept'; target: string; reason: KeptReason }
+  /** `forgotten`: configfile stopped tracking it (its entry left the repository). */
+  | { kind: 'kept'; target: string; reason: KeptReason; forgotten?: true }
   | { kind: 'failed'; target: string; reason: string }
   | { kind: 'failed'; module: string; reason: string }
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
@@ -134,7 +135,7 @@ export function describeInvocation(action: Command): Invocation {
     case 'modules undeploy':
     case 'modules status':
       options.modules = Array.isArray(args[0]) ? args[0] : []
-      copy('local', 'all', 'force', 'dryRun')
+      copy('local', 'all', 'force', 'dryRun', 'removed')
       break
     case 'scripts run':
       options.script = args[0]
@@ -500,7 +501,11 @@ function isChange(value: unknown): value is Change {
         (value.leftover === undefined || typeof value.leftover === 'string')
       )
     case 'kept':
-      return typeof value.target === 'string' && Object.hasOwn(KEPT_REASONS, value.reason as string)
+      return (
+        typeof value.target === 'string' &&
+        Object.hasOwn(KEPT_REASONS, value.reason as string) &&
+        (value.forgotten === undefined || value.forgotten === true)
+      )
     case 'failed':
       return (
         typeof value.reason === 'string' &&

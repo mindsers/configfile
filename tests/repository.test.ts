@@ -100,6 +100,7 @@ describe('listModules', () => {
         strategy: 'global',
         repository,
         module,
+        entry: { module: 'files/zsh', source: 'zshrc', target: '~/.zshrc', folder: sandbox.home },
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/local.env'),
@@ -107,6 +108,7 @@ describe('listModules', () => {
         strategy: 'local',
         repository,
         module,
+        entry: { module: 'files/zsh', source: 'local.env', target: '.env', folder: sandbox.cwd },
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/aliases'),
@@ -114,6 +116,12 @@ describe('listModules', () => {
         strategy: 'global',
         repository,
         module,
+        entry: {
+          module: 'files/zsh',
+          source: 'aliases',
+          target: '~/.aliases',
+          folder: sandbox.home,
+        },
       },
       {
         source: path.join(sandbox.repo, 'files/zsh/editorconfig'),
@@ -121,6 +129,12 @@ describe('listModules', () => {
         strategy: 'local',
         repository,
         module,
+        entry: {
+          module: 'files/zsh',
+          source: 'editorconfig',
+          target: '.editorconfig',
+          folder: sandbox.cwd,
+        },
       },
     ])
     expect(zsh.undecided).toEqual(['forgotten'])

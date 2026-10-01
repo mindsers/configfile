@@ -73,6 +73,10 @@ When a local file already exists and differs from the one in the repository, *co
 
 *configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links and the local copies *configfile* made (unless they were modified since), and moves the most recent backup it made back in place, if that backup is unchanged. Anything else is left untouched: files it did not create (even when identical to the repository), local copies that were modified or saved again by an editor since, and `.old` files you made yourself.
 
+When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a copy whose source is gone) is left where it is, and *configfile* stops tracking it.
+
+To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose `settings.json` cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
+
 Only one *configfile* at a time changes files: a second one waits for the first to finish (the lock is `~/.configfile/lock`).
 
 > **Deploying a repository means trusting it**, like code you run: its files end up in your shell configuration, and its scripts run on your machine. Only deploy repositories you trust.
@@ -98,7 +102,7 @@ Scripts can be written in any language:
     - `--repo <url>`: give the URL from the command line, for non-interactive setups.
     - `--folder <path>`: clone somewhere else than `~/.configfile/dotfiles`.
 - `configfile modules list` (`m l`, or just `configfile modules`): list available modules.
-- `configfile modules status [modules...]` (`m st`): show whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file.
+- `configfile modules status [modules...]` (`m st`): show whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file. Without module names, it also lists the deployed files the repository no longer deploys.
     - `-l, --local`: check the local files, in the current folder.
 - `configfile modules deploy [modules...]` (`m d`): deploy the global files of the given modules. Without module names, asks to deploy all modules.
     - `-l, --local`: copy the local files of the modules instead.
@@ -106,10 +110,12 @@ Scripts can be written in any language:
     - `-f, --force`: replace existing local files without asking (they are moved to `.old`).
     - `-n, --dry-run`: show what would be done, without changing anything.
 - `configfile modules undeploy [modules...]` (`m u`): remove the deployed global files of the given modules and restore their backups. Without module names, asks to undeploy all modules.
-    - `-l, --local`, `-a, --all` and `-n, --dry-run`: as for `deploy`.
+    - `-a, --all`: undeploy every module without asking, and the files the repository no longer deploys.
+    - `--removed`: only undeploy the files the repository no longer deploys (see [Modules](#modules)); with `--local`, the copies made in the current folder.
+    - `-l, --local` and `-n, --dry-run`: as for `deploy`.
 - `configfile scripts list` (`s l`, or just `configfile scripts`): list available scripts.
 - `configfile scripts run <name> [-- args...]` (`s r`): run a script. Arguments after `--` are passed to the script.
-- `configfile update` (`u`): sync *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies.
+- `configfile update` (`u`): sync *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys.
 - `configfile history`: show what *configfile* changed, most recent last (see [History](#history)).
     - `-n, --limit <count>`: number of runs to show (20 by default).
     - `--json`: print the raw history lines (JSON Lines), for scripts.

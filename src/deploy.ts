@@ -16,8 +16,15 @@ import {
   statOrNull,
 } from './fsutil.js'
 import { configfilePaths, contains } from './paths.js'
+import type { RecordedFile } from './removed.js'
 import type { ModuleFile } from './repository.js'
 import { type Backup, type DeploymentRecord, isBackupPathOf } from './state.js'
+
+/**
+ * A file undeploy can work on: a file of a module, or one the repository no
+ * longer deploys, rebuilt from the record. Only module files can be deployed.
+ */
+export type UndeployableFile = ModuleFile | RecordedFile
 
 /** What is currently at the target of a module file, and whose it is. */
 export type TargetState =
@@ -88,7 +95,7 @@ export interface DeployContext {
 // Inspecting and deciding (shared by dry runs and real runs)
 
 export async function inspectFile(
-  file: ModuleFile,
+  file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>,
   record: DeploymentRecord,
 ): Promise<TargetState> {
   const existing = await lstatOrNull(file.target)
@@ -152,7 +159,7 @@ export async function planDeploy(
 
 /** What undeploying `file` would do. Runs every check a real undeployment runs. */
 export async function planUndeploy(
-  file: ModuleFile,
+  file: UndeployableFile,
   { record, guard }: DeployContext,
 ): Promise<UndeployDecision> {
   await guard.check(file)
@@ -196,11 +203,16 @@ export async function deployFile(
 
   if (decision.action === 'conflict') return { status: 'conflict' }
   if (decision.action === 'up-to-date') {
-    // Adopt links made before 1.0, so that undeploy knows they are ours.
+    // Adopt links made before 1.0, so that undeploy knows they are ours, and
+    // complete records made before entries were kept.
     const stats = await lstatOrNull(file.target)
     const known = (await record.find(file.target))?.deployed
-    if (stats != null && !sameIdentity(known?.identity, identityOf(stats))) {
-      if (file.strategy === 'global') await recordDeployed(file, record)
+    const ours = stats != null && sameIdentity(known?.identity, identityOf(stats))
+    if (
+      (!ours && stats != null && file.strategy === 'global') ||
+      (ours && known?.entry == null && file.entry != null)
+    ) {
+      await recordDeployed(file, record)
     }
     return { status: 'up-to-date' }
   }
@@ -237,7 +249,7 @@ export async function deployFile(
  * Nothing configfile did not create is ever removed.
  */
 export async function undeployFile(
-  file: ModuleFile,
+  file: UndeployableFile,
   context: DeployContext,
 ): Promise<UndeployResult> {
   const { record } = context
@@ -354,7 +366,7 @@ export class Guard {
     this.#cwd = cwd
   }
 
-  async check(file: ModuleFile): Promise<void> {
+  async check(file: UndeployableFile): Promise<void> {
     const own = configfilePaths(this.#home)
     const stats = await lstatOrNull(file.target)
 
@@ -363,7 +375,7 @@ export class Guard {
         [this.#home, 'the home folder'],
         [this.#cwd, 'the current folder'],
         [file.repository, 'the dotfiles repository'],
-        [file.module, 'the module folder'],
+        ...(file.module == null ? [] : [[file.module, 'the module folder'] as const]),
         [own.dir, "configfile's working folder"],
         [own.rc, "configfile's configuration"],
       ] as const
@@ -378,7 +390,7 @@ export class Guard {
     const parents = await this.#ancestorsOf(path.dirname(file.target))
     for (const [protectedPath, label] of [
       [file.repository, 'the dotfiles repository'],
-      [file.module, 'the module folder'],
+      ...(file.module == null ? [] : [[file.module, 'the module folder'] as const]),
       [own.dir, "configfile's working folder"],
     ] as const) {
       const identity = await statOrNull(protectedPath)
@@ -425,6 +437,7 @@ async function recordDeployed(file: ModuleFile, record: DeploymentRecord): Promi
     strategy: file.strategy,
     source: file.source,
     identity: identityOf(stats),
+    ...(file.entry != null && { entry: file.entry }),
   })
 }
 
