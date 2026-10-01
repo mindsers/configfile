@@ -11,7 +11,7 @@
 ## Requirements
 
 - macOS or Linux
-- Node.js 22.13 or later
+- Node.js 24.11 or later
 - git
 
 ## Installation
@@ -168,7 +168,7 @@ When the file reaches `history_max_size` (1MB by default; a number of bytes, or 
 
 ## Upgrading from 0.3
 
-- Node.js 22.13 or later is required, on macOS or Linux. Install again with `npm install --global configfile`.
+- Node.js 24.11 or later is required, on macOS or Linux. Install again with `npm install --global configfile`.
 - `~/.configfilerc`, the repository layout and `settings.json` work as before, including `settings.json` files that are a plain list (the 0.3.1 format, deprecated: put the list in a `"files"` key). Links deployed by 0.3 are recognised as deployed.
 - If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.

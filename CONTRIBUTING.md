@@ -77,7 +77,7 @@ The documentation lives with the source code: the [README](README.md) for users,
 
 ### Development setup
 
-*Configfile* is written in TypeScript and uses [pnpm](https://pnpm.io). Use the Node.js version from `.node-version` (22.13 or later is supported).
+*Configfile* is written in TypeScript and uses [pnpm](https://pnpm.io). Use the Node.js version from `.node-version` (24.11 or later is supported).
 
 ```bash
 pnpm install

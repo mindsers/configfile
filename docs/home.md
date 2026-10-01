@@ -10,7 +10,7 @@ To install Configfile:
 npm install --global configfile
 ```
 
-macOS or Linux, Node.js 22.13 or later and git are required.
+macOS or Linux, Node.js 24.11 or later and git are required.
 
 Generating first configuration:
 

@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `settings.json` format is documented in the README.
 
 ### Changed
-- **Breaking:** Node.js 22.13 or later is required, and only macOS and Linux are supported.
+- **Breaking:** Node.js 24.11 or later is required, and only macOS and Linux are supported.
 - **Breaking:** a relative `target_path` of a global file now starts from the home folder instead
   of the current folder.
 - The `global` setting in `settings.json` is deprecated. Use `deploy` instead; `global` will be
