@@ -4,10 +4,10 @@ import path from 'node:path'
 
 import type { Context } from './context.js'
 import { CliError } from './errors.js'
-import { resolveUserPath, slugify } from './paths.js'
+import { configfilePaths, contains, resolveUserPath, slugify } from './paths.js'
 
 export interface ModuleFile {
-  /** Absolute path of the file inside the dotfiles repository. */
+  /** Absolute path of the file inside its module folder. */
   readonly source: string
   /** Absolute path where the file is deployed. Never inside the repository. */
   readonly target: string
@@ -15,6 +15,8 @@ export interface ModuleFile {
   readonly strategy: 'global' | 'local'
   /** Absolute path of the dotfiles repository the file comes from. */
   readonly repository: string
+  /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
+  readonly module: string
 }
 
 interface ModuleBase {
@@ -125,7 +127,9 @@ async function readModuleFiles(
     return { error: `settings.json is not valid JSON (${(error as Error).message})` }
   }
 
-  const entries: unknown = (settings as { files?: unknown } | null)?.files
+  // configfile 0.3.1 wrote the list of files at the top level of settings.json.
+  const legacyList = Array.isArray(settings)
+  const entries: unknown = legacyList ? settings : (settings as { files?: unknown } | null)?.files
   if (!Array.isArray(entries)) {
     return { error: 'settings.json has no "files" list' }
   }
@@ -154,6 +158,15 @@ async function readModuleFiles(
       invalid('"source_path" is missing')
       continue
     }
+    const resolvedSource = path.resolve(modulePath, source)
+    if (
+      path.isAbsolute(source) ||
+      resolvedSource === modulePath ||
+      !contains(modulePath, resolvedSource)
+    ) {
+      invalid(`"source_path" (${source}) must name a file or folder inside the module folder`)
+      continue
+    }
 
     switch (strategy) {
       case 'invalid':
@@ -175,26 +188,34 @@ async function readModuleFiles(
       cwd: strategy === 'global' ? env.home : env.cwd,
     })
 
-    const problem = unsafeTarget(resolvedTarget, { ...env, repository })
+    const problem = unsafeTarget(resolvedTarget, { ...env, repository, module: modulePath })
     if (problem != null) {
       invalid(`"target_path" (${target}) ${problem}`)
       continue
     }
 
     files.push({
-      source: path.resolve(modulePath, source),
+      source: resolvedSource,
       target: resolvedTarget,
       strategy,
       repository,
+      module: modulePath,
     })
   }
 
-  const deprecations = usesLegacyKey
-    ? [
-        '"global": true | false is deprecated and will stop working in 2.0. ' +
-          'Use "deploy": "global" | "local" instead',
-      ]
-    : []
+  const deprecations: string[] = []
+  if (legacyList) {
+    deprecations.push(
+      'settings.json is a list (configfile 0.3 format), which is deprecated and will stop ' +
+        'working in 2.0. Put the list in a "files" key: { "files": [ ... ] }',
+    )
+  }
+  if (usesLegacyKey) {
+    deprecations.push(
+      '"global": true | false is deprecated and will stop working in 2.0. ' +
+        'Use "deploy": "global" | "local" instead',
+    )
+  }
 
   return { error: null, files, undecided, invalidEntries, deprecations }
 }
@@ -203,20 +224,38 @@ async function readModuleFiles(
  * Why deploying to `target` could destroy something important, or `null`.
  * Deploying moves whatever is at the target aside, so the target must not be
  * the home folder, the current folder, the repository, one of their parents,
- * or anything inside the repository.
+ * anything inside the repository or the module, or configfile's own files.
+ *
+ * Paths are compared as written; deploying checks them again by identity.
  */
 export function unsafeTarget(
   target: string,
-  { home, cwd, repository }: { home: string; cwd: string; repository: string },
+  {
+    home,
+    cwd,
+    repository,
+    module,
+  }: { home: string; cwd: string; repository: string; module: string },
 ): string | null {
+  const own = configfilePaths(home)
+
   for (const [folder, label] of [
     [home, 'the home folder'],
     [cwd, 'the current folder'],
     [repository, 'the dotfiles repository'],
+    [module, 'the module folder'],
+    [own.rc, "configfile's configuration"],
+    [own.dir, "configfile's working folder"],
   ] as const) {
     if (contains(target, folder)) return `would replace ${label} (${folder})`
   }
-  if (contains(repository, target)) return `is inside the dotfiles repository (${repository})`
+  for (const [folder, label] of [
+    [repository, 'the dotfiles repository'],
+    [module, 'the module folder'],
+    [own.dir, "configfile's working folder"],
+  ] as const) {
+    if (contains(folder, target)) return `is inside ${label} (${folder})`
+  }
   return null
 }
 
@@ -321,12 +360,6 @@ function isUsableName(
     return false
   }
   return true
-}
-
-/** Whether `child` is `parent` or inside it (paths are compared as text). */
-export function contains(parent: string, child: string): boolean {
-  const relative = path.relative(parent, child)
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
 function errorCode(error: unknown): string {

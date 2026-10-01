@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
 
+import { redactUrl } from '../src/commands/init.js'
 import { ConfigStore } from '../src/config.js'
 import { CliError, NotInitializedError } from '../src/errors.js'
 import { createSandbox } from './helpers.js'
@@ -128,5 +129,18 @@ describe('ConfigStore', () => {
     await rm(store.path)
     await mkdir(store.path)
     await expect(store.write({ repoUrl: 'u', folderPath: '/f' })).rejects.toThrow(/Cannot read/)
+  })
+})
+
+describe('redactUrl', () => {
+  it.each([
+    ['https://user:token@github.com/a/b.git', 'https://***:***@github.com/a/b.git'],
+    ['https://token@github.com/a/b.git', 'https://***@github.com/a/b.git'],
+    ['https://github.com/a/b.git', 'https://github.com/a/b.git'],
+    ['git@github.com:a/b.git', 'git@github.com:a/b.git'],
+    ['ssh://git@github.com/a/b.git', 'ssh://git@github.com/a/b.git'],
+    ['/local/path', '/local/path'],
+  ])('%s', (url, expected) => {
+    expect(redactUrl(url)).toBe(expected)
   })
 })

@@ -67,6 +67,12 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     }))
   ).trim()
   if (repoUrl === '') throw new CliError('A repository URL is required.')
+  if (redactUrl(repoUrl) !== repoUrl) {
+    output.warn(
+      'The repository URL contains credentials: they are saved in the configuration and in ' +
+        "git's settings. Prefer an SSH key or a git credential helper.",
+    )
+  }
 
   const folderInput =
     options.folder ??
@@ -92,7 +98,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
       await mkdir(folderPath, { recursive: true }).catch(error => {
         throw new CliError(`Cannot create ${folderPath}: ${(error as Error).message}`)
       })
-      output.info(`Cloning ${repoUrl} into ${folderPath}…`)
+      output.info(`Cloning ${redactUrl(repoUrl)} into ${folderPath}…`)
       await gitClone(repoUrl, folderPath, ctx)
       break
   }
@@ -130,4 +136,18 @@ async function inspectFolder(folderPath: string) {
   if (existsSync(path.join(folderPath, '.git'))) return 'git-repository'
   if ((await readdir(folderPath).catch(fail)).length > 0) return 'not-empty'
   return 'empty'
+}
+
+/** The URL with its password or token (`https://user:token@host/…`) hidden. */
+export function redactUrl(url: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url // Not a URL (for example git@host:repo.git or a local path).
+  }
+  if (parsed.password === '' && (parsed.username === '' || parsed.protocol === 'ssh:')) return url
+  parsed.username = parsed.username === '' ? '' : '***'
+  parsed.password = parsed.password === '' ? '' : '***'
+  return parsed.toString()
 }

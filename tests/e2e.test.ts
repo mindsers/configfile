@@ -1,4 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -114,5 +116,49 @@ describe('built CLI', () => {
 
       expect(result).toEqual({ code: 7, signal: null })
     })
+  })
+
+  it('never loses a file when several configfile processes deploy at once', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const modules = ['a', 'b', 'c', 'd']
+    for (const name of modules) {
+      await sandbox.write(`home/dotfiles/files/${name}/x`, name)
+      await sandbox.write(
+        `home/dotfiles/files/${name}/settings.json`,
+        JSON.stringify({
+          files: [{ source_path: 'x', target_path: '~/.shared', deploy: 'global' }],
+        }),
+      )
+    }
+    await sandbox.write('home/.shared', 'PRECIOUS')
+
+    const runs = modules.map(
+      name =>
+        new Promise<number | null>(resolve => {
+          const child = spawn(process.execPath, [cli, 'modules', 'deploy', name], {
+            cwd: sandbox.cwd,
+            env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
+            stdio: 'ignore',
+          })
+          child.on('close', resolve)
+        }),
+    )
+    expect(await Promise.all(runs)).toEqual([0, 0, 0, 0])
+
+    const copies = (await readdir(sandbox.home)).filter(name => name.startsWith('.shared'))
+    const contents = await Promise.all(
+      copies.map(name => readFile(path.join(sandbox.home, name), 'utf8').catch(() => '')),
+    )
+    expect(contents.filter(content => content === 'PRECIOUS')).toHaveLength(1)
+
+    // Undeploying every module unwinds the backups down to the original file.
+    for (const _ of modules) {
+      spawnSync(process.execPath, [cli, 'modules', 'undeploy', '--all'], {
+        cwd: sandbox.cwd,
+        env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
+      })
+    }
+    expect(await readFile(path.join(sandbox.home, '.shared'), 'utf8')).toBe('PRECIOUS')
   })
 })

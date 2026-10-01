@@ -1,5 +1,15 @@
 import { existsSync } from 'node:fs'
-import { chmod, copyFile, lstat, mkdir, readFile, readlink, stat, symlink } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  rename,
+  stat,
+  symlink,
+} from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -305,7 +315,7 @@ describe('modules status, dry run and undeploy', () => {
 
     await sandbox.write('cwd/a', 'edited')
     const local = await runCli(sandbox, ['modules', 'status', '--local'])
-    expect(local.stdout).toContain(`${sandbox.cwd}/a (differs from the repository)`)
+    expect(local.stdout).toContain(`${sandbox.cwd}/a (not deployed: a file is in the way)`)
     expect(local.stdout).toContain(`${sandbox.cwd}/b (not deployed)`)
   })
 
@@ -390,8 +400,27 @@ describe('modules status, dry run and undeploy', () => {
     const state = JSON.parse(
       await readFile(path.join(sandbox.home, '.configfile/state.json'), 'utf8'),
     )
+    const zshrc = path.join(sandbox.home, '.zshrc')
     expect(state).toEqual({
-      backups: { [path.join(sandbox.home, '.zshrc')]: [path.join(sandbox.home, '.zshrc.old')] },
+      version: 2,
+      targets: {
+        [zshrc]: {
+          target: zshrc,
+          deployed: {
+            strategy: 'global',
+            source: path.join(sandbox.repo, 'files/zsh/zshrc'),
+            identity: { dev: expect.any(Number), ino: expect.any(Number) },
+          },
+          backups: [
+            {
+              path: `${zshrc}.old`,
+              identity: { dev: expect.any(Number), ino: expect.any(Number) },
+              kind: 'file',
+              modified: expect.any(Number),
+            },
+          ],
+        },
+      },
     })
 
     await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
@@ -475,6 +504,161 @@ describe('modules status, dry run and undeploy', () => {
       }
     },
   )
+
+  it('deploys a repository written for configfile 0.3.1 (list format)', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', global: true }]),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain('settings.json is a list (configfile 0.3 format)')
+    expect(await readlink(path.join(sandbox.home, '.zshrc'))).toBe(
+      path.join(sandbox.repo, 'files/zsh/zshrc'),
+    )
+  })
+
+  it('never lets a source outside the module be deployed or undeployed', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/Documents/thesis.txt', 'years of work')
+    await sandbox.write(
+      'home/dotfiles/files/evil/settings.json',
+      JSON.stringify({
+        files: [{ source_path: '../../../Documents', target_path: '~/Documents', deploy: 'local' }],
+      }),
+    )
+
+    const undeploy = await runCli(sandbox, ['modules', 'undeploy', '--local', 'evil'])
+
+    expect(undeploy.code).toBe(1)
+    expect(undeploy.stderr).toContain('must name a file or folder inside the module folder')
+    expect(await readFile(path.join(sandbox.home, 'Documents/thesis.txt'), 'utf8')).toBe(
+      'years of work',
+    )
+  })
+
+  it('refuses a tampered state file before changing anything', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write('home/.ssh/id_rsa', 'PRIVATE KEY')
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({
+        version: 2,
+        targets: {
+          [zshrc]: {
+            target: zshrc,
+            deployed: null,
+            backups: [{ path: path.join(sandbox.home, '.ssh/id_rsa'), identity: null, kind: null }],
+          },
+        },
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', 'zsh'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('is not a valid configfile state file')
+    expect(await readFile(path.join(sandbox.home, '.ssh/id_rsa'), 'utf8')).toBe('PRIVATE KEY')
+  })
+
+  it('shows control characters from settings.json as escapes', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write(
+      'home/dotfiles/files/a/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'x\u001b]0;HIJACK\u0007\rfake', target_path: 't' }],
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'status', 'a'])
+
+    const controls = [...result.stdout].filter(c => c !== '\n' && c.charCodeAt(0) < 0x20)
+    expect(controls).toEqual([])
+    expect(result.stdout).toContain('x\\x1b]0;HIJACK\\x07\\rfake (no deployment strategy)')
+  })
+
+  it('stacks two modules deployed to the same target, and unwinds them', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    for (const name of ['a', 'b']) {
+      await sandbox.write(`home/dotfiles/files/${name}/x`, name)
+      await sandbox.write(
+        `home/dotfiles/files/${name}/settings.json`,
+        JSON.stringify({ files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global' }] }),
+      )
+    }
+    await sandbox.write('home/.x', 'original')
+    const target = path.join(sandbox.home, '.x')
+
+    await runCli(sandbox, ['modules', 'deploy', 'a'])
+    const deployB = await runCli(sandbox, ['modules', 'deploy', 'b'])
+    expect(deployB.stdout).toContain(`(deployed, previous file moved to ${target}.old.1)`)
+    expect((await runCli(sandbox, ['modules', 'status', 'a'])).stdout).toContain(
+      '(not deployed: a link is in the way)',
+    )
+
+    await runCli(sandbox, ['modules', 'undeploy', 'b'])
+    expect(await readlink(target)).toBe(path.join(sandbox.repo, 'files/a/x'))
+    await runCli(sandbox, ['modules', 'undeploy', 'a'])
+    expect(await readFile(target, 'utf8')).toBe('original')
+  })
+
+  it('refuses to copy a folder containing a link loop', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/l/d/file', 'x')
+    await symlink('.', path.join(sandbox.repo, 'files/l/d/loop'))
+    await sandbox.write(
+      'home/dotfiles/files/l/settings.json',
+      JSON.stringify({ files: [{ source_path: 'd', target_path: 'd', deploy: 'local' }] }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', '--local', 'l'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('makes a loop')
+    expect(existsSync(path.join(sandbox.cwd, 'd'))).toBe(false)
+  })
+
+  it('keeps unknown keys of the state file', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({ version: 2, targets: {}, custom: 1 }),
+    )
+
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    const state = JSON.parse(
+      await readFile(path.join(sandbox.home, '.configfile/state.json'), 'utf8'),
+    )
+    expect(state.custom).toBe(1)
+  })
+
+  it('keeps a local copy an editor saved through a new file', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'zsh'])
+    // Editors such as vim save by writing a new file and renaming it over the old one.
+    await sandbox.write('cwd/a.tmp', 'edited')
+    await rename(path.join(sandbox.cwd, 'a.tmp'), path.join(sandbox.cwd, 'a'))
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--local', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.cwd, 'a'), 'utf8')).toBe('edited')
+    expect(existsSync(path.join(sandbox.cwd, 'b'))).toBe(false)
+  })
 
   it('warns about the deprecated "global" key', async () => {
     const sandbox = await createSandbox()
@@ -675,6 +859,19 @@ describe('scripts', () => {
     expect(await readFile(path.join(sandbox.root, 'ran'), 'utf8')).toBe('yes')
   })
 
+  it('removes its signal handlers once the script is done', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/scripts/quick.sh', 'true\n')
+    const counts = () =>
+      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'].map(s => process.listenerCount(s))
+    const before = counts()
+
+    await runCli(sandbox, ['scripts', 'run', 'quick'])
+
+    expect(counts()).toEqual(before)
+  })
+
   it('explains how to fix a non-executable script without extension', async () => {
     const sandbox = await createSandbox()
     await withScripts(sandbox)
@@ -841,6 +1038,37 @@ describe('init', () => {
       }
     },
   )
+
+  it('never lets a repository URL be read as a git option', async () => {
+    const sandbox = await createSandbox()
+    const pwned = path.join(sandbox.root, 'pwned')
+
+    const result = await runCli(sandbox, [
+      'init',
+      '--repo',
+      `--upload-pack=touch ${pwned}`,
+      '--folder',
+      '~/dotfiles',
+    ])
+
+    expect(result.code).not.toBe(0)
+    expect(existsSync(pwned)).toBe(false)
+  })
+
+  it('hides credentials of the repository URL and keeps the configuration private', async () => {
+    const sandbox = await createSandbox()
+    await createRemote(sandbox)
+    // An existing clone is reused, so no network access is needed.
+    git(sandbox.root, 'clone', '--quiet', path.join(sandbox.root, 'remote'), sandbox.repo)
+    const url = 'https://user:ghp_SECRET@github.com/acme/dotfiles.git'
+
+    const result = await runCli(sandbox, ['init', '--repo', url, '--folder', '~/dotfiles'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout + result.stderr).not.toContain('ghp_SECRET')
+    expect(result.stderr).toContain('The repository URL contains credentials')
+    expect((await stat(path.join(sandbox.home, '.configfilerc'))).mode & 0o777).toBe(0o600)
+  })
 
   it('asks before overwriting an existing configuration', async () => {
     const sandbox = await createSandbox()

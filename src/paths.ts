@@ -17,3 +17,14 @@ export function slugify(name: string): string {
     .replace(/ /g, '-')
     .replace(/[^\w-]+/g, '')
 }
+
+/** Whether `child` is `parent` or inside it (paths are compared as text). */
+export function contains(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+/** Where configfile keeps its own files. Deployments must never touch them. */
+export function configfilePaths(home: string): { rc: string; dir: string } {
+  return { rc: path.join(home, '.configfilerc'), dir: path.join(home, '.configfile') }
+}

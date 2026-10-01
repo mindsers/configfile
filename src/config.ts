@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { CliError, NotInitializedError } from './errors.js'
+import { writeFileAtomic } from './fsutil.js'
 import { resolveUserPath } from './paths.js'
 
 export interface Config {
@@ -85,7 +86,8 @@ export class ConfigStore {
     }
 
     try {
-      await writeFile(this.path, `${JSON.stringify(next, null, 2)}\n`)
+      // Readable by the user only: the repository URL may contain credentials.
+      await writeFileAtomic(this.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
     } catch (error) {
       throw new CliError(
         `Cannot save the configuration to ${this.path}: ${(error as Error).message}`,
