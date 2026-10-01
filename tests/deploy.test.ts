@@ -8,6 +8,7 @@ import {
   rename,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
@@ -504,6 +505,8 @@ describe('undeployFile', () => {
   it('does not restore a backup that was replaced since it was made', async () => {
     const { sandbox, target, context, file } = await setup()
     await sandbox.write('home/config/.zshrc', 'mine')
+    // An old modification time: the replacement differs even if it reuses the inode number.
+    await utimes(target, 1_000_000, 1_000_000)
     await deployFile(file('global'), context)
     await rm(`${target}.old`)
     await sandbox.write('home/config/.zshrc.old', 'someone else')

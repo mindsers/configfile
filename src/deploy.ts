@@ -432,7 +432,12 @@ async function recordDeployed(file: ModuleFile, record: DeploymentRecord): Promi
 async function moveAside(target: string, backup: string, record: DeploymentRecord): Promise<void> {
   const stats = await lstatOrNull(target)
   if (stats == null) return
-  await record.addBackup(target, { path: backup, identity: identityOf(stats), kind: kindOf(stats) })
+  await record.addBackup(target, {
+    path: backup,
+    identity: identityOf(stats),
+    kind: kindOf(stats),
+    modified: stats.mtimeMs,
+  })
   try {
     await rename(target, backup)
   } catch (error) {
@@ -492,9 +497,11 @@ async function checkLatestBackup(
     throw new CliError(`Cannot check the backup ${backup.path}: ${messageOf(error)}`)
   })
   if (stats == null) return { path: backup.path, status: 'missing' }
-  if (backup.identity != null && !sameIdentity(backup.identity, identityOf(stats))) {
-    return { path: backup.path, status: 'changed' }
-  }
+  const replaced =
+    (backup.identity != null && !sameIdentity(backup.identity, identityOf(stats))) ||
+    (backup.kind != null && backup.kind !== kindOf(stats)) ||
+    (backup.modified != null && backup.modified !== stats.mtimeMs)
+  if (replaced) return { path: backup.path, status: 'changed' }
   return { path: backup.path, status: 'ok' }
 }
 

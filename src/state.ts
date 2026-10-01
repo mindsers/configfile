@@ -19,6 +19,12 @@ export interface Backup {
   /** `null` only for backups recorded before 1.0 (not verifiable). */
   readonly identity: Identity | null
   readonly kind: 'file' | 'folder' | 'link' | null
+  /**
+   * Modification time when moved aside (a rename keeps it). With the
+   * identity, it tells the backup from a new file that reused its inode
+   * number, which some file systems do as soon as a file is deleted.
+   */
+  readonly modified?: number | null
 }
 
 /** What configfile put at a target. */

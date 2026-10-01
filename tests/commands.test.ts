@@ -416,6 +416,7 @@ describe('modules status, dry run and undeploy', () => {
               path: `${zshrc}.old`,
               identity: { dev: expect.any(Number), ino: expect.any(Number) },
               kind: 'file',
+              modified: expect.any(Number),
             },
           ],
         },
