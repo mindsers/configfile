@@ -18,8 +18,8 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { COMMANDS } from '../src/history.js'
-import { buildProgram } from '../src/program.js'
+import { COMMANDS } from '../src/history.ts'
+import { buildProgram } from '../src/program.ts'
 import {
   createContext,
   createRemote,
@@ -28,7 +28,7 @@ import {
   readHistory,
   runCli,
   type Sandbox,
-} from './helpers.js'
+} from './helpers.ts'
 
 async function withModule(sandbox: Sandbox) {
   await sandbox.configure()

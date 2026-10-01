@@ -2,11 +2,11 @@ import type { Dirent, Stats } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
-import { ConfigStore } from './config.js'
-import type { Context } from './context.js'
-import { CliError } from './errors.js'
-import { describeJsonError } from './fsutil.js'
-import { configfilePaths, contains, resolveUserPath, slugify } from './paths.js'
+import { ConfigStore } from './config.ts'
+import type { Context } from './context.ts'
+import { CliError } from './errors.ts'
+import { describeJsonError } from './fsutil.ts'
+import { configfilePaths, contains, resolveUserPath, slugify } from './paths.ts'
 
 export interface ModuleFile {
   /** Absolute path of the file inside its module folder. */
@@ -426,7 +426,7 @@ async function readDirOrFail(dir: string): Promise<Dirent[]> {
     if (code === 'ENOTDIR') {
       throw new CliError(`${dir} is not a folder.`)
     }
-    throw new CliError(`Cannot read ${dir}: ${(error as Error).message}`)
+    throw new CliError(`Cannot read ${dir}: ${(error as Error).message}`, { cause: error })
   }
 
   return entries.sort((a, b) => a.name.localeCompare(b.name))

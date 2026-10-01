@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Command, CommanderError } from 'commander'
 import { describe, expect, it } from 'vitest'
 
-import { CliError } from '../src/errors.js'
+import { CliError } from '../src/errors.ts'
 import {
   describeInvocation,
   History,
@@ -13,8 +13,8 @@ import {
   parseHistoryLine,
   redactCredentials,
   shouldRecord,
-} from '../src/history.js'
-import { createSandbox } from './helpers.js'
+} from '../src/history.ts'
+import { createSandbox } from './helpers.ts'
 
 const run = (overrides: Partial<Parameters<History['save']>[0]> = {}) => ({
   time: new Date('2026-10-01T09:00:00.000Z'),

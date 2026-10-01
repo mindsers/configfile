@@ -1,16 +1,17 @@
 import { readFileSync } from 'node:fs'
+import { inspect } from 'node:util'
 
 import { Command, CommanderError } from 'commander'
 
-import { registerHistoryCommand } from './commands/history.js'
-import { registerInitCommand } from './commands/init.js'
-import { registerModulesCommand } from './commands/modules.js'
-import { registerScriptsCommand } from './commands/scripts.js'
-import { registerUpdateCommand } from './commands/update.js'
-import type { Context } from './context.js'
-import { CliError, isPromptExit } from './errors.js'
-import { messageOf } from './fsutil.js'
-import { describeInvocation, type Invocation, shouldRecord } from './history.js'
+import { registerHistoryCommand } from './commands/history.ts'
+import { registerInitCommand } from './commands/init.ts'
+import { registerModulesCommand } from './commands/modules.ts'
+import { registerScriptsCommand } from './commands/scripts.ts'
+import { registerUpdateCommand } from './commands/update.ts'
+import type { Context } from './context.ts'
+import { CliError, isPromptExit } from './errors.ts'
+import { messageOf } from './fsutil.ts'
+import { describeInvocation, type Invocation, shouldRecord } from './history.ts'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
   version: string
@@ -88,6 +89,10 @@ async function execute(
 
     if (error instanceof CliError) {
       ctx.output.error(error.message)
+      // The error behind it (a system error, for example), for bug reports.
+      if (process.env.DEBUG != null && error.cause !== undefined) {
+        ctx.output.stderr.write(`Caused by: ${inspect(error.cause)}\n`)
+      }
       return { code: error.exitCode, error }
     }
 

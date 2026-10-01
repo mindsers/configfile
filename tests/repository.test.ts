@@ -3,9 +3,9 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { CliError } from '../src/errors.js'
-import { listModules, listScripts, type Module } from '../src/repository.js'
-import { createSandbox, type Sandbox } from './helpers.js'
+import { CliError } from '../src/errors.ts'
+import { listModules, listScripts, type Module } from '../src/repository.ts'
+import { createSandbox, type Sandbox } from './helpers.ts'
 
 const settings = (files: unknown) => JSON.stringify({ files })
 

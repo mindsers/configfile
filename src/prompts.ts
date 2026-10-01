@@ -1,7 +1,7 @@
 import { confirm, input } from '@inquirer/prompts'
 
-import type { Prompts } from './context.js'
-import { CliError } from './errors.js'
+import type { Prompts } from './context.ts'
+import { CliError } from './errors.ts'
 
 export const interactivePrompts: Prompts = { interactive: true, confirm, input }
 

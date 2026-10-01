@@ -4,12 +4,12 @@ import path from 'node:path'
 
 import type { Command } from 'commander'
 
-import { ConfigStore } from '../config.js'
-import type { Context } from '../context.js'
-import { CliError } from '../errors.js'
-import { redactUrl } from '../output.js'
-import { configfilePaths, resolveUserPath } from '../paths.js'
-import { gitClone } from '../process.js'
+import { ConfigStore } from '../config.ts'
+import type { Context } from '../context.ts'
+import { CliError } from '../errors.ts'
+import { redactUrl } from '../output.ts'
+import { configfilePaths, resolveUserPath } from '../paths.ts'
+import { gitClone } from '../process.ts'
 
 interface InitOptions {
   force?: boolean
@@ -97,7 +97,9 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     case 'missing':
     case 'empty':
       await mkdir(folderPath, { recursive: true }).catch(error => {
-        throw new CliError(`Cannot create ${folderPath}: ${(error as Error).message}`)
+        throw new CliError(`Cannot create ${folderPath}: ${(error as Error).message}`, {
+          cause: error,
+        })
       })
       output.info(`Cloning ${redactUrl(repoUrl)} into ${folderPath}…`)
       await gitClone(repoUrl, folderPath, ctx)
@@ -111,6 +113,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     throw new CliError(
       `${(error as Error).message} The repository is in ${folderPath}: fix the problem and run ` +
         '"configfile init" again, it will reuse it.',
+      { cause: error },
     )
   }
   ctx.history.record({ kind: 'configured', file: store.path })
@@ -119,7 +122,7 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
 
 async function inspectFolder(folderPath: string) {
   const fail = (error: unknown): never => {
-    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`)
+    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`, { cause: error })
   }
 
   const link = await lstat(folderPath).catch(error => {

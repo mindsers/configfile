@@ -22,11 +22,11 @@ import {
   inspectFile,
   planDeploy,
   undeployFile,
-} from '../src/deploy.js'
-import { CliError } from '../src/errors.js'
-import type { ModuleFile } from '../src/repository.js'
-import { DeploymentRecord } from '../src/state.js'
-import { createSandbox, type Sandbox } from './helpers.js'
+} from '../src/deploy.ts'
+import { CliError } from '../src/errors.ts'
+import type { ModuleFile } from '../src/repository.ts'
+import { DeploymentRecord } from '../src/state.ts'
+import { createSandbox, type Sandbox } from './helpers.ts'
 
 const isRoot = process.getuid?.() === 0
 

@@ -1,7 +1,7 @@
 import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { CliError } from './errors.js'
+import { CliError } from './errors.ts'
 import {
   describeJsonError,
   type Identity,
@@ -11,9 +11,9 @@ import {
   realpathOfExisting,
   sameIdentity,
   writeFileAtomic,
-} from './fsutil.js'
-import { configfilePaths } from './paths.js'
-import type { Entry } from './repository.js'
+} from './fsutil.ts'
+import { configfilePaths } from './paths.ts'
+import type { Entry } from './repository.ts'
 
 /** A file configfile moved aside, as it was when moved. */
 export interface Backup {
@@ -83,7 +83,7 @@ export class DeploymentRecord {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return new DeploymentRecord(filePath, {})
       }
-      throw new CliError(`Cannot read ${filePath}: ${messageOf(error)}`)
+      throw new CliError(`Cannot read ${filePath}: ${messageOf(error)}`, { cause: error })
     }
 
     let state: unknown
@@ -164,7 +164,7 @@ export class DeploymentRecord {
       await mkdir(path.dirname(this.path), { recursive: true, mode: 0o700 })
       await writeFileAtomic(this.path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
     } catch (error) {
-      throw new CliError(`Cannot save ${this.path}: ${messageOf(error)}`)
+      throw new CliError(`Cannot save ${this.path}: ${messageOf(error)}`, { cause: error })
     }
     this.#state = state
   }

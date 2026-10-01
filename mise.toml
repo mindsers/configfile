@@ -1,0 +1,7 @@
+# Tool versions for development and CI: run `mise install` once in the repository.
+# Node.js is the oldest version configfile supports; CI also tests newer ones.
+[tools]
+node = "24.21.0"
+pnpm = "12.8.1"
+actionlint = "1.7.12"
+zizmor = "1.30.1"

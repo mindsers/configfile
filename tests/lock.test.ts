@@ -4,8 +4,8 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { withLock } from '../src/lock.js'
-import { createSandbox } from './helpers.js'
+import { withLock } from '../src/lock.ts'
+import { createSandbox } from './helpers.ts'
 
 describe('withLock', () => {
   it('runs the task while holding ~/.configfile/lock, then releases it', async () => {

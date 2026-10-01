@@ -1,11 +1,11 @@
 import type { Command } from 'commander'
 
-import { ConfigStore } from '../config.js'
-import type { Context } from '../context.js'
-import { CliError } from '../errors.js'
-import { plural } from '../output.js'
-import { runScript } from '../process.js'
-import { listScripts, type Script } from '../repository.js'
+import { ConfigStore } from '../config.ts'
+import type { Context } from '../context.ts'
+import { CliError } from '../errors.ts'
+import { plural } from '../output.ts'
+import { runScript } from '../process.ts'
+import { listScripts, type Script } from '../repository.ts'
 
 export function registerScriptsCommand(program: Command, ctx: Context): void {
   const scripts = program
@@ -68,7 +68,7 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
   ctx.history.record({ kind: 'script', name: script.name, file: script.path, exitCode: code })
 
   if (code !== 0) {
-    throw new CliError(`Script "${name}" exited with code ${code}.`, code)
+    throw new CliError(`Script "${name}" exited with code ${code}.`, { exitCode: code })
   }
 
   output.success(`Script "${name}" finished.`)

@@ -8,10 +8,13 @@ type Style = Parameters<typeof styleText>[0]
  * NO_COLOR, NODE_DISABLE_COLORS and FORCE_COLOR.
  */
 export class Output {
-  constructor(
-    readonly stdout: NodeJS.WritableStream,
-    readonly stderr: NodeJS.WritableStream,
-  ) {}
+  readonly stdout: NodeJS.WritableStream
+  readonly stderr: NodeJS.WritableStream
+
+  constructor(stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream) {
+    this.stdout = stdout
+    this.stderr = stderr
+  }
 
   /** Same messages, all on stderr: for commands whose stdout belongs to someone else. */
   toStderr(): Output {

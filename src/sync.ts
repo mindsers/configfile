@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
-import { CliError } from './errors.js'
-import { writeFileAtomic } from './fsutil.js'
-import { git, gitOutput } from './process.js'
+import { CliError } from './errors.ts'
+import { writeFileAtomic } from './fsutil.ts'
+import { git, gitOutput } from './process.ts'
 
 export interface SyncResult {
   /** The remote branch the mirror follows, such as `origin/main`. */

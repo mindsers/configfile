@@ -4,12 +4,12 @@ import path from 'node:path'
 
 import { type Command, CommanderError } from 'commander'
 
-import { ConfigStore, DEFAULT_HISTORY_SIZE } from './config.js'
-import type { KeptState } from './deploy.js'
-import { CliError, isPromptExit } from './errors.js'
-import { errnoCode, lstatOrNull, messageOf } from './fsutil.js'
-import { redactUrl } from './output.js'
-import { configfilePaths } from './paths.js'
+import { ConfigStore, DEFAULT_HISTORY_SIZE } from './config.ts'
+import type { KeptState } from './deploy.ts'
+import { CliError, isPromptExit } from './errors.ts'
+import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
+import { redactUrl } from './output.ts'
+import { configfilePaths } from './paths.ts'
 
 /** At most this many changes are written per run; the rest are counted. */
 const MAX_CHANGES = 1000
@@ -352,6 +352,7 @@ export class History {
       constants.O_RDWR | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW,
       0o600,
     )
+    // Not `await using`: when both fail, the write error must be the one reported.
     let failure: unknown = null
     try {
       // A line left unfinished (a full disk, for example) must not swallow this one.
@@ -412,19 +413,12 @@ export class History {
 
 /** Reads a file without following a symbolic link in its place. */
 async function readRegularFile(file: string): Promise<string> {
-  let handle: Awaited<ReturnType<typeof open>>
-  try {
-    handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
-  } catch (error) {
+  await using handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch(error => {
     if (errnoCode(error) === 'ELOOP') throw new Error('it is a symbolic link, not a file')
     throw error
-  }
-  try {
-    if (!(await handle.stat()).isFile()) throw new Error('it is not a file')
-    return await handle.readFile('utf8')
-  } finally {
-    await handle.close()
-  }
+  })
+  if (!(await handle.stat()).isFile()) throw new Error('it is not a file')
+  return await handle.readFile('utf8')
 }
 
 /**

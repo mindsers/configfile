@@ -11,6 +11,8 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/cli.ts'],
+      // Just under the current coverage: a drop fails `pnpm test:coverage`.
+      thresholds: { statements: 90, branches: 87, functions: 88, lines: 91 },
     },
   },
 })
