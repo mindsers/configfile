@@ -9,7 +9,7 @@ import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
-import { gitClone } from '../process.ts'
+import { ensureGit, gitClone } from '../process.ts'
 
 interface InitOptions {
   force?: boolean
@@ -56,6 +56,18 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     }
   }
 
+  // configfile's copy is a mirror it keeps in sync, not a working copy: by
+  // default it lives in configfile's own folder. An existing one is kept.
+  const own = configfilePaths(ctx.home)
+  const folderPath =
+    options.folder != null
+      ? resolveUserPath(options.folder.trim(), ctx)
+      : (previous.folderPath ?? own.dotfiles)
+  const folder = await inspectFolder(folderPath)
+  // A clone needs git: checked before asking for the URL, so a missing git is
+  // found before the URL is typed and before the folder to clone into is created.
+  if (folder === 'missing' || folder === 'empty') await ensureGit()
+
   const repoUrl = (
     options.repo ??
     (await prompts.input({
@@ -72,18 +84,11 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     )
   }
 
-  // configfile's copy is a mirror it keeps in sync, not a working copy: by
-  // default it lives in configfile's own folder. An existing one is kept.
-  const own = configfilePaths(ctx.home)
-  const folderPath =
-    options.folder != null
-      ? resolveUserPath(options.folder.trim(), ctx)
-      : (previous.folderPath ?? own.dotfiles)
   if (folderPath === own.dotfiles) {
     await mkdir(own.dir, { recursive: true, mode: 0o700 })
   }
 
-  switch (await inspectFolder(folderPath)) {
+  switch (folder) {
     case 'not-a-directory':
       throw new CliError(`${folderPath} exists and is not a folder.`)
     case 'not-empty':
