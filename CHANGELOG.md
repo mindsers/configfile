@@ -55,7 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local copies follow symbolic links: a copy never points into the repository.
 - `settings.json` files written for configfile 0.3.1 (a plain list) are deprecated; put the list
   in a `"files"` key.
-- `~/.configfilerc` is only readable by its owner.
+- `~/.configfilerc` is only readable by its owner, since the repository URL may contain credentials.
+  A file other users can read, such as one written by 0.3.1, is made private when configfile
+  reads it, with a warning.
 - `init` reuses a folder that already contains the repository.
 - `init` only asks for the repository URL and clones it into `~/.configfile/dotfiles`, a copy
   configfile keeps in sync; `--folder` chooses another location.

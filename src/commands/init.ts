@@ -30,7 +30,7 @@ export function registerInitCommand(program: Command, ctx: Context): void {
 
 async function init(options: InitOptions, ctx: Context): Promise<void> {
   const { output, prompts } = ctx
-  const store = new ConfigStore(ctx.home)
+  const store = new ConfigStore(ctx.home, { warn: message => output.warn(message) })
   const previous = await store.readPartial()
 
   if (!prompts.interactive) {

@@ -75,7 +75,9 @@ type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void
 export async function loadRepository(
   ctx: Context,
 ): Promise<{ repository: string; modules: Module[] }> {
-  const { folderPath } = await new ConfigStore(ctx.home).read()
+  const { folderPath } = await new ConfigStore(ctx.home, {
+    warn: message => ctx.output.warn(message),
+  }).read()
   const modules = await listModules(folderPath, {
     home: ctx.home,
     cwd: ctx.cwd,

@@ -55,6 +55,8 @@ export async function createSandbox(): Promise<Sandbox> {
       await writeFile(
         path.join(home, '.configfilerc'),
         JSON.stringify({ repo_url: null, folder_path: sandbox.repo, ...extra }),
+        // As init writes it: a configuration others can read is made private, with a warning.
+        { mode: 0o600 },
       )
     },
   }

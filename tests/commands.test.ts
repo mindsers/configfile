@@ -1212,6 +1212,21 @@ describe('files the repository no longer deploys', () => {
 })
 
 describe('scripts', () => {
+  it('warns once about a configuration other users can read, and makes it private', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/scripts/ok.sh')
+    await chmod(path.join(sandbox.home, '.configfilerc'), 0o644)
+
+    const first = await runCli(sandbox, ['scripts', 'list'])
+    const second = await runCli(sandbox, ['scripts', 'list'])
+
+    expect(first.code).toBe(0)
+    expect(first.stderr).toContain('was readable by other users. It is now only readable by you.')
+    expect(second.stderr).toBe('')
+    expect((await stat(path.join(sandbox.home, '.configfilerc'))).mode & 0o777).toBe(0o600)
+  })
+
   async function withScripts(sandbox: Sandbox) {
     await sandbox.configure()
     await sandbox.write(

@@ -128,7 +128,7 @@ Scripts can be written in any language:
 
 *configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the [history](#history) (`history.jsonl`), the lock, and saved local changes (`saved/`).
 
-`~/.configfilerc` is a JSON file:
+`~/.configfilerc` is a JSON file, readable by you only: the repository URL may contain credentials, so if other users can read it, *configfile* makes it private and warns you.
 
 ```json
 {
