@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `"none"` to keep a file in the repository without deploying it.
 - Arguments can be passed to scripts: `configfile scripts run <name> -- <arguments>`.
 - A script can be a folder containing an `index` file.
+- A script can have a version for macOS or Linux (`setup.macos.sh`, `setup.linux.sh`), used instead
+  of the generic one (`setup.sh`) on that system. In 0.3.1, `setup.macos.sh` was simply another
+  `setup` script.
 - A history of what configfile changed, when, and whether it failed, in
   `~/.configfile/history.jsonl`, and the `history` command to see it
   ([#36](https://github.com/mindsers/configfile/issues/36)).

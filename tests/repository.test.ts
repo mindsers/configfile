@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { CliError } from '../src/errors.ts'
-import { listModules, listScripts, type Module } from '../src/repository.ts'
+import { listModules, listScripts, type Module, type Script } from '../src/repository.ts'
 import { createSandbox, type Sandbox } from './helpers.ts'
 
 const settings = (files: unknown) => JSON.stringify({ files })
@@ -24,9 +24,13 @@ function usable(module: Module | undefined) {
   return module
 }
 
-async function scriptsOf(sandbox: Sandbox, extensions: readonly string[] | null = null) {
+async function scriptsOf(
+  sandbox: Sandbox,
+  extensions: readonly string[] | null = null,
+  platform: NodeJS.Platform = 'linux',
+) {
   const warnings: string[] = []
-  const scripts = await listScripts(sandbox.repo, extensions, {
+  const scripts = await listScripts(sandbox.repo, extensions, platform, {
     warn: message => warnings.push(message),
   })
   return { scripts, warnings }
@@ -327,7 +331,7 @@ describe('listScripts', () => {
   it('lists every file by default, named up to the first dot (as in 0.3)', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/scripts/setup.sh')
-    await sandbox.write('home/dotfiles/scripts/install.macos.js')
+    await sandbox.write('home/dotfiles/scripts/install.node.js')
     await sandbox.write('home/dotfiles/scripts/bootstrap')
     await sandbox.write('home/dotfiles/scripts/tool.py')
 
@@ -335,7 +339,7 @@ describe('listScripts', () => {
 
     expect(scripts.map(script => [script.name, script.file])).toEqual([
       ['bootstrap', 'bootstrap'],
-      ['install', 'install.macos.js'],
+      ['install', 'install.node.js'],
       ['setup', 'setup.sh'],
       ['tool', 'tool.py'],
     ])
@@ -356,6 +360,57 @@ describe('listScripts', () => {
       'bootstrap',
       path.join('macos', 'index.sh'),
       'setup.sh',
+    ])
+  })
+
+  it("uses this system's version of a script instead of the generic one", async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/scripts/setup.sh')
+    await sandbox.write('home/dotfiles/scripts/setup.macos.sh')
+    await sandbox.write('home/dotfiles/scripts/setup.linux.py')
+    await sandbox.write('home/dotfiles/scripts/clean.linux.sh')
+    await sandbox.write('home/dotfiles/scripts/brew.macos/index.sh')
+
+    const files = (scripts: Script[]) => scripts.map(script => [script.name, script.file])
+
+    const mac = await scriptsOf(sandbox, null, 'darwin')
+    expect(files(mac.scripts)).toEqual([
+      ['brew', path.join('brew.macos', 'index.sh')],
+      ['setup', 'setup.macos.sh'],
+    ])
+    expect(mac.warnings).toEqual([])
+
+    const linux = await scriptsOf(sandbox, null, 'linux')
+    expect(files(linux.scripts)).toEqual([
+      ['clean', 'clean.linux.sh'],
+      ['setup', 'setup.linux.py'],
+    ])
+    expect(linux.warnings).toEqual([])
+  })
+
+  it('falls back to the generic script when there is no version for this system', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/scripts/setup.sh')
+    await sandbox.write('home/dotfiles/scripts/setup.macos.sh')
+    await sandbox.write('home/dotfiles/scripts/setup.constructor.sh')
+
+    const { scripts, warnings } = await scriptsOf(sandbox, null, 'linux')
+
+    // "constructor" is not a system: setup.constructor.sh is another generic setup.
+    expect(scripts.map(script => script.file)).toEqual(['setup.constructor.sh'])
+    expect(warnings).toEqual(['"setup.sh" is ignored: another script is already named "setup".'])
+  })
+
+  it('warns about two versions of a script for the same system', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/scripts/setup.macos.py')
+    await sandbox.write('home/dotfiles/scripts/setup.macos.sh')
+
+    const { scripts, warnings } = await scriptsOf(sandbox, null, 'darwin')
+
+    expect(scripts.map(script => script.file)).toEqual(['setup.macos.py'])
+    expect(warnings).toEqual([
+      '"setup.macos.sh" is ignored: another script is already named "setup".',
     ])
   })
 

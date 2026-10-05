@@ -1381,7 +1381,7 @@ describe('scripts', () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     await sandbox.write(
-      'home/dotfiles/scripts/setup.macos.py',
+      'home/dotfiles/scripts/setup.local.py',
       `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(`${sandbox.root}/ran`)}, 'yes')\n`,
       0o644,
     )

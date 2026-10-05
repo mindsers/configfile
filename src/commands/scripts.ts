@@ -31,7 +31,7 @@ export function registerScriptsCommand(program: Command, ctx: Context): void {
 async function loadScripts(ctx: Context): Promise<Script[]> {
   const config = await new ConfigStore(ctx.home).read()
 
-  return listScripts(config.folderPath, config.scriptExtensions, {
+  return listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
     warn: message => ctx.output.warn(message),
   })
 }

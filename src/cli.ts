@@ -11,6 +11,7 @@ const home = os.homedir()
 process.exitCode = await main(process.argv.slice(2), {
   home,
   cwd: process.cwd(),
+  platform: process.platform,
   output: new Output(process.stdout, process.stderr),
   prompts: process.stdin.isTTY ? interactivePrompts : nonInteractivePrompts,
   history: new History(home),

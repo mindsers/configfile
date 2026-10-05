@@ -83,6 +83,8 @@ export interface CliOptions {
   interactive?: boolean
   /** The current folder. Defaults to `<sandbox>/cwd`. */
   cwd?: string
+  /** The system configfile believes it runs on. Defaults to `linux`, whatever the host. */
+  platform?: NodeJS.Platform
 }
 
 /**
@@ -93,7 +95,7 @@ export interface CliOptions {
 export function createContext(
   sandbox: Sandbox,
   answers: Array<boolean | string | Error> = [],
-  { interactive = true, cwd = sandbox.cwd }: CliOptions = {},
+  { interactive = true, cwd = sandbox.cwd, platform = 'linux' }: CliOptions = {},
 ): FakeContext {
   const stdout = new Capture()
   const stderr = new Capture()
@@ -118,6 +120,7 @@ export function createContext(
   return {
     home: sandbox.home,
     cwd,
+    platform,
     output: new Output(stdout, stderr),
     prompts,
     history: new History(sandbox.home),

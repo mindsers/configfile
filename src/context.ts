@@ -12,6 +12,8 @@ export interface Prompts {
 export interface Context {
   readonly home: string
   readonly cwd: string
+  /** The system configfile runs on, which picks the scripts made for it (see `listScripts`). */
+  readonly platform: NodeJS.Platform
   readonly output: Output
   readonly prompts: Prompts
   /** What this run changes, saved to `~/.configfile/history.jsonl` when it ends if it is recorded (see `shouldRecord`). */
