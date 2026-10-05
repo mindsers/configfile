@@ -1,6 +1,6 @@
 name: Publish
 
-# Publishes to npm when a version tag (such as 1.0.0) is pushed on a commit of
+# Publishes to npm when a version tag (such as v1.0.0) is pushed on a commit of
 # master, the release branch of git-flow. Uses npm trusted publishing: no npm
 # token is stored, and the package gets a provenance statement. Set it up once
 # on npmjs.com (package settings > Trusted publishing): repository
@@ -8,7 +8,7 @@ name: Publish
 
 on:
   push:
-    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
 
 permissions:
   contents: read
@@ -37,8 +37,8 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/master || {
             echo "::error::$TAG is not on master."; exit 1; }
           version=$(node -p "require('./package.json').version")
-          [ "$version" = "$TAG" ] || {
-            echo "::error::package.json is $version, the tag is $TAG."; exit 1; }
+          [ "v$version" = "$TAG" ] || {
+            echo "::error::package.json is $version, the tag is $TAG (expected v$version)."; exit 1; }
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       # npm (not pnpm) publishes: trusted publishing needs npm 11.5.1 or later.
