@@ -4,13 +4,19 @@ Configfile is a command line application that helps developers manage their deve
 
 ## Getting Started
 
-To install Configfile:
+To install Configfile on macOS or Linux, with [Homebrew](https://brew.sh) (it also installs Node.js and git):
+
+```bash
+brew install mindsers/tap/configfile
+```
+
+Or with npm, when Node.js 24.11 or later and git are installed:
 
 ```bash
 npm install --global configfile
 ```
 
-macOS or Linux, Node.js 24.11 or later and git are required.
+Or with [mise](https://mise.jdx.dev): `mise use --global npm:configfile`.
 
 Generating first configuration:
 
