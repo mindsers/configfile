@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deploying refuses targets inside the dotfiles repository or the module, targets containing
   them, and configfile's own files, whatever the path used to reach them.
 - A `source_path` must stay inside its module folder.
+- With `script_extensions`, a file is a script only when its extension is one of the list (`""`
+  means no extension). 0.3.1 kept any file whose name contained one of them.
+- `modules deploy` and `modules undeploy` fail on a module name that does not exist, instead of
+  doing nothing.
 - Local copies follow symbolic links: a copy never points into the repository.
 - `settings.json` files written for configfile 0.3.1 (a plain list) are deprecated; put the list
   in a `"files"` key.

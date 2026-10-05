@@ -143,7 +143,7 @@ Scripts can be written in any language:
 
 *configfile* records what each command changed, when, and whether it failed, in `~/.configfile/history.jsonl`: one JSON line per run of `init`, `modules deploy`, `modules undeploy`, `update` and `scripts run` (dry runs and usage errors excepted), and per unexpected error of any command. Each line has the time, the *configfile* version, the command and its options, the current folder, the exit code, the error message, and the changes: files linked, copied, moved aside to `.old`, removed, restored, kept or skipped, syncs (from which commit to which, and saved patches), scripts and their exit codes.
 
-Script arguments, environment variables and file contents are never recorded. In URLs, user names and passwords (`https://user:token@host`) and query parameters that look like secrets (`?private_token=…`) are hidden. Paths are recorded in full, so they include your user name. When *configfile* creates the file, only its owner can read it. A run stopped by a signal (Ctrl+C outside a question) is not recorded.
+Script arguments, environment variables and file contents are never recorded. In URLs, user names and passwords (`https://user:token@host`) and query parameters that look like secrets (`?private_token=…`) are hidden. Paths are recorded in full, so they include your user name. When *configfile* creates the file, only its owner can read it. A run stopped by a signal (Ctrl+C outside a question) is not recorded, unless the signal comes while a script or git runs: *configfile* then leaves it to that program, and records the run with its exit code.
 
 `configfile history` shows the last runs:
 
@@ -175,9 +175,9 @@ When the file reaches `history_max_size` (1MB by default; a number of bytes, or 
 - A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.
 - Scripts keep their names (up to the first dot) and every file of `scripts/` is still a script. They are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
 - Targets inside the dotfiles repository, or containing it, are now refused.
-- `modules undeploy` only removes what 1.0 or later deployed, and only restores backups it made (recorded in `~/.configfile/state.json`): local copies and `.old` files made by 0.3 stay where they are.
+- `modules undeploy` also removes the links made by 0.3 that point to the repository, but it only restores the backups it made itself (recorded in `~/.configfile/state.json`): the `.old` files made by 0.3 are not put back, and local copies made by 0.3 are kept.
 - A `source_path` must stay inside its module folder.
-- `init` clones into `~/.configfile/dotfiles` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (your previous files come back), then `configfile init --force --repo <url> --folder ~/.configfile/dotfiles`, then `configfile modules deploy --all` (links now point to the copy).
+- `init` clones into `~/.configfile/dotfiles` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (files that 1.0 moved aside come back; links made by 0.3 are removed, and their `.old` files stay where they are), then `configfile init --force --repo <url> --folder ~/.configfile/dotfiles`, then `configfile modules deploy --all` (links now point to the copy).
 - With `script_extensions` set, only files with one of these extensions are scripts, and `""` means files without extension (0.3 matched any file containing the text).
 - Commands now exit with a non-zero code on failure.
 
