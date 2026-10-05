@@ -71,7 +71,13 @@ export class ConfigStore {
     const partial: { repoUrl?: string; folderPath?: string } = {}
 
     if (typeof raw?.repo_url === 'string') partial.repoUrl = raw.repo_url
-    if (typeof raw?.folder_path === 'string') partial.folderPath = raw.folder_path
+    if (typeof raw?.folder_path === 'string' && raw.folder_path.trim() !== '') {
+      // Resolved like `read` does: "~/dotfiles" must not become a folder named "~".
+      partial.folderPath = resolveUserPath(raw.folder_path.trim(), {
+        home: this.#home,
+        cwd: this.#home,
+      })
+    }
 
     return partial
   }

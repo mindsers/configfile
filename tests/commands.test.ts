@@ -1537,6 +1537,22 @@ describe('init', () => {
     expect((await readConfig(sandbox)).folder_path).toBe(remote)
   })
 
+  it('reuses a hand-edited folder_path starting with ~ when run again', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+    await sandbox.configure({ repo_url: remote, folder_path: '~/dotfiles' })
+
+    const result = await runCli(sandbox, ['init', '-f', '--repo', remote], [], {
+      interactive: false,
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain('already contains a git repository')
+    expect((await readConfig(sandbox)).folder_path).toBe(sandbox.repo)
+    expect(existsSync(path.join(sandbox.cwd, '~'))).toBe(false)
+  })
+
   it('does not save the configuration when the folder is not usable', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/something')

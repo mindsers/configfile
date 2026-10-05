@@ -110,6 +110,11 @@ describe('ConfigStore', () => {
     await writeFile(store.path, '{"repo_url": "u"}')
     await expect(store.readPartial()).resolves.toEqual({ repoUrl: 'u' })
 
+    for (const folder of ['~/dotfiles', 'dotfiles']) {
+      await writeFile(store.path, JSON.stringify({ folder_path: folder }))
+      await expect(store.readPartial()).resolves.toEqual({ folderPath: `${home}/dotfiles` })
+    }
+
     await writeFile(store.path, 'garbage')
     await expect(store.readPartial()).resolves.toEqual({})
   })
