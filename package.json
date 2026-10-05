@@ -1,6 +1,6 @@
 {
   "name": "configfile",
-  "version": "0.3.1",
+  "version": "1.0.0",
   "description": "Manage your dotfiles and setup scripts from a git repository.",
   "keywords": [
     "dotfiles",
