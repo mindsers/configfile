@@ -107,14 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The project adopt a new name: **configfile** instead of **configfiles**.
   **configfiles** is already reserved on npm.
 
-## 0.1.0 - 2017-09-25
+## [0.1.0] - 2017-09-25
 ### Added
 - The `init` command to initialize configuration files in the user session.
 - The `deploy` command to deploy modules of custom and saved configuration files.
 - The `run` command to run custom and saved scripts. Scripts can be write in all languages.
 - The README file to give first information on the project (installation, usage, etc.).
 
-[Unreleased]: https://github.com/mindsers/configfile/tree/develop
+[Unreleased]: https://github.com/mindsers/configfile/compare/1.0.0...HEAD
 [1.0.0]: https://github.com/mindsers/configfile/tree/1.0.0
 [0.3.1]: https://github.com/mindsers/configfile/tree/0.3.1
 [0.3.0]: https://github.com/mindsers/configfile/tree/0.3.0
