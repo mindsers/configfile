@@ -5,7 +5,13 @@ export interface Prompts {
   /** `false` when questions cannot be asked (stdin is not a terminal). */
   readonly interactive: boolean
   confirm(options: { message: string; default?: boolean }): Promise<boolean>
-  input(options: { message: string; default?: string; required?: boolean }): Promise<string>
+  /** `validate` returns `true`, or why the answer is refused: the question is then asked again. */
+  input(options: {
+    message: string
+    default?: string
+    required?: boolean
+    validate?: (value: string) => true | string
+  }): Promise<string>
 }
 
 /** Everything a command needs from the outside world, injected for testability. */

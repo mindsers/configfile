@@ -66,7 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.configfile/saved/`.
 
 ### Fixed
-- Git URL verification in `init` command is less strict. ([#48](https://github.com/mindsers/configfile/issues/48))
+- `init` accepts every repository URL git accepts, such as `https://github.com/me/dotfiles.git`, which
+  0.3.1 refused ([#48](https://github.com/mindsers/configfile/issues/48)). It still refuses the ones
+  git cannot clone from, and asks again in a terminal: a URL without a repository path, an unknown
+  protocol, or a local folder that does not exist. A local folder is saved as an absolute path.
 - Script standard outputs are correctly displayed ([!57](https://github.com/mindsers/configfile/pull/57), [#13](https://github.com/mindsers/configfile/issues/13))
 - A failed `init` saved the configuration anyway.
 - Deploying a module could overwrite a previously saved `.old` file.

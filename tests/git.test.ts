@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { checkRepositoryUrl } from '../src/git-url.ts'
 import { ensureGit, git, gitInstallHint, gitOutput } from '../src/process.ts'
 import { createSandbox } from './helpers.ts'
 
@@ -231,5 +232,60 @@ describe('git and gitOutput', () => {
       await expect(gitOutput(['status'], { cwd })).rejects.toThrow(message)
       await expect(git(['status'], { cwd }, 'git status')).rejects.toThrow(message)
     }
+  })
+})
+
+describe('checkRepositoryUrl', () => {
+  const where = { home: '/home/me', cwd: '/work' }
+
+  it.each([
+    'https://github.com/mindsers/configfile.git', // #48
+    'http://example.com/dotfiles',
+    'ssh://git@github.com:22/me/dotfiles.git',
+    'git+ssh://git@github.com/me/dotfiles.git',
+    'git://example.com/dotfiles.git',
+    'file:///srv/git/dotfiles.git',
+    'git@github.com:me/dotfiles.git',
+    'example.com:dotfiles.git',
+    'persistent-https::https://example.com/dotfiles.git',
+  ])('accepts %s as it is', url => {
+    expect(checkRepositoryUrl(` ${url} `, where)).toEqual({ url })
+  })
+
+  it.each([
+    ['', 'A repository URL is required.'],
+    ['--upload-pack=touch /tmp/x', 'is not a repository URL'],
+    ['htps://github.com/me/dotfiles.git', '"htps://" is not a protocol git can clone from.'],
+    ['https://github.com', 'the path is missing'],
+    ['https://github.com/', 'the path is missing'],
+    ['ssh://host:port/repo', 'is not a valid URL'],
+    ['git@:me/dotfiles.git', 'has no valid host name'],
+    ['git@github.com:', 'nothing after ":"'],
+    ['github.com/me/dotfiles', 'nor an existing folder'],
+    ['dotfiles', 'nor an existing folder'],
+  ])('refuses %j', (url, error) => {
+    const result = checkRepositoryUrl(url, where)
+    expect(result).toHaveProperty('error')
+    expect((result as { error: string }).error).toContain(error)
+  })
+
+  it('hides credentials in its messages', () => {
+    const result = checkRepositoryUrl('https://me:secret@github.com/', where)
+    expect(JSON.stringify(result)).not.toContain('secret')
+  })
+
+  it('accepts an existing local folder, made absolute', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/repos/dotfiles/.keep')
+    await sandbox.write('cwd/dotfiles/.keep')
+    const here = { home: sandbox.home, cwd: sandbox.cwd }
+
+    expect(checkRepositoryUrl('~/repos/dotfiles', here)).toEqual({
+      url: path.join(sandbox.home, 'repos/dotfiles'),
+    })
+    expect(checkRepositoryUrl('dotfiles', here)).toEqual({
+      url: path.join(sandbox.cwd, 'dotfiles'),
+    })
+    expect(checkRepositoryUrl(sandbox.root, here)).toEqual({ url: sandbox.root })
   })
 })

@@ -99,7 +99,7 @@ Scripts can be written in any language:
 
 ## Usage
 
-- `configfile init` (`i`): ask for the URL of your dotfiles repository, clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
+- `configfile init` (`i`): ask for the URL of your dotfiles repository (any URL git can clone, such as `https://github.com/me/dotfiles.git` or `git@github.com:me/dotfiles.git`, or an existing local folder), clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
     - `-f, --force`: overwrite an existing configuration without asking.
     - `--repo <url>`: give the URL from the command line, for non-interactive setups.
     - `--folder <path>`: clone somewhere else than `~/.configfile/dotfiles`.

@@ -7,6 +7,7 @@ import type { Command } from 'commander'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
+import { checkRepositoryUrl } from '../git-url.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
@@ -68,15 +69,21 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   // found before the URL is typed and before the folder to clone into is created.
   if (folder === 'missing' || folder === 'empty') await ensureGit()
 
-  const repoUrl = (
+  const validate = (value: string) => {
+    const checked = checkRepositoryUrl(value, ctx)
+    return 'error' in checked ? checked.error : true
+  }
+  const answer =
     options.repo ??
     (await prompts.input({
       message: 'Dotfiles repository URL:',
       required: true,
       ...(previous.repoUrl != null && { default: previous.repoUrl }),
+      validate,
     }))
-  ).trim()
-  if (repoUrl === '') throw new CliError('A repository URL is required.')
+  const checked = checkRepositoryUrl(answer, ctx)
+  if ('error' in checked) throw new CliError(checked.error)
+  const repoUrl = checked.url
   if (redactUrl(repoUrl) !== repoUrl) {
     output.warn(
       'The repository URL contains credentials: they are saved in the configuration and in ' +

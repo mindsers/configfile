@@ -76,8 +76,10 @@ class Capture extends Writable {
 export interface FakeContext extends Context {
   stdout: Capture
   stderr: Capture
-  /** Messages of the prompts that were shown, in order. */
+  /** Messages of the prompts that were shown, in order (again when an answer is refused). */
   asked: string[]
+  /** Why answers were refused by a prompt's `validate`, in order. */
+  refused: string[]
 }
 
 export interface CliOptions {
@@ -113,10 +115,19 @@ export function createContext(
     return next instanceof Error ? Promise.reject(next) : Promise.resolve(next as T)
   }
 
+  const refused: string[] = []
   const prompts: Prompts = {
     interactive,
     confirm: ({ message }) => answer<boolean>(message),
-    input: ({ message }) => answer<string>(message),
+    // Like a terminal: a refused answer is explained, and the question asked again.
+    input: async ({ message, validate }) => {
+      for (;;) {
+        const value = await answer<string>(message)
+        const valid = validate?.(value) ?? true
+        if (valid === true) return value
+        refused.push(valid)
+      }
+    },
   }
 
   return {
@@ -129,6 +140,7 @@ export function createContext(
     stdout,
     stderr,
     asked,
+    refused,
   }
 }
 
@@ -142,7 +154,13 @@ export async function runCli(
   const ctx = createContext(sandbox, answers, options)
   const code = await main(args, ctx)
 
-  return { code, stdout: ctx.stdout.text, stderr: ctx.stderr.text, asked: ctx.asked }
+  return {
+    code,
+    stdout: ctx.stdout.text,
+    stderr: ctx.stderr.text,
+    asked: ctx.asked,
+    refused: ctx.refused,
+  }
 }
 
 /**
