@@ -29,9 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.configfile/history.jsonl`, and the `history` command to see it
   ([#36](https://github.com/mindsers/configfile/issues/36)).
 - The `settings.json` format is documented in the README.
-- Releases are published to npm with a provenance statement, which `npm audit signatures` checks.
+- Releases are published as GitHub releases: the package tarball, its `SHA256SUMS`, and a build
+  provenance attestation that `gh attestation verify` checks.
 - configfile can be installed with Homebrew (`brew install mindsers/tap/configfile`), which also
-  installs Node.js and git, or with mise (`mise use --global npm:configfile`).
+  installs Node.js and git, or with npm from the release tarball.
 - `init` and `update` say how to install git when it is missing, or Apple's command line
   developer tools on macOS, before cloning or syncing (`init` checks before asking for the URL).
 

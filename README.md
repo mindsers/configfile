@@ -1,6 +1,6 @@
 # configfile
 
-[![npm](https://img.shields.io/npm/v/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
+[![Release](https://img.shields.io/github/v/release/mindsers/configfile?style=flat-square)](https://github.com/mindsers/configfile/releases/latest)
 [![npm](https://img.shields.io/npm/dt/configfile.svg?style=flat-square)](https://www.npmjs.com/package/configfile)
 [![CI](https://img.shields.io/github/actions/workflow/status/mindsers/configfile/ci.yml?branch=develop&style=flat-square)](https://github.com/mindsers/configfile/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/l/configfile.svg?style=flat-square)](https://github.com/mindsers/configfile/blob/develop/LICENSE)
@@ -22,19 +22,15 @@ With [Homebrew](https://brew.sh), on macOS or Linux (Node.js and git come with i
 brew install mindsers/tap/configfile
 ```
 
-With npm, when Node.js 24.11 or later is installed:
+With npm, when Node.js 24.11 or later is installed, from the [GitHub release](https://github.com/mindsers/configfile/releases/latest):
 
 ```bash
-npm install --global configfile
-```
-
-With [mise](https://mise.jdx.dev), which installs the npm package:
-
-```bash
-mise use --global npm:configfile
+npm install --global https://github.com/mindsers/configfile/releases/download/1.0.0/configfile-1.0.0.tgz
 ```
 
 Install it one way only: two copies would compete in your `PATH`.
+
+> Version 1.0 is not on the npm registry yet: `npm install --global configfile` still installs 0.3.1. Each release's tarball comes with a `SHA256SUMS` file and a build provenance attestation, which `gh attestation verify configfile-1.0.0.tgz --repo mindsers/configfile` checks.
 
 ## Data storage
 
@@ -186,7 +182,7 @@ When the file reaches `history_max_size` (1MB by default; a number of bytes, or 
 
 ## Upgrading from 0.3
 
-- Node.js 24.11 or later is required, on macOS or Linux. Install again with `npm install --global configfile`, or switch to [Homebrew](#installation): remove the npm version first (`npm uninstall --global configfile`), then `brew install mindsers/tap/configfile`.
+- Node.js 24.11 or later is required, on macOS or Linux. Install again as described in [Installation](#installation). To switch to Homebrew, remove the npm version first (`npm uninstall --global configfile`).
 - `~/.configfilerc`, the repository layout and `settings.json` work as before, including `settings.json` files that are a plain list (the 0.3.1 format, deprecated: put the list in a `"files"` key). Links deployed by 0.3 are recognised as deployed.
 - If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.
