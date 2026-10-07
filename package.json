@@ -1,39 +1,59 @@
 {
   "name": "configfile",
-  "version": "0.3.1",
-  "description": "Personal config files manager",
-  "main": "index.js",
-  "repository": "github.com:Mindsers/configfile.git",
-  "author": "Mindsers <dev@nathanaelcherrier.com>",
+  "version": "1.0.0",
+  "description": "Manage your dotfiles and setup scripts from a git repository.",
+  "keywords": [
+    "dotfiles",
+    "config",
+    "cli",
+    "symlink"
+  ],
+  "homepage": "https://github.com/mindsers/configfile#readme",
+  "bugs": "https://github.com/mindsers/configfile/issues",
+  "funding": "https://github.com/sponsors/mindsers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mindsers/configfile.git"
+  },
+  "author": "Mindsers <nathanael@cherrier.dev> (https://nathanaelcherrier.dev)",
   "license": "Apache-2.0",
-  "config": {
-    "optionsFilePath": "~/.configfile"
-  },
+  "type": "module",
   "bin": {
-    "configfile": "./bin/configfile.js"
+    "configfile": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "packageManager": "pnpm@12.8.1",
   "scripts": {
-    "test:unit:coverage": "nyc yarn test:unit",
-    "test:unit": "ava tests/**/*.js",
-    "test:lint": "eslint bin src tests",
-    "test": "yarn test:lint && yarn test:unit:coverage"
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "node --run clean && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "chalk": "^2.1.0",
-    "commander": "^2.11.0",
-    "gift": "^0.10.0",
-    "inquirer": "^3.2.3"
+    "@inquirer/prompts": "^8.7.2",
+    "commander": "^15.0.0"
   },
   "devDependencies": {
-    "ava": "^0.22.0",
-    "eslint": "^4.9.0",
-    "eslint-config-standard": "^10.2.1",
-    "eslint-plugin-import": "^2.7.0",
-    "eslint-plugin-node": "^5.2.0",
-    "eslint-plugin-promise": "^3.6.0",
-    "eslint-plugin-standard": "^3.0.1",
-    "nyc": "^11.2.1",
-    "rimraf": "^2.6.2",
-    "sinon": "^4.0.1"
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
   }
 }

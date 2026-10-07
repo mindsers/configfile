@@ -1,0 +1,45 @@
+name: Publish
+
+# Publishes to npm when a version tag (such as 1.0.0) is pushed on a commit of
+# master, the release branch of git-flow. Uses npm trusted publishing: no npm
+# token is stored, and the package gets a provenance statement. Set it up once
+# on npmjs.com (package settings > Trusted publishing): repository
+# mindsers/configfile, workflow publish.yml, environment npm.
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # No cache: nothing restored from another run can end up in a release.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+          cache: false
+      - name: Check the tag is on master and matches package.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master || {
+            echo "::error::$TAG is not on master."; exit 1; }
+          version=$(node -p "require('./package.json').version")
+          [ "$version" = "$TAG" ] || {
+            echo "::error::package.json is $version, the tag is $TAG."; exit 1; }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      # npm (not pnpm) publishes: trusted publishing needs npm 11.5.1 or later.
+      - run: npm publish --access public

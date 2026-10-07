@@ -1,3 +1,7 @@
+<!-- The pull request title follows Conventional Commits, like commit messages:
+     `feat(modules): add status command`, `fix: …`, `docs: …`.
+     Open it against `develop`, not `master`. See CONTRIBUTING.md. -->
+
 ### Summary
 
 Provide a general description of the code changes in your pull
@@ -11,5 +15,6 @@ If there's anything else that's important and relevant to your pull
 request, mention that information here. This could include
 benchmarks, or other information.
 
-If you are updating any of the CHANGELOG files or are asked to update the
-CHANGELOG files by reviewers, please add the CHANGELOG entry at the top of the file.
+Describe how to test the change, and what changes for users (and whether
+anything breaks). When users will notice the change, add a line to the
+`[Unreleased]` section of CHANGELOG.md, in the style of the existing entries.
