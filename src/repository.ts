@@ -19,7 +19,7 @@ export interface ModuleFile {
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
   readonly module: string
-  /** The settings.json entry of the file, recorded when it is deployed. */
+  /** The module file entry of the file, recorded when it is deployed. */
   readonly entry?: Entry
 }
 
@@ -51,13 +51,13 @@ export type Module = ModuleBase &
         readonly files: readonly ModuleFile[]
         /** `source_path` of entries that define no deployment strategy (not deployed). */
         readonly undecided: readonly string[]
-        /** Why some entries of settings.json are ignored. */
+        /** Why some entries of the module file are ignored. */
         readonly invalidEntries: readonly string[]
         /** Deprecated settings used by the module. */
         readonly deprecations: readonly string[]
       }
     | {
-        /** Why settings.json could not be used. Such a module has no files. */
+        /** Why the module file could not be used. Such a module has no files. */
         readonly error: string
       }
   )
@@ -87,8 +87,15 @@ export async function loadRepository(
 }
 
 /**
+ * Names of the file that describes a module, by preference. `configfile.json`
+ * lets a module deploy an app's own `settings.json`.
+ */
+const MODULE_FILE_NAMES = ['configfile.json', 'settings.json'] as const
+
+/**
  * Reads the modules of a dotfiles repository: every folder of `files/`
- * (symlinks to folders included) that contains a `settings.json`.
+ * (symlinks to folders included) that contains a `configfile.json` or a
+ * `settings.json`.
  */
 export async function listModules(folderPath: string, env: Environment): Promise<Module[]> {
   const filesDir = path.join(folderPath, 'files')
@@ -101,27 +108,44 @@ export async function listModules(folderPath: string, env: Environment): Promise
     const stats = await statEntry(entry, modulePath, env)
     if (!stats?.isDirectory()) continue
 
-    const settingsPath = path.join(modulePath, 'settings.json')
-    const settingsStats = await stat(settingsPath).catch(errorCode)
-    if (settingsStats === 'ENOENT') continue
+    const found: { fileName: string; stats: Stats | string }[] = []
+    for (const fileName of MODULE_FILE_NAMES) {
+      const stats = await stat(path.join(modulePath, fileName)).catch(errorCode)
+      if (stats !== 'ENOENT') found.push({ fileName, stats })
+    }
+    const [settingsFile] = found
+    if (settingsFile == null) continue
 
     const name = slugify(entry.name)
     if (!isUsableName(name, entry.name, modules, 'module', env)) continue
 
-    if (typeof settingsStats === 'string') {
+    if (typeof settingsFile.stats === 'string') {
       modules.push({
         name,
         path: modulePath,
-        error: `settings.json cannot be read (${settingsStats})`,
+        error: `${settingsFile.fileName} cannot be read (${settingsFile.stats})`,
       })
       continue
     }
 
-    modules.push({
-      name,
-      path: modulePath,
-      ...(await readModuleFiles(modulePath, settingsPath, folderPath, env)),
-    })
+    const content = await readModuleFiles(modulePath, settingsFile.fileName, folderPath, env)
+    // Deploying the app's own settings.json is why configfile.json exists: only
+    // warn when the other file is not one of the module's files.
+    const ignored = found.slice(1).map(file => path.join(modulePath, file.fileName))
+    const listed =
+      content.error == null
+        ? [
+            ...content.files.map(file => file.source),
+            ...content.undecided.map(source => path.resolve(modulePath, source)),
+          ]
+        : []
+    for (const ignoredPath of ignored.filter(ignoredPath => !listed.includes(ignoredPath))) {
+      env.warn(
+        `${ignoredPath} is ignored: the "${name}" module is described by ${settingsFile.fileName}.`,
+      )
+    }
+
+    modules.push({ name, path: modulePath, ...content })
   }
 
   return modules
@@ -150,22 +174,22 @@ type ModuleContent = Exclude<Module, { error: string }>
 
 async function readModuleFiles(
   modulePath: string,
-  settingsPath: string,
+  fileName: string,
   repository: string,
   env: Environment,
 ): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
   let settings: unknown
   try {
-    settings = JSON.parse(await readFile(settingsPath, 'utf8'))
+    settings = JSON.parse(await readFile(path.join(modulePath, fileName), 'utf8'))
   } catch (error) {
-    return { error: `settings.json is not valid JSON (${describeJsonError(error)})` }
+    return { error: `${fileName} is not valid JSON (${describeJsonError(error)})` }
   }
 
   // configfile 0.3.1 wrote the list of files at the top level of settings.json.
   const legacyList = Array.isArray(settings)
   const entries: unknown = legacyList ? settings : (settings as { files?: unknown } | null)?.files
   if (!Array.isArray(entries)) {
-    return { error: 'settings.json has no "files" list' }
+    return { error: `${fileName} has no "files" list` }
   }
 
   const files: ModuleFile[] = []
@@ -246,7 +270,7 @@ async function readModuleFiles(
   const deprecations: string[] = []
   if (legacyList) {
     deprecations.push(
-      'settings.json is a list (configfile 0.3 format), which is deprecated and will stop ' +
+      `${fileName} is a list (configfile 0.3 format), which is deprecated and will stop ` +
         'working in 2.0. Put the list in a "files" key: { "files": [ ... ] }',
     )
   }

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-10-05
 ### Added
+- A module can be described by `configfile.json` instead of `settings.json`, so it can deploy an
+  app's own `settings.json` under its real name
+  ([#299](https://github.com/mindsers/configfile/issues/299)).
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved
   versions it made (recorded in `~/.configfile/`).
 - The `modules status` command to see which files are deployed.

@@ -60,7 +60,7 @@ scripts/
 
 ### Modules
 
-Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than ASCII letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
+Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` or a `configfile.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than ASCII letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
 
 `settings.json` lists the files of the module:
 
@@ -73,6 +73,8 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
   ]
 }
 ```
+
+The file can also be named `configfile.json`, which leaves the name `settings.json` free for an app's own settings file (Zed, VS Code…) deployed by the module. When a module has both, `configfile.json` is used, and configfile warns if the `settings.json` is not one of the module's files.
 
 | Key | Description |
 | --- | --- |
