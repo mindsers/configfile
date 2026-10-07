@@ -1212,6 +1212,21 @@ describe('files the repository no longer deploys', () => {
 })
 
 describe('scripts', () => {
+  it('warns once about a configuration other users can read, and makes it private', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/scripts/ok.sh')
+    await chmod(path.join(sandbox.home, '.configfilerc'), 0o644)
+
+    const first = await runCli(sandbox, ['scripts', 'list'])
+    const second = await runCli(sandbox, ['scripts', 'list'])
+
+    expect(first.code).toBe(0)
+    expect(first.stderr).toContain('was readable by other users. It is now only readable by you.')
+    expect(second.stderr).toBe('')
+    expect((await stat(path.join(sandbox.home, '.configfilerc'))).mode & 0o777).toBe(0o600)
+  })
+
   async function withScripts(sandbox: Sandbox) {
     await sandbox.configure()
     await sandbox.write(
@@ -1381,7 +1396,7 @@ describe('scripts', () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     await sandbox.write(
-      'home/dotfiles/scripts/setup.macos.py',
+      'home/dotfiles/scripts/setup.local.py',
       `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(`${sandbox.root}/ran`)}, 'yes')\n`,
       0o644,
     )
@@ -1530,18 +1545,46 @@ describe('init', () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
 
-    const result = await runCli(sandbox, ['init', '--repo', 'unused', '--folder', remote])
+    const result = await runCli(sandbox, [
+      'init',
+      '--repo',
+      'https://example.com/unused.git',
+      '--folder',
+      remote,
+    ])
 
     expect(result.code).toBe(0)
     expect(result.stdout).toContain('already contains a git repository')
     expect((await readConfig(sandbox)).folder_path).toBe(remote)
   })
 
+  it('reuses a hand-edited folder_path starting with ~ when run again', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+    await sandbox.configure({ repo_url: remote, folder_path: '~/dotfiles' })
+
+    const result = await runCli(sandbox, ['init', '-f', '--repo', remote], [], {
+      interactive: false,
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain('already contains a git repository')
+    expect((await readConfig(sandbox)).folder_path).toBe(sandbox.repo)
+    expect(existsSync(path.join(sandbox.cwd, '~'))).toBe(false)
+  })
+
   it('does not save the configuration when the folder is not usable', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/something')
 
-    const result = await runCli(sandbox, ['init', '--repo', 'x', '--folder', '~/dotfiles'])
+    const result = await runCli(sandbox, [
+      'init',
+      '--repo',
+      'https://example.com/dotfiles.git',
+      '--folder',
+      '~/dotfiles',
+    ])
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('is not empty')
@@ -1554,7 +1597,8 @@ describe('init', () => {
     const result = await runCli(sandbox, [
       'init',
       '--repo',
-      path.join(sandbox.root, 'no-such-repo'),
+      // A folder, but not a repository: the URL is valid, the clone fails.
+      sandbox.cwd,
       '--folder',
       '~/dotfiles',
     ])
@@ -1608,7 +1652,13 @@ describe('init', () => {
     const sandbox = await createSandbox()
     await prepare(sandbox)
 
-    const result = await runCli(sandbox, ['init', '--repo', 'x', '--folder', '~/dotfiles'])
+    const result = await runCli(sandbox, [
+      'init',
+      '--repo',
+      'https://example.com/dotfiles.git',
+      '--folder',
+      '~/dotfiles',
+    ])
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain(message)
@@ -1644,6 +1694,41 @@ describe('init', () => {
       }
     },
   )
+
+  it('asks again for a repository URL git cannot use', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+
+    const result = await runCli(sandbox, ['init'], ['https://github.com', remote])
+
+    expect(result.code).toBe(0)
+    expect(result.asked).toEqual(['Dotfiles repository URL:', 'Dotfiles repository URL:'])
+    expect(result.refused).toEqual([
+      '"https://github.com" does not name a repository (the path is missing).',
+    ])
+    expect((await readConfig(sandbox)).repo_url).toBe(remote)
+  })
+
+  it('refuses a --repo git cannot use, before creating anything', async () => {
+    const sandbox = await createSandbox()
+
+    const result = await runCli(sandbox, ['init', '--repo', 'github.com/me/dotfiles'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('is neither a URL')
+    expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles'))).toBe(false)
+    expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(false)
+  })
+
+  it('saves a local repository given by a relative path as an absolute path', async () => {
+    const sandbox = await createSandbox()
+    await withRemote(sandbox)
+
+    const result = await runCli(sandbox, ['init', '--repo', '../remote'])
+
+    expect(result.code).toBe(0)
+    expect((await readConfig(sandbox)).repo_url).toBe(path.join(sandbox.root, 'remote'))
+  })
 
   it('never lets a repository URL be read as a git option', async () => {
     const sandbox = await createSandbox()

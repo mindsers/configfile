@@ -25,7 +25,9 @@ export function registerUpdateCommand(program: Command, ctx: Context): void {
 
 async function update(ctx: Context): Promise<void> {
   const { output } = ctx
-  const { folderPath } = await new ConfigStore(ctx.home).read()
+  const { folderPath } = await new ConfigStore(ctx.home, {
+    warn: message => ctx.output.warn(message),
+  }).read()
 
   try {
     await lstat(path.join(folderPath, '.git'))

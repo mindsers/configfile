@@ -75,7 +75,9 @@ type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void
 export async function loadRepository(
   ctx: Context,
 ): Promise<{ repository: string; modules: Module[] }> {
-  const { folderPath } = await new ConfigStore(ctx.home).read()
+  const { folderPath } = await new ConfigStore(ctx.home, {
+    warn: message => ctx.output.warn(message),
+  }).read()
   const modules = await listModules(folderPath, {
     home: ctx.home,
     cwd: ctx.cwd,
@@ -303,16 +305,21 @@ export function unsafeTarget(
  * Hidden files are ignored. When `extensions` is set, only files with one of
  * these extensions count (`''` means "no extension").
  *
- * A script is named after its file name up to the first dot: `setup.macos.sh`
- * is the `setup` script.
+ * A script is named after its file name up to the first dot: `setup.sh` is the
+ * `setup` script. A second part naming a system (`setup.macos.sh`,
+ * `setup.linux/`) makes it that system's version: used instead of `setup.sh`
+ * on that system, and ignored on the others.
  */
 export async function listScripts(
   folderPath: string,
   extensions: readonly string[] | null,
+  platform: NodeJS.Platform,
   env: Pick<Environment, 'warn'>,
 ): Promise<Script[]> {
   const scriptsDir = path.join(folderPath, 'scripts')
   const scripts: Script[] = []
+  /** Names of the scripts that are this system's version. */
+  const forSystem = new Set<string>()
   const allowed = (name: string) => extensions == null || extensions.includes(path.extname(name))
 
   for (const entry of await readDirOrFail(scriptsDir)) {
@@ -329,15 +336,35 @@ export async function listScripts(
     }
     if (file == null) continue
 
-    const [baseName = ''] = entry.name.split('.')
+    const [baseName = '', tag] = entry.name.split('.')
+    const system = tag == null ? undefined : SCRIPT_SYSTEMS.get(tag)
+    if (system != null && system !== platform) continue
     const name = slugify(baseName)
+    const script = { name, file, path: path.join(scriptsDir, file) }
+
+    // This system's version replaces the generic one, whichever comes first.
+    const current = scripts.findIndex(other => other.name === name)
+    if (current !== -1 && forSystem.has(name) !== (system != null)) {
+      if (system != null) {
+        scripts[current] = script
+        forSystem.add(name)
+      }
+      continue
+    }
     if (!isUsableName(name, file, scripts, 'script', env)) continue
 
-    scripts.push({ name, file, path: path.join(scriptsDir, file) })
+    scripts.push(script)
+    if (system != null) forSystem.add(name)
   }
 
   return scripts
 }
+
+/** The systems a script can be made for, by the second part of its name. */
+const SCRIPT_SYSTEMS: ReadonlyMap<string, NodeJS.Platform> = new Map([
+  ['macos', 'darwin'],
+  ['linux', 'linux'],
+])
 
 /** The `index` file of a script folder (`index`, `index.sh`, …), relative to `scriptsDir`. */
 async function findIndex(
