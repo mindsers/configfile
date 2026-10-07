@@ -61,6 +61,15 @@ jobs:
           version: 2026.9.18 # mise version, updated by Renovate
       - run: pnpm install --frozen-lockfile
       - run: pnpm pack --out "$RUNNER_TEMP/configfile.tgz"
+      - name: Check npm publishes package.json as written
+        # npm publish silently drops what it considers invalid (a "./" bin path
+        # removed the configfile command), which npm pack does not.
+        run: |
+          npm publish --dry-run 2>&1 | tee "$RUNNER_TEMP/publish.log"
+          if grep -q 'auto-corrected' "$RUNNER_TEMP/publish.log"; then
+            echo '::error::npm publish would change package.json: run "npm pkg fix" and commit.'
+            exit 1
+          fi
       - name: Install and run the packed package
         working-directory: ${{ runner.temp }}
         # Installing the package just built is what this job tests.
