@@ -11,14 +11,30 @@
 ## Requirements
 
 - macOS or Linux
-- Node.js 24.11 or later
-- git (when it is missing, *configfile* says how to install it on your system)
+- Node.js 24.11 or later (Homebrew installs it for you)
+- git (Homebrew installs it for you; otherwise, when it is missing, *configfile* says how to install it on your system)
 
 ## Installation
+
+With [Homebrew](https://brew.sh), on macOS or Linux (Node.js and git come with it):
+
+```bash
+brew install mindsers/tap/configfile
+```
+
+With npm, when Node.js 24.11 or later is installed:
 
 ```bash
 npm install --global configfile
 ```
+
+With [mise](https://mise.jdx.dev), which installs the npm package:
+
+```bash
+mise use --global npm:configfile
+```
+
+Install it one way only: two copies would compete in your `PATH`.
 
 ## Data storage
 
@@ -85,7 +101,9 @@ Only one *configfile* at a time changes files: a second one waits for the first 
 
 Every file of `scripts/`, and every folder of `scripts/` (or symbolic link to a folder) containing an `index` file (`index`, `index.sh`, …), is a **script**. Hidden files are ignored. To only use some extensions, set `script_extensions` in the [configuration](#configuration).
 
-A script's name is its file name up to the first dot, or its folder name, with the same rules as module names: `scripts/setup.sh` and `scripts/setup.macos.py` are both named `setup` (only the first one, alphabetically, is used, with a warning).
+A script's name is its file name (or folder name) up to the first dot, with the same rules as module names: `scripts/setup.sh` is named `setup`. When two scripts have the same name, only the first one, alphabetically, is used, with a warning.
+
+A script can have a version for each system: `macos` or `linux` after the first dot (`scripts/setup.macos.sh`, `scripts/setup.linux.py`, or a folder such as `scripts/setup.macos/`). On macOS, `configfile scripts run setup` runs `setup.macos.sh`; on another system, it runs the generic `setup.sh`, if there is one. A version for another system is ignored.
 
 Scripts can be written in any language:
 
@@ -97,7 +115,7 @@ Scripts can be written in any language:
 
 ## Usage
 
-- `configfile init` (`i`): ask for the URL of your dotfiles repository, clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
+- `configfile init` (`i`): ask for the URL of your dotfiles repository (any URL git can clone, such as `https://github.com/me/dotfiles.git` or `git@github.com:me/dotfiles.git`, or an existing local folder), clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.
     - `-f, --force`: overwrite an existing configuration without asking.
     - `--repo <url>`: give the URL from the command line, for non-interactive setups.
     - `--folder <path>`: clone somewhere else than `~/.configfile/dotfiles`.
@@ -126,7 +144,7 @@ Scripts can be written in any language:
 
 *configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the [history](#history) (`history.jsonl`), the lock, and saved local changes (`saved/`).
 
-`~/.configfilerc` is a JSON file:
+`~/.configfilerc` is a JSON file, readable by you only: the repository URL may contain credentials, so if other users can read it, *configfile* makes it private and warns you.
 
 ```json
 {
@@ -143,7 +161,7 @@ Scripts can be written in any language:
 
 *configfile* records what each command changed, when, and whether it failed, in `~/.configfile/history.jsonl`: one JSON line per run of `init`, `modules deploy`, `modules undeploy`, `update` and `scripts run` (dry runs and usage errors excepted), and per unexpected error of any command. Each line has the time, the *configfile* version, the command and its options, the current folder, the exit code, the error message, and the changes: files linked, copied, moved aside to `.old`, removed, restored, kept or skipped, syncs (from which commit to which, and saved patches), scripts and their exit codes.
 
-Script arguments, environment variables and file contents are never recorded. In URLs, user names and passwords (`https://user:token@host`) and query parameters that look like secrets (`?private_token=…`) are hidden. Paths are recorded in full, so they include your user name. When *configfile* creates the file, only its owner can read it. A run stopped by a signal (Ctrl+C outside a question) is not recorded.
+Script arguments, environment variables and file contents are never recorded. In URLs, user names and passwords (`https://user:token@host`) and query parameters that look like secrets (`?private_token=…`) are hidden. Paths are recorded in full, so they include your user name. When *configfile* creates the file, only its owner can read it. A run stopped by a signal (Ctrl+C outside a question) is not recorded, unless the signal comes while a script or git runs: *configfile* then leaves it to that program, and records the run with its exit code.
 
 `configfile history` shows the last runs:
 
@@ -168,16 +186,16 @@ When the file reaches `history_max_size` (1MB by default; a number of bytes, or 
 
 ## Upgrading from 0.3
 
-- Node.js 24.11 or later is required, on macOS or Linux. Install again with `npm install --global configfile`.
+- Node.js 24.11 or later is required, on macOS or Linux. Install again with `npm install --global configfile`, or switch to [Homebrew](#installation): remove the npm version first (`npm uninstall --global configfile`), then `brew install mindsers/tap/configfile`.
 - `~/.configfilerc`, the repository layout and `settings.json` work as before, including `settings.json` files that are a plain list (the 0.3.1 format, deprecated: put the list in a `"files"` key). Links deployed by 0.3 are recognised as deployed.
 - If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.
 - A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.
 - Scripts keep their names (up to the first dot) and every file of `scripts/` is still a script. They are no longer made executable by *configfile*: a script needs a shebang line, a `.js`/`.sh` extension, or to be executable.
 - Targets inside the dotfiles repository, or containing it, are now refused.
-- `modules undeploy` only removes what 1.0 or later deployed, and only restores backups it made (recorded in `~/.configfile/state.json`): local copies and `.old` files made by 0.3 stay where they are.
+- `modules undeploy` also removes the links made by 0.3 that point to the repository, but it only restores the backups it made itself (recorded in `~/.configfile/state.json`): the `.old` files made by 0.3 are not put back, and local copies made by 0.3 are kept.
 - A `source_path` must stay inside its module folder.
-- `init` clones into `~/.configfile/dotfiles` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (your previous files come back), then `configfile init --force --repo <url> --folder ~/.configfile/dotfiles`, then `configfile modules deploy --all` (links now point to the copy).
+- `init` clones into `~/.configfile/dotfiles` by default, and an existing `folder_path` is kept. `update` now makes that folder identical to the remote, saving local changes as a patch first. If your configured folder is also your working copy (for example `~/.dotfiles`), give *configfile* its own copy: run `configfile modules undeploy --all` (files that 1.0 moved aside come back; links made by 0.3 are removed, and their `.old` files stay where they are), then `configfile init --force --repo <url> --folder ~/.configfile/dotfiles`, then `configfile modules deploy --all` (links now point to the copy).
 - With `script_extensions` set, only files with one of these extensions are scripts, and `""` means files without extension (0.3 matched any file containing the text).
 - Commands now exit with a non-zero code on failure.
 

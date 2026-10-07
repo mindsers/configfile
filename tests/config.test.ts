@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
 import { ConfigStore } from '../src/config.ts'
@@ -101,6 +101,30 @@ describe('ConfigStore', () => {
     await expect(store.read()).rejects.toThrow(/"folder_path" is missing/)
   })
 
+  it('makes a configuration other users can read private, with a warning', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const warnings: string[] = []
+    const store = new ConfigStore(sandbox.home, { warn: message => warnings.push(message) })
+
+    await chmod(store.path, 0o644)
+    await store.read()
+    expect((await stat(store.path)).mode & 0o777).toBe(0o600)
+    expect(warnings).toEqual([
+      `${store.path} was readable by other users. It is now only readable by you.`,
+    ])
+
+    // Already private: nothing to say.
+    await store.read()
+    expect(warnings).toHaveLength(1)
+
+    // Only the access of others is removed.
+    await chmod(store.path, 0o640)
+    await store.readPartial()
+    expect((await stat(store.path)).mode & 0o777).toBe(0o600)
+    expect(warnings).toHaveLength(2)
+  })
+
   it('reads partial values for prompt defaults, even from an invalid file', async () => {
     const { home } = await createSandbox()
     const store = new ConfigStore(home)
@@ -109,6 +133,11 @@ describe('ConfigStore', () => {
 
     await writeFile(store.path, '{"repo_url": "u"}')
     await expect(store.readPartial()).resolves.toEqual({ repoUrl: 'u' })
+
+    for (const folder of ['~/dotfiles', 'dotfiles']) {
+      await writeFile(store.path, JSON.stringify({ folder_path: folder }))
+      await expect(store.readPartial()).resolves.toEqual({ folderPath: `${home}/dotfiles` })
+    }
 
     await writeFile(store.path, 'garbage')
     await expect(store.readPartial()).resolves.toEqual({})

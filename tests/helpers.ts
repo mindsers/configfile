@@ -55,6 +55,8 @@ export async function createSandbox(): Promise<Sandbox> {
       await writeFile(
         path.join(home, '.configfilerc'),
         JSON.stringify({ repo_url: null, folder_path: sandbox.repo, ...extra }),
+        // As init writes it: a configuration others can read is made private, with a warning.
+        { mode: 0o600 },
       )
     },
   }
@@ -74,8 +76,10 @@ class Capture extends Writable {
 export interface FakeContext extends Context {
   stdout: Capture
   stderr: Capture
-  /** Messages of the prompts that were shown, in order. */
+  /** Messages of the prompts that were shown, in order (again when an answer is refused). */
   asked: string[]
+  /** Why answers were refused by a prompt's `validate`, in order. */
+  refused: string[]
 }
 
 export interface CliOptions {
@@ -83,6 +87,8 @@ export interface CliOptions {
   interactive?: boolean
   /** The current folder. Defaults to `<sandbox>/cwd`. */
   cwd?: string
+  /** The system configfile believes it runs on. Defaults to `linux`, whatever the host. */
+  platform?: NodeJS.Platform
 }
 
 /**
@@ -93,7 +99,7 @@ export interface CliOptions {
 export function createContext(
   sandbox: Sandbox,
   answers: Array<boolean | string | Error> = [],
-  { interactive = true, cwd = sandbox.cwd }: CliOptions = {},
+  { interactive = true, cwd = sandbox.cwd, platform = 'linux' }: CliOptions = {},
 ): FakeContext {
   const stdout = new Capture()
   const stderr = new Capture()
@@ -109,21 +115,32 @@ export function createContext(
     return next instanceof Error ? Promise.reject(next) : Promise.resolve(next as T)
   }
 
+  const refused: string[] = []
   const prompts: Prompts = {
     interactive,
     confirm: ({ message }) => answer<boolean>(message),
-    input: ({ message }) => answer<string>(message),
+    // Like a terminal: a refused answer is explained, and the question asked again.
+    input: async ({ message, validate }) => {
+      for (;;) {
+        const value = await answer<string>(message)
+        const valid = validate?.(value) ?? true
+        if (valid === true) return value
+        refused.push(valid)
+      }
+    },
   }
 
   return {
     home: sandbox.home,
     cwd,
+    platform,
     output: new Output(stdout, stderr),
     prompts,
     history: new History(sandbox.home),
     stdout,
     stderr,
     asked,
+    refused,
   }
 }
 
@@ -137,7 +154,13 @@ export async function runCli(
   const ctx = createContext(sandbox, answers, options)
   const code = await main(args, ctx)
 
-  return { code, stdout: ctx.stdout.text, stderr: ctx.stderr.text, asked: ctx.asked }
+  return {
+    code,
+    stdout: ctx.stdout.text,
+    stderr: ctx.stderr.text,
+    asked: ctx.asked,
+    refused: ctx.refused,
+  }
 }
 
 /**

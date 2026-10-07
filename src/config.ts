@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { chmod, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 import { CliError, NotInitializedError } from './errors.ts'
@@ -34,9 +34,12 @@ class InvalidConfigError extends CliError {
 export class ConfigStore {
   readonly path: string
   readonly #home: string
+  readonly #warn: (message: string) => void
 
-  constructor(home: string) {
+  /** `warn` reports a configuration other users could read, made private on reading. */
+  constructor(home: string, { warn = () => {} }: { warn?: (message: string) => void } = {}) {
     this.#home = home
+    this.#warn = warn
     this.path = path.join(home, '.configfilerc')
   }
 
@@ -71,7 +74,13 @@ export class ConfigStore {
     const partial: { repoUrl?: string; folderPath?: string } = {}
 
     if (typeof raw?.repo_url === 'string') partial.repoUrl = raw.repo_url
-    if (typeof raw?.folder_path === 'string') partial.folderPath = raw.folder_path
+    if (typeof raw?.folder_path === 'string' && raw.folder_path.trim() !== '') {
+      // Resolved like `read` does: "~/dotfiles" must not become a folder named "~".
+      partial.folderPath = resolveUserPath(raw.folder_path.trim(), {
+        home: this.#home,
+        cwd: this.#home,
+      })
+    }
 
     return partial
   }
@@ -163,7 +172,28 @@ export class ConfigStore {
     if (data == null || typeof data !== 'object' || Array.isArray(data)) {
       throw new InvalidConfigError(`Invalid configuration in ${this.path}: not a JSON object.`)
     }
+    await this.#makePrivate()
     return data as RawConfig
+  }
+
+  /**
+   * The repository URL may contain credentials: a configuration other users
+   * can read (written by hand, or by configfile 0.3) is made readable by its
+   * owner only, with a warning.
+   */
+  async #makePrivate(): Promise<void> {
+    const stats = await stat(this.path).catch(() => null)
+    if (stats == null || (stats.mode & 0o077) === 0) return
+
+    try {
+      await chmod(this.path, stats.mode & 0o700)
+      this.#warn(`${this.path} was readable by other users. It is now only readable by you.`)
+    } catch (error) {
+      this.#warn(
+        `${this.path} is readable by other users, and cannot be made private (${messageOf(error)}). ` +
+          `Run "chmod 600 ${this.path}".`,
+      )
+    }
   }
 }
 
