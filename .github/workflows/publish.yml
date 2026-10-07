@@ -13,7 +13,7 @@ name: Publish
 #   npmjs.com (package settings > Trusted publishing): repository
 #   mindsers/configfile, workflow publish.yml, environment npm. To publish a
 #   version released while it was off, set the variable and re-run this
-#   workflow for its tag: an existing GitHub release is kept as it is.
+#   workflow for its tag: an existing GitHub release keeps its notes.
 
 on:
   push:
@@ -93,8 +93,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # A release created by hand, or by an earlier run: its notes are kept,
+          # and the files attested above replace any older ones.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::notice::The $TAG release already exists: it is kept as it is."
+            gh release upload "$TAG" "configfile-$TAG.tgz" SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            echo "::notice::The $TAG release already existed: its notes are kept, its files replaced."
             exit 0
           fi
           gh release create "$TAG" "configfile-$TAG.tgz" SHA256SUMS \
