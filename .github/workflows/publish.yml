@@ -1,10 +1,19 @@
 name: Publish
 
-# Publishes to npm when a version tag (such as 1.0.0) is pushed on a commit of
-# master, the release branch of git-flow. Uses npm trusted publishing: no npm
-# token is stored, and the package gets a provenance statement. Set it up once
-# on npmjs.com (package settings > Trusted publishing): repository
-# mindsers/configfile, workflow publish.yml, environment npm.
+# Releases a version when its tag (such as 1.0.0) is pushed on a commit of
+# master, the release branch of git-flow:
+#
+# - build: checks the tag, runs the checks and packs the package once;
+# - github-release: publishes that tarball, its SHA256SUMS and the CHANGELOG
+#   section as a GitHub release, with a build provenance attestation
+#   (`gh attestation verify configfile-<version>.tgz --repo mindsers/configfile`);
+# - npm: publishes the same tarball to npm, with npm trusted publishing (no
+#   token stored, provenance statement). It only runs when the repository
+#   variable NPM_PUBLISH is "true", once trusted publishing is set up on
+#   npmjs.com (package settings > Trusted publishing): repository
+#   mindsers/configfile, workflow publish.yml, environment npm. To publish a
+#   version released while it was off, set the variable and re-run this
+#   workflow for its tag: an existing GitHub release keeps its notes.
 
 on:
   push:
@@ -14,12 +23,8 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment: npm
-    permissions:
-      contents: read
-      id-token: write # npm trusted publishing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,5 +46,87 @@ jobs:
             echo "::error::package.json is $version, the tag is $TAG."; exit 1; }
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      # npm (not pnpm) publishes: trusted publishing needs npm 11.5.1 or later.
-      - run: npm publish --access public
+      - name: Pack the package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir release
+          npm pack --pack-destination release
+          cd release
+          [ -f "configfile-$TAG.tgz" ] || {
+            echo "::error::npm pack did not produce configfile-$TAG.tgz."; exit 1; }
+          sha256sum "configfile-$TAG.tgz" > SHA256SUMS
+          cat SHA256SUMS
+      - name: Extract the release notes from the CHANGELOG
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          awk -v heading="## [$TAG]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release/notes.md
+          [ -s release/notes.md ] || {
+            echo "::error::CHANGELOG.md has no \"## [$TAG]\" section."; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: configfile-${{ github.ref_name }}.tgz
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A release created by hand, or by an earlier run: its notes are kept,
+          # and the files attested above replace any older ones.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "configfile-$TAG.tgz" SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            echo "::notice::The $TAG release already existed: its notes are kept, its files replaced."
+            exit 0
+          fi
+          gh release create "$TAG" "configfile-$TAG.tgz" SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$TAG" --notes-file notes.md
+
+  npm:
+    needs: build
+    if: vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # For the npm of the project's toolchain: trusted publishing needs 11.5.1 or later.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+      # The tarball the GitHub release has, not a new build.
+      - run: npm publish "$RUNNER_TEMP/release/configfile-$TAG.tgz" --access public
+        env:
+          TAG: ${{ github.ref_name }}
