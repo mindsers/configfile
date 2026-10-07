@@ -10,13 +10,11 @@ To install Configfile on macOS or Linux, with [Homebrew](https://brew.sh) (it al
 brew install mindsers/tap/configfile
 ```
 
-Or with npm, when Node.js 24.11 or later and git are installed:
+Or with npm, when Node.js 24.11 or later and git are installed, from the [GitHub release](https://github.com/mindsers/configfile/releases/latest):
 
 ```bash
-npm install --global configfile
+npm install --global https://github.com/mindsers/configfile/releases/download/1.0.0/configfile-1.0.0.tgz
 ```
-
-Or with [mise](https://mise.jdx.dev): `mise use --global npm:configfile`.
 
 Generating first configuration:
 

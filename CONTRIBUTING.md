@@ -97,7 +97,7 @@ The project uses [git-flow](https://nvie.com/posts/a-successful-git-branching-mo
 
 * Create your branch from `develop`: `feature/<name>` for a feature or a documentation change, `bugfix/<name>` for a fix.
 
-* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer: a version tag pushed on `master` publishes the package to npm, with provenance (`.github/workflows/publish.yml`).
+* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer: a version tag pushed on `master` publishes the package as a GitHub release, with a build provenance attestation, and to npm when it is turned on (`.github/workflows/publish.yml`).
 
 * Describe the change for a reviewer who doesn't know the code: why it is needed, what changes for users, how to test it. The pull request template has the sections.
 
