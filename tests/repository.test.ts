@@ -306,6 +306,62 @@ describe('listModules', () => {
     expect(warnings).toEqual([])
   })
 
+  it("reads configfile.json, so a module can deploy an app's own settings.json", async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zed/configfile.json',
+      settings([
+        {
+          source_path: 'settings.json',
+          target_path: '~/.config/zed/settings.json',
+          deploy: 'global',
+        },
+      ]),
+    )
+    await sandbox.write('home/dotfiles/files/zed/settings.json', '{ "theme": "One Dark" }')
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules.map(module => module.name)).toEqual(['zed'])
+    expect(usable(modules[0]).files.map(file => file.source)).toEqual([
+      path.join(sandbox.repo, 'files/zed/settings.json'),
+    ])
+    expect(warnings).toEqual([])
+  })
+
+  it('prefers configfile.json and warns when settings.json is left unused', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zsh/configfile.json',
+      settings([{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
+    )
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      settings([{ source_path: 'old', target_path: '~/.old', deploy: 'global' }]),
+    )
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(usable(modules[0]).files.map(file => file.source)).toEqual([
+      path.join(sandbox.repo, 'files/zsh/zshrc'),
+    ])
+    expect(warnings).toEqual([
+      `${path.join(sandbox.repo, 'files/zsh/settings.json')} is ignored: ` +
+        'the "zsh" module is described by configfile.json.',
+    ])
+  })
+
+  it('names configfile.json in the reason it cannot be used', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/nofiles/configfile.json', '{}')
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules).toEqual([
+      expect.objectContaining({ name: 'nofiles', error: 'configfile.json has no "files" list' }),
+    ])
+  })
+
   it('returns nothing when files/ does not exist', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/README.md')
