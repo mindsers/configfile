@@ -1263,6 +1263,27 @@ describe('scripts', () => {
     expect(await readFile(path.join(sandbox.root, 'ran'), 'utf8')).toBe('--flag value\n')
   })
 
+  it('gives scripts the repository, their name and the system in CONFIGFILE_ variables', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const env = path.join(sandbox.root, 'env')
+    // A folder script: one level deeper, where finding the repository from $0 breaks.
+    await sandbox.write(
+      'home/dotfiles/scripts/setup.macos/index.sh',
+      `printf '%s\n' "$CONFIGFILE_REPO" "$CONFIGFILE_SCRIPT" "$CONFIGFILE_OS" "$HOME_SEEN" > "${env}"\n`,
+    )
+    vi.stubEnv('HOME_SEEN', 'inherited')
+
+    try {
+      const result = await runCli(sandbox, ['scripts', 'run', 'setup'], [], { platform: 'darwin' })
+
+      expect(result.code).toBe(0)
+      expect(await readFile(env, 'utf8')).toBe(`${sandbox.repo}\nsetup\nmacos\ninherited\n`)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('runs non-executable .js files with node, in the current folder', async () => {
     const sandbox = await createSandbox()
     await withScripts(sandbox)

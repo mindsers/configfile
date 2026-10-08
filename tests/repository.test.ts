@@ -4,7 +4,13 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { CliError } from '../src/errors.ts'
-import { listModules, listScripts, type Module, type Script } from '../src/repository.ts'
+import {
+  listModules,
+  listScripts,
+  type Module,
+  type Script,
+  systemName,
+} from '../src/repository.ts'
 import { createSandbox, type Sandbox } from './helpers.ts'
 
 const settings = (files: unknown) => JSON.stringify({ files })
@@ -324,6 +330,14 @@ describe('listModules', () => {
     await sandbox.write('home/dotfiles', 'not a folder')
     await expect(modulesOf(sandbox)).rejects.toThrow(CliError)
     await expect(modulesOf(sandbox)).rejects.toThrow(/is not a folder/)
+  })
+})
+
+describe('systemName', () => {
+  it('names systems as script versions do', () => {
+    expect(systemName('darwin')).toBe('macos')
+    expect(systemName('linux')).toBe('linux')
+    expect(systemName('freebsd')).toBe('freebsd')
   })
 })
 
