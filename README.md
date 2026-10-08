@@ -109,6 +109,14 @@ Scripts can be written in any language:
 
 *configfile* never changes the permissions of your files. Scripts run in the current folder, their output is not modified (the messages of *configfile* go to stderr), and their exit code is forwarded.
 
+Scripts get these environment variables, in addition to *configfile*'s own environment (they replace variables of the same name):
+
+| Variable | Value |
+| --- | --- |
+| `CONFIGFILE_REPO` | the full path of the dotfiles repository (`folder_path`), to reach its files: `"$CONFIGFILE_REPO/Brewfile"` |
+| `CONFIGFILE_SCRIPT` | the script's name (`setup`) |
+| `CONFIGFILE_OS` | the system: `macos` or `linux`, as in the names of script versions |
+
 ## Usage
 
 - `configfile init` (`i`): ask for the URL of your dotfiles repository (any URL git can clone, such as `https://github.com/me/dotfiles.git` or `git@github.com:me/dotfiles.git`, or an existing local folder), clone it into `~/.configfile/dotfiles` and save the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept.

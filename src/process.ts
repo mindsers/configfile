@@ -15,8 +15,15 @@ import type { Script } from './repository.ts'
  * them to both processes) and SIGTERM / SIGHUP are forwarded to it, so the
  * child is not left running when configfile is asked to stop, and its own exit
  * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
+ *
+ * `env` is merged over configfile's own environment, which the child inherits:
+ * its values replace variables of the same name.
  */
-export function run(command: string, args: string[], { cwd }: { cwd: string }): Promise<number> {
+export function run(
+  command: string,
+  args: string[],
+  { cwd, env }: { cwd: string; env?: Readonly<Record<string, string>> | undefined },
+): Promise<number> {
   return new Promise((resolve, reject) => {
     // Installed before the child starts: a signal arriving in between would
     // otherwise end configfile and leave the script running on its own.
@@ -39,7 +46,11 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
     }
 
     try {
-      child = spawn(command, args, { cwd, stdio: 'inherit' })
+      child = spawn(command, args, {
+        cwd,
+        stdio: 'inherit',
+        ...(env != null && { env: { ...process.env, ...env } }),
+      })
     } catch (error) {
       cleanup()
       reject(error)
@@ -84,14 +95,14 @@ const INTERPRETERS: Record<string, string> = {
 export async function runScript(
   script: Script,
   args: string[],
-  { cwd }: { cwd: string },
+  { cwd, env }: { cwd: string; env?: Readonly<Record<string, string>> | undefined },
 ): Promise<number> {
   const executable = await isExecutable(script.path)
   const shebang = await readShebang(script)
 
   const launch = async (command: string, commandArgs: string[]) => {
     try {
-      return await run(command, commandArgs, { cwd })
+      return await run(command, commandArgs, { cwd, env })
     } catch (error) {
       throw launchError(script, shebang?.[0], error)
     }

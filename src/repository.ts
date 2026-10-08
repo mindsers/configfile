@@ -360,6 +360,12 @@ export async function listScripts(
   return scripts
 }
 
+/** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */
+export function systemName(platform: NodeJS.Platform): string {
+  for (const [name, system] of SCRIPT_SYSTEMS) if (system === platform) return name
+  return platform
+}
+
 /** The systems a script can be made for, by the second part of its name. */
 const SCRIPT_SYSTEMS: ReadonlyMap<string, NodeJS.Platform> = new Map([
   ['macos', 'darwin'],

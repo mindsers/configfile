@@ -1263,6 +1263,50 @@ describe('scripts', () => {
     expect(await readFile(path.join(sandbox.root, 'ran'), 'utf8')).toBe('--flag value\n')
   })
 
+  it('gives scripts the repository, their name and the system in CONFIGFILE_ variables', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const env = path.join(sandbox.root, 'env')
+    // A folder script is one level deeper than a file script: a path to the
+    // repository written relative to $0 ("$0/../..") would point elsewhere.
+    await sandbox.write(
+      'home/dotfiles/scripts/setup.macos/index.sh',
+      `printf '%s\n' "$CONFIGFILE_REPO" "$CONFIGFILE_SCRIPT" "$CONFIGFILE_OS" "$INHERITED" > "${env}"\n`,
+    )
+    vi.stubEnv('INHERITED', 'kept')
+    // A value left over in the environment (a script running configfile) is replaced.
+    vi.stubEnv('CONFIGFILE_OS', 'stale')
+
+    try {
+      const result = await runCli(sandbox, ['scripts', 'run', 'setup'], [], { platform: 'darwin' })
+
+      expect(result.code).toBe(0)
+      expect(await readFile(env, 'utf8')).toBe(`${sandbox.repo}\nsetup\nmacos\nkept\n`)
+      // Only the script gets them: git, run later by the same process, must not.
+      expect(process.env.CONFIGFILE_REPO).toBeUndefined()
+      expect(process.env.CONFIGFILE_OS).toBe('stale')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('gives an executable script the full path of a repository configured with ~', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure({ folder_path: '~/dotfiles' })
+    const env = path.join(sandbox.root, 'env')
+    // Run directly, through its shebang line, rather than by sh.
+    await sandbox.write(
+      'home/dotfiles/scripts/where',
+      `#!/bin/sh\nprintf '%s\n' "$CONFIGFILE_REPO" "$CONFIGFILE_OS" > "${env}"\n`,
+      0o755,
+    )
+
+    const result = await runCli(sandbox, ['scripts', 'run', 'where'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(env, 'utf8')).toBe(`${sandbox.repo}\nlinux\n`)
+  })
+
   it('runs non-executable .js files with node, in the current folder', async () => {
     const sandbox = await createSandbox()
     await withScripts(sandbox)
