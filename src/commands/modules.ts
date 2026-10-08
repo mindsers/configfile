@@ -465,7 +465,7 @@ async function prepare(
   if (files.length === 0) {
     if (failures > 0)
       throw new CliError(
-        `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry')} failed.`,
+        `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry', 'modules or settings entries')} failed.`,
       )
     output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
     return { files, failures, all }
@@ -558,7 +558,9 @@ function skippedProblems(skipped: number, interactive: boolean): string[] {
 
 function finish(failures: number, problems: string[], success: string, ctx: Context): void {
   if (failures > 0) {
-    problems.push(`${plural(failures, 'file, module or settings entry')} failed.`)
+    problems.push(
+      `${plural(failures, 'file, module or settings entry', 'files, modules or settings entries')} failed.`,
+    )
   }
   if (problems.length > 0) {
     throw new CliError(problems.join(' '))
