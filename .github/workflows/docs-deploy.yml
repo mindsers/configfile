@@ -3,10 +3,11 @@ name: Docs
 # Publishes the documentation site (docs/) to GitHub Pages, served at
 # https://docs.configfile.sh. It runs on pushes to master, the branch of
 # released versions (git-flow), so the site describes the latest release. It
-# can also be run by hand from the Actions tab, on any branch.
+# can also be run by hand from the Actions tab, to publish master again.
 #
 # Set up once in the repository settings: Pages > Source: GitHub Actions,
-# custom domain docs.configfile.sh, Enforce HTTPS.
+# custom domain docs.configfile.sh, Enforce HTTPS. The github-pages
+# environment only accepts deployments from master.
 
 on:
   push:
