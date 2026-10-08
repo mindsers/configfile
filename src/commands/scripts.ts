@@ -67,8 +67,9 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
   const output = ctx.output.toStderr()
 
   output.info(`Running "${name}"…`)
-  // So that a script finds the repository's files wherever it is, and knows
-  // which system's version runs. Documented in the README ("Scripts").
+  // Scripts run in the current folder, and a folder script is one level
+  // deeper: this gives them the repository's path, and the system whose
+  // versions run. Documented in the README ("Scripts").
   const env = {
     CONFIGFILE_REPO: repository,
     CONFIGFILE_SCRIPT: script.name,

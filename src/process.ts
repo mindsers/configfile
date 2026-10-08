@@ -16,7 +16,8 @@ import type { Script } from './repository.ts'
  * child is not left running when configfile is asked to stop, and its own exit
  * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
  *
- * `env` is added to configfile's own environment, which the child inherits.
+ * `env` is merged over configfile's own environment, which the child inherits:
+ * its values replace variables of the same name.
  */
 export function run(
   command: string,

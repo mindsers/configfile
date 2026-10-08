@@ -109,11 +109,11 @@ Scripts can be written in any language:
 
 *configfile* never changes the permissions of your files. Scripts run in the current folder, their output is not modified (the messages of *configfile* go to stderr), and their exit code is forwarded.
 
-Scripts get these environment variables, in addition to *configfile*'s own environment:
+Scripts get these environment variables, in addition to *configfile*'s own environment (they replace variables of the same name):
 
 | Variable | Value |
 | --- | --- |
-| `CONFIGFILE_REPO` | the dotfiles repository folder (`folder_path`), to reach its files: `"$CONFIGFILE_REPO/Brewfile"` |
+| `CONFIGFILE_REPO` | the full path of the dotfiles repository (`folder_path`), to reach its files: `"$CONFIGFILE_REPO/Brewfile"` |
 | `CONFIGFILE_SCRIPT` | the script's name (`setup`) |
 | `CONFIGFILE_OS` | the system: `macos` or `linux`, as in the names of script versions |
 
