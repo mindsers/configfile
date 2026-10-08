@@ -1,6 +1,8 @@
 ---
 title: Installation
 description: Install configfile on macOS or Linux, with Homebrew or npm.
+sidebar:
+  order: 1
 ---
 
 ## Requirements

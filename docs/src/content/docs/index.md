@@ -5,7 +5,7 @@ description: Manage your dotfiles and setup scripts from a git repository, on ma
 
 *configfile* is a command line tool that helps you manage your configuration files (dotfiles) and setup scripts from a git repository.
 
-- [Install configfile](/getting-started/installation/), then [point it to your dotfiles repository](/getting-started/quick-start/).
+- [Install configfile](/getting-started/installation/), then follow [Your first dotfiles repository](/getting-started/tutorial/), a ten-minute tutorial.
 - [How it works](/concepts/how-it-works/): your repository, the mirror configfile keeps, and what it deploys.
 - Reference: [commands](/reference/commands/), [modules and `settings.json`](/reference/modules/), [scripts](/reference/scripts/), [configuration](/reference/configuration/), [history](/reference/history/).
 - [Upgrading from 0.3](/guides/upgrading-from-0-3/).
