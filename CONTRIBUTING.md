@@ -69,7 +69,7 @@ Everyone taking part in the project follows the [code of conduct](CODE_OF_CONDUC
 
 ### Do you want to contribute to the documentation?
 
-The documentation lives with the source code: the [documentation site](docs/) for users (published at [docs.configfile.sh](https://docs.configfile.sh), run it locally with `pnpm docs:dev`), and this file for contributors. Each page of the site is a Markdown file in `docs/src/content/docs/`. Until the README is shortened to an introduction, it holds the same content: update both. The usage lines and option tables of the commands page are generated from the commands' definitions: after adding or changing a command, an argument or an option, run `pnpm docs:commands` (a test fails until the page is up to date).
+The documentation lives with the source code: the [documentation site](docs/) for users (published at [docs.configfile.sh](https://docs.configfile.sh), run it locally with `pnpm docs:dev`), and this file for contributors. Each page of the site is a Markdown file in `docs/src/content/docs/`. Until the README is shortened to an introduction, it holds the same content: update both. The usage lines and option tables of the commands page are generated from the commands' definitions: after adding or changing a command, an argument or an option, run `pnpm docs:commands` (a test fails until the page is up to date). A new command first needs its section and an empty `<!-- generated: configfile <command> -->` / `<!-- /generated -->` block on the page, which the script then fills.
 
 * Please refer to the "Do you intend to add a new feature or change an existing one?" section.
 

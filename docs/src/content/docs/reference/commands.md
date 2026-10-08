@@ -29,7 +29,7 @@ Lists the available modules. `configfile modules` alone does the same.
 
 <!-- generated: configfile modules list -->
 ```sh
-configfile modules list [options]
+configfile modules list
 ```
 
 Short form: `configfile m l`.
@@ -37,7 +37,7 @@ Short form: `configfile m l`.
 
 ## `configfile modules status`
 
-Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file. Without module names, it also lists the deployed files the repository no longer deploys. With `--local`, it checks the local files, in the current folder.
+Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file. Without module names, it also lists the deployed files the repository no longer deploys.
 
 <!-- generated: configfile modules status -->
 ```sh
@@ -54,7 +54,7 @@ Short form: `configfile m st`.
 
 ## `configfile modules deploy`
 
-Deploys the global files of the given modules. Without module names, asks to deploy all modules. With `--local`, copies the local files of the modules instead.
+Deploys the global files of the given modules. Without module names, asks to deploy all modules.
 
 <!-- generated: configfile modules deploy -->
 ```sh
@@ -74,7 +74,7 @@ Short form: `configfile m d`.
 
 ## `configfile modules undeploy`
 
-Removes the deployed global files of the given modules and restores their backups. Without module names, asks to undeploy all modules. `--local` and `--dry-run` work as for `deploy`. `--removed` only undeploys the files the repository no longer deploys (see [Modules](/reference/modules/)); with `--local`, the copies made in the current folder.
+Removes the deployed global files of the given modules and restores their backups. Without module names, asks to undeploy all modules. `--local` and `--dry-run` work as for `deploy`. [Modules](/reference/modules/) explains which files `--removed` covers; with `--local`, it covers the copies made in the current folder.
 
 <!-- generated: configfile modules undeploy -->
 ```sh
@@ -98,7 +98,7 @@ Lists the available scripts. `configfile scripts` alone does the same.
 
 <!-- generated: configfile scripts list -->
 ```sh
-configfile scripts list [options]
+configfile scripts list
 ```
 
 Short form: `configfile s l`.
@@ -110,7 +110,7 @@ Runs a script. Arguments after `--` are passed to the script.
 
 <!-- generated: configfile scripts run -->
 ```sh
-configfile scripts run [options] <name> [args...]
+configfile scripts run <name> [args...]
 ```
 
 Short form: `configfile s r`.
@@ -127,7 +127,7 @@ Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetche
 
 <!-- generated: configfile update -->
 ```sh
-configfile update [options]
+configfile update
 ```
 
 Short form: `configfile u`.

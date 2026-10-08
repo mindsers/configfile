@@ -8,7 +8,8 @@
 // The page holds the prose; each command has a block between
 //   <!-- generated: configfile modules deploy -->
 //   <!-- /generated -->
-// which this script fills. tests/docs.test.ts runs the check.
+// which this script fills. A new command needs its block added by hand first.
+// tests/docs.test.ts makes the same comparison as --check.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { Writable } from 'node:stream'
@@ -26,28 +27,65 @@ export const COMMANDS_PAGE = fileURLToPath(
   new URL('../docs/src/content/docs/reference/commands.md', import.meta.url),
 )
 
-const BLOCK = /<!-- generated: (.+?) -->\n[\s\S]*?<!-- \/generated -->/g
+const MARKER = /<!--\s*(\/)?generated\s*(?::\s*(.*?))?\s*-->/g
+
+interface Block {
+  name: string
+  /** Offsets of the opening marker's end and of the closing marker's start. */
+  contentStart: number
+  contentEnd: number
+}
 
 /** The page with every generated block rewritten from the commands' definitions. */
 export function renderCommandsPage(page: string): string {
   const commands = new Map(listCommands(buildProgram(inertContext())).map(c => [path(c), c]))
+  const blocks = findBlocks(page)
 
-  const documented = [...page.matchAll(BLOCK)].map(match => match[1] ?? '')
-  const missing = [...commands.keys()].filter(name => !documented.includes(name))
-  const unknown = documented.filter(name => !commands.has(name))
-  if (missing.length > 0 || unknown.length > 0) {
-    throw new Error(
-      [
-        ...missing.map(name => `"${name}" has no <!-- generated: ${name} --> block.`),
-        ...unknown.map(name => `"${name}" is not a command.`),
-      ].join('\n'),
-    )
+  const problems: string[] = []
+  const names = blocks.map(block => block.name)
+  for (const name of commands.keys()) {
+    if (!names.includes(name)) problems.push(`"${name}" has no <!-- generated: ${name} --> block.`)
   }
+  for (const [index, name] of names.entries()) {
+    if (!commands.has(name)) problems.push(`"${name}" is not a command.`)
+    else if (names.indexOf(name) !== index) problems.push(`"${name}" has more than one block.`)
+  }
+  for (const command of commands.values()) problems.push(...undocumented(command))
+  if (problems.length > 0) throw new Error(problems.join('\n'))
 
-  return page.replace(BLOCK, (_, name: string) => {
-    const command = commands.get(name) as Command
-    return `<!-- generated: ${name} -->\n${describe(command)}<!-- /generated -->`
-  })
+  // The page's own line endings, so that a CRLF checkout stays as it is.
+  const eol = page.includes('\r\n') ? '\r\n' : '\n'
+  let result = ''
+  let offset = 0
+  for (const block of blocks) {
+    const generated = describe(commands.get(block.name) as Command).replaceAll('\n', eol)
+    result += page.slice(offset, block.contentStart) + eol + generated
+    offset = block.contentEnd
+  }
+  return result + page.slice(offset)
+}
+
+/** The generated blocks of the page, in order; throws on a malformed marker. */
+function findBlocks(page: string): Block[] {
+  const blocks: Block[] = []
+  let open: { name: string; end: number } | null = null
+
+  for (const match of page.matchAll(MARKER)) {
+    const [marker, closing, rawName] = match
+    const start = match.index
+    if (closing == null) {
+      const name = (rawName ?? '').trim()
+      if (name === '') throw new Error(`A <!-- generated --> marker names no command.`)
+      if (open != null) throw new Error(`The block of "${open.name}" has no <!-- /generated -->.`)
+      open = { name, end: start + marker.length }
+    } else {
+      if (open == null) throw new Error('A <!-- /generated --> marker closes no block.')
+      blocks.push({ name: open.name, contentStart: open.end, contentEnd: start })
+      open = null
+    }
+  }
+  if (open != null) throw new Error(`The block of "${open.name}" has no <!-- /generated -->.`)
+  return blocks
 }
 
 /** Every command users run, nested ones included, but not their groups or `help`. */
@@ -65,25 +103,45 @@ function path(command: Command): string {
   return names.join(' ')
 }
 
+/** Arguments and options without a description, which the page could not explain. */
+function undocumented(command: Command): string[] {
+  return [
+    ...command.registeredArguments
+      .filter(arg => arg.description.trim() === '')
+      .map(arg => `Argument "${arg.name()}" of "${path(command)}" has no description.`),
+    ...command.options
+      .filter(option => option.description.trim() === '')
+      .map(option => `Option "${option.flags}" of "${path(command)}" has no description.`),
+  ]
+}
+
 function describe(command: Command): string {
   const help = command.createHelp()
-  // "configfile modules deploy|d [options] [modules...]", without the alias.
-  const usage = help.commandUsage(command).replace(/\|\S+/g, '')
+  // All arguments, documented or not: commander's visibleArguments hides them all
+  // when none has a description.
+  const args = command.registeredArguments
+  // --help is shown once for all commands, in the page's introduction.
+  const options = help.visibleOptions(command).filter(option => option.long !== '--help')
+
+  // As --help prints it, without the alias ("deploy|d") and without
+  // "[options]" when --help is the only option.
+  const alias = command.aliases()[0]
+  let usage = help.commandUsage(command)
+  if (alias != null) usage = usage.replace(`${command.name()}|${alias}`, command.name())
+  if (options.length === 0) usage = usage.replace(' [options]', '')
   const lines = ['```sh', usage, '```', '']
 
-  const aliases = aliasesOf(command)
-  if (aliases != null) lines.push(`Short form: \`${aliases}\`.`, '')
+  const short = shortForm(command)
+  if (short != null) lines.push(`Short form: \`${short}\`.`, '')
 
-  const args = help.visibleArguments(command)
-  const options = help.visibleOptions(command).filter(option => option.long !== '--help')
   const rows = [
     ...args.map(arg => [help.argumentTerm(arg), help.argumentDescription(arg)]),
     ...options.map(option => [help.optionTerm(option), help.optionDescription(option)]),
   ]
   if (rows.length > 0) {
     lines.push('| Argument or option | Description |', '| --- | --- |')
-    for (const [term, description] of rows) {
-      lines.push(`| \`${term}\` | ${cell(description ?? '')} |`)
+    for (const [term = '', description = ''] of rows) {
+      lines.push(`| \`${cell(term)}\` | ${cell(description)} |`)
     }
     lines.push('')
   }
@@ -91,7 +149,7 @@ function describe(command: Command): string {
 }
 
 /** `configfile m d` for `configfile modules deploy`, or null without aliases. */
-function aliasesOf(command: Command): string | null {
+function shortForm(command: Command): string | null {
   const names: string[] = []
   let aliased = false
   for (let current: Command | null = command; current != null; current = current.parent) {
@@ -103,7 +161,7 @@ function aliasesOf(command: Command): string | null {
 }
 
 function cell(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+  return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
 }
 
 /** A context for building the program only: nothing is read, written or asked. */
@@ -119,15 +177,15 @@ function inertContext(): Context {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.main) {
   const page = readFileSync(COMMANDS_PAGE, 'utf8')
   const rendered = renderCommandsPage(page)
-  if (process.argv.includes('--check')) {
-    if (rendered !== page) {
-      console.error(`${COMMANDS_PAGE} is out of date: run "pnpm docs:commands".`)
-      process.exit(1)
-    }
-  } else if (rendered !== page) {
+  if (rendered === page) {
+    console.log(`${COMMANDS_PAGE} is up to date.`)
+  } else if (process.argv.includes('--check')) {
+    console.error(`${COMMANDS_PAGE} is out of date: run "pnpm docs:commands".`)
+    process.exit(1)
+  } else {
     writeFileSync(COMMANDS_PAGE, rendered)
     console.log(`Updated ${COMMANDS_PAGE}.`)
   }
