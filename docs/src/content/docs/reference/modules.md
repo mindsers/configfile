@@ -39,3 +39,17 @@ To stay safe, *configfile* never undeploys a file when it cannot tell whether th
 Only one *configfile* at a time changes files: a second one waits for the first to finish (the lock is `~/.configfile/lock`).
 
 > **Deploying a repository means trusting it**, like code you run: its files end up in your shell configuration, and its scripts run on your machine. Only deploy repositories you trust.
+
+## Completion and validation in your editor
+
+A [JSON Schema](https://docs.configfile.sh/schemas/settings.json) describes `settings.json`. Add it at the top of the file, and editors that support JSON Schema (VS Code, Zed, JetBrains IDEs, and others) suggest the keys and their values, show their descriptions, and flag mistakes as you type:
+
+```json
+{
+  "$schema": "https://docs.configfile.sh/schemas/settings.json",
+  "files": []
+}
+```
+
+*configfile* ignores the `$schema` key. The schema checks the structure of the file; the rules about where paths may point are checked by *configfile* when it reads the module. It is also stricter, to catch typos: it flags keys *configfile* doesn't know (such as `target-path`), which *configfile* ignores.
+

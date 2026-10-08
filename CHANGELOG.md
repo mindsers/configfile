@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scripts get the repository folder, their name and the system in the `CONFIGFILE_REPO`,
   `CONFIGFILE_SCRIPT` and `CONFIGFILE_OS` environment variables
   ([#295](https://github.com/mindsers/configfile/issues/295)).
+- A JSON Schema for `settings.json`, at `https://docs.configfile.sh/schemas/settings.json`: with
+  `"$schema"` at the top of the file, editors complete and check it as you type.
 
 ## [1.0.0] - 2026-10-05
 ### Added
