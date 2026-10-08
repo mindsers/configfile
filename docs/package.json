@@ -1,0 +1,19 @@
+{
+  "name": "configfile-docs",
+  "private": true,
+  "type": "module",
+  "description": "The configfile documentation site (docs.configfile.sh), built with Astro Starlight.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro sync && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.42.5",
+    "astro": "7.3.6"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

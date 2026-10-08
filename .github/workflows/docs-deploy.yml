@@ -1,0 +1,56 @@
+name: Docs
+
+# Publishes the documentation site (docs/) to GitHub Pages, served at
+# https://docs.configfile.sh. It runs on pushes to master, the branch of
+# released versions (git-flow), so the site describes the latest release. It
+# can also be run by hand from the Actions tab, to publish master again.
+#
+# Set up once in the repository settings: Pages > Source: GitHub Actions,
+# custom domain docs.configfile.sh, Enforce HTTPS. The github-pages
+# environment only accepts deployments from master.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer one waits instead of cancelling.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the pages show when they were last updated, from git
+          persist-credentials: false
+      # No cache: nothing restored from another run can end up on the site.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+          cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write # publish the site
+      id-token: write # prove the deployment comes from this workflow
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -19,7 +19,8 @@ jobs:
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.9.18 # mise version, updated by Renovate
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm lint
       - run: pnpm typecheck
       - name: Check the workflows
@@ -46,7 +47,8 @@ jobs:
           version: 2026.9.18 # mise version, updated by Renovate
           # One cache per Node.js version: the override is not part of mise.toml.
           cache_key_prefix: mise-node-${{ matrix.node }}
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm test:coverage
 
   package:
@@ -59,7 +61,8 @@ jobs:
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.9.18 # mise version, updated by Renovate
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm pack --out "$RUNNER_TEMP/configfile.tgz"
       - name: Check npm publishes package.json as written
         # npm publish silently drops what it considers invalid (a "./" bin path
@@ -78,3 +81,18 @@ jobs:
           configfile --version
           configfile --help
           HOME="$RUNNER_TEMP/home" configfile history
+
+  docs:
+    # Builds the documentation site (docs/), as docs-deploy.yml publishes it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the pages show when they were last updated, from git
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter configfile-docs typecheck
+      - run: pnpm docs:build

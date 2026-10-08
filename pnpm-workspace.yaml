@@ -1,3 +1,7 @@
+# The documentation site (docs/) is a workspace package: one lockfile for both.
+packages:
+  - docs
+
 # Supply-chain protections for installing dependencies.
 
 # Wait a day before installing a newly published version: most malicious
@@ -9,3 +13,7 @@ trustPolicy: no-downgrade
 # No dependency may run install scripts unless listed here.
 strictDepBuilds: true
 onlyBuiltDependencies: []
+# Install scripts not needed: these packages ship their binaries as
+# platform-specific optional dependencies (esbuild comes with Astro, for docs/).
+allowBuilds:
+  esbuild: false

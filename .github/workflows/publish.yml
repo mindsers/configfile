@@ -44,7 +44,8 @@ jobs:
           version=$(node -p "require('./package.json').version")
           [ "$version" = "$TAG" ] || {
             echo "::error::package.json is $version, the tag is $TAG."; exit 1; }
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is not part of a release.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm check
       - name: Pack the package
         env:

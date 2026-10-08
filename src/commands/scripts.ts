@@ -69,7 +69,7 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
   output.info(`Running "${name}"…`)
   // Scripts run in the current folder, and a folder script is one level
   // deeper: this gives them the repository's path, and the system whose
-  // versions run. Documented in the README ("Scripts").
+  // versions run. Documented in docs/src/content/docs/reference/scripts.md.
   const env = {
     CONFIGFILE_REPO: repository,
     CONFIGFILE_SCRIPT: script.name,
