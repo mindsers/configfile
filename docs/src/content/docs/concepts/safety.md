@@ -13,8 +13,8 @@ The files of a repository end up in your shell's and your tools' configuration, 
 
 ## A copy of what is replaced
 
-- **Global files:** when something already exists where a file is deployed (a file, a folder or another link), it is moved aside to `<target>.old` (or `.old.1`, `.old.2`…) before the link is created. A link that already points to the right file is left as it is, so deploying twice is safe.
-- **Local files:** an existing copy that differs from the repository is only replaced after you answer yes (or with `--force`), and it is moved aside to `.old` the same way. Without a terminal to ask in, it is skipped and the command exits with an error.
+- **Global files:** when something already exists where a file is deployed (a file, a folder or another link), it is moved aside to `<target>.old` (or `.old.1`, `.old.2`…) before the link is created. A link that already points to the right file is left as it is, so deploying twice is safe; an outdated link *configfile* made itself is simply replaced.
+- **Local files:** an existing file that differs from the repository, whether *configfile* copied it or not, is only replaced after you answer yes (or with `--force`), and it is moved aside to `.old` the same way. Without a terminal to ask in, it is skipped and the command exits with an error.
 - **Preview:** `--dry-run` on `modules deploy` and `modules undeploy` shows what would happen, without changing anything.
 
 Apart from the backup that `undeploy` puts back in place, `.old` files stay where they are: delete the ones you no longer need.
@@ -26,7 +26,7 @@ Apart from the backup that `undeploy` puts back in place, `.old` files stay wher
 - it removes the links that point to the repository's files, including those made by *configfile* 0.3, and the local copies it made, as long as a copy is still the file it made and matches the repository's current version;
 - it moves the most recent backup it made back in place, if that backup is unchanged.
 
-Everything else stays: files it didn't create, even when they are identical to the repository; local copies that differ from the repository (because you changed them, or because the repository changed since) or that an editor saved again; and `.old` files it didn't make.
+Everything else stays: files it didn't create, even when they are identical to the repository (links to the repository's files excepted, as above); local copies that differ from the repository (because you changed them, or because the repository changed since) or that an editor saved again; and `.old` files it didn't make.
 
 ## When in doubt, nothing is removed
 
@@ -38,7 +38,7 @@ A `target_path` can't put something important at risk: your home folder, the cur
 
 ## Deployments don't overlap
 
-`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another waits for it, up to 10 seconds, then stops with an error that says which process is running. The lock is `~/.configfile/lock`; the lock of a process that no longer exists is taken over. Other commands, such as `update`, don't wait for it, so don't run them during a deployment.
+`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, up to 10 seconds, then stops with an error, which names the other process when it can. The lock is `~/.configfile/lock`; the lock of a process that no longer exists is taken over. Other commands, such as `update`, don't wait for it, so don't run them during a deployment.
 
 ## Your configuration and history stay private
 

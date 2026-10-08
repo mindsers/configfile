@@ -38,10 +38,10 @@ If *configfile* deployed from your working copy, uncommitted edits, a branch you
 
 The mirror only follows the remote. `update` doesn't merge anything, so your work in progress never blocks it: it fetches the remote and makes the mirror identical to it. It still needs the remote to be reachable, and stops with an error if fetching fails.
 
-You don't edit the mirror. If something changes in it anyway, for example an edit made through a deployed link, `update` first saves the change as a patch in `~/.configfile/saved/`, so that you can recover it: apply the patch in your working copy with `git am`.
+You don't edit the mirror. If something changes in it anyway, for example an edit made through a deployed link, `update` first saves the uncommitted changes and unpushed commits as a patch in `~/.configfile/saved/`, so that you can recover them: apply the patch in your working copy with `git am`.
 
 :::caution
-`update` resets the mirror's folder, whatever it is. A configuration made with *configfile* 0.3 may point to your own working copy (for example `~/.dotfiles`): `update` would then reset your working copy, after saving your local changes as a patch. [Upgrading from 0.3](/guides/upgrading-from-0-3/) explains how to give *configfile* its own copy.
+`update` resets the mirror's folder, whatever it is. A configuration made with *configfile* 0.3 may point to your own working copy (for example `~/.dotfiles`): `update` would then reset your working copy to the remote, after saving its uncommitted changes and unpushed commits as a patch. [Upgrading from 0.3](/guides/upgrading-from-0-3/) explains how to give *configfile* its own copy.
 :::
 
 ## The repository's layout
@@ -77,4 +77,4 @@ An entry with `"deploy": "none"` stays in the repository without being deployed.
 - undo a deployment, with [`configfile modules undeploy`](/reference/commands/#configfile-modules-undeploy), putting back the file it replaced;
 - find the files it deployed for entries that have since left the repository, which `update` warns about and `configfile modules undeploy --removed` removes.
 
-It also logs each run of the commands that change things (`init`, `modules deploy` and `undeploy` except dry runs, `update`, `scripts run`) in `~/.configfile/history.jsonl`, which [`configfile history`](/reference/history/) shows. [Safety and trust](/concepts/safety/) explains how *configfile* avoids losing or overwriting your files.
+It also logs each run of the commands that change things (`init`, `modules deploy` and `undeploy` except dry runs, `update`, `scripts run`) in `~/.configfile/history.jsonl`, along with any command that fails unexpectedly; [`configfile history`](/reference/history/) shows them. [Safety and trust](/concepts/safety/) explains how *configfile* avoids losing or overwriting your files.
