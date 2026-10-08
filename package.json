@@ -44,6 +44,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "docs:dev": "pnpm --filter configfile-docs dev",
     "docs:build": "pnpm --filter configfile-docs build",
+    "docs:commands": "node tools/docs-commands.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "prepack": "node --run clean && tsc -p tsconfig.build.json"
   },
