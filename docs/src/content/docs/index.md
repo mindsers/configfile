@@ -9,6 +9,7 @@ description: Manage your dotfiles and setup scripts from a git repository, on ma
 - [How it works](/concepts/how-it-works/): your repository, the mirror configfile keeps, and what it deploys.
 - Reference: [commands](/reference/commands/), [modules and `settings.json`](/reference/modules/), [scripts](/reference/scripts/), [configuration](/reference/configuration/), [history](/reference/history/).
 - [Upgrading from 0.3](/guides/upgrading-from-0-3/).
+- [Changelog](https://github.com/mindsers/configfile/blob/develop/CHANGELOG.md): what changed in each version.
 
 ## Contribution
 

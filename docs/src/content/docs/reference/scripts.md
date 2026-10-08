@@ -5,7 +5,7 @@ description: Script files and folders, per-system versions, interpreters and env
 
 Every file of `scripts/`, and every folder of `scripts/` (or symbolic link to a folder) containing an `index` file (`index`, `index.sh`, …), is a **script**. Hidden files are ignored. To only use some extensions, set `script_extensions` in the [configuration](/reference/configuration/).
 
-A script's name is its file name (or folder name) up to the first dot, with the same rules as module names: `scripts/setup.sh` is named `setup`. When two scripts have the same name, only the first one, alphabetically, is used, with a warning.
+A script's name is its file name (or folder name) up to the first dot, with the same rules as [module names](/reference/modules/): `scripts/setup.sh` is named `setup`. When two scripts have the same name, only the first one, alphabetically, is used, with a warning.
 
 A script can have a version for each system: `macos` or `linux` after the first dot (`scripts/setup.macos.sh`, `scripts/setup.linux.py`, or a folder such as `scripts/setup.macos/`). On macOS, `configfile scripts run setup` runs `setup.macos.sh`; on another system, it runs the generic `setup.sh`, if there is one. A version for another system is ignored.
 

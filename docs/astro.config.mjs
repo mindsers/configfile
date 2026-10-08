@@ -1,6 +1,6 @@
 // The documentation site, published at https://docs.configfile.sh.
 // Everything specific to configfile is in this file; the pages are in
-// src/content/docs/, and each folder there is a sidebar section.
+// src/content/docs/, one folder per section listed in `sidebar` below.
 import starlight from '@astrojs/starlight'
 import { defineConfig } from 'astro/config'
 

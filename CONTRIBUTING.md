@@ -69,7 +69,7 @@ Everyone taking part in the project follows the [code of conduct](CODE_OF_CONDUC
 
 ### Do you want to contribute to the documentation?
 
-The documentation lives with the source code: the [README](README.md) for users, and this file for contributors.
+The documentation lives with the source code: the [documentation site](docs/) for users (published at [docs.configfile.sh](https://docs.configfile.sh), run it locally with `pnpm docs:dev`), and this file for contributors. Each page of the site is a Markdown file in `docs/src/content/docs/`. Until the README is shortened to an introduction, it holds the same content: update both.
 
 * Please refer to the "Do you intend to add a new feature or change an existing one?" section.
 
