@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.configfile.sh/schemas/settings.json",
+  "title": "configfile module settings",
+  "description": "The settings.json file of a configfile module: the files of the module and how each one is deployed. See https://docs.configfile.sh/reference/modules/",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "description": "The JSON Schema of this file, for editor completion and validation. configfile ignores it.",
+          "type": "string"
+        },
+        "files": {
+          "description": "The files of the module.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/entry" }
+        }
+      },
+      "required": ["files"],
+      "additionalProperties": false
+    },
+    {
+      "description": "Deprecated: the configfile 0.3 format, a plain list of entries. Put the list in a \"files\" key instead. It will stop working in 2.0.",
+      "deprecated": true,
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  ],
+  "$defs": {
+    "path": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "source_path": {
+          "$ref": "#/$defs/path",
+          "description": "Path of the file or folder, relative to the module folder. It must stay inside the module folder."
+        },
+        "target_path": {
+          "$ref": "#/$defs/path",
+          "description": "Where the file is deployed. ~ is your home folder. A relative path is relative to the home folder for global files, and to the current folder for local files."
+        },
+        "deploy": {
+          "description": "How the file is deployed: \"global\" links it (configfile modules deploy), \"local\" copies it into the current folder (configfile modules deploy --local), \"none\" keeps it in the repository without deploying it.",
+          "enum": ["global", "local", "none"]
+        },
+        "global": {
+          "description": "Deprecated: the older spelling of \"deploy\" (true is \"global\", false is \"local\"). It will stop working in 2.0.",
+          "deprecated": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "description": "\"deploy\" and \"global\" cannot be used together.",
+        "required": ["deploy", "global"]
+      },
+      "allOf": [
+        {
+          "description": "Every entry names its file, except those that are never deployed.",
+          "if": { "properties": { "deploy": { "const": "none" } }, "required": ["deploy"] },
+          "else": { "required": ["source_path"] }
+        },
+        {
+          "description": "Deployed files need a target.",
+          "if": {
+            "anyOf": [
+              {
+                "properties": { "deploy": { "enum": ["global", "local"] } },
+                "required": ["deploy"]
+              },
+              { "required": ["global"] }
+            ]
+          },
+          "then": { "required": ["target_path"] }
+        }
+      ]
+    }
+  }
+}
