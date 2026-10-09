@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A JSON Schema for `settings.json`, at `https://docs.configfile.sh/schemas/settings.json`: with
   `"$schema"` at the top of the file, editors complete and check it as you type.
 
+### Fixed
+- When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
+  entrys" instead of "settings entries".
+
 ## [1.0.0] - 2026-10-05
 ### Added
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved

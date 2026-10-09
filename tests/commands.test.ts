@@ -482,6 +482,25 @@ describe('modules status, dry run and undeploy', () => {
     expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
   })
 
+  it('counts the failures in the plural', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await sandbox.write(
+      'home/dotfiles/files/other/settings.json',
+      JSON.stringify({
+        files: [
+          { source_path: 'x', deploy: 'global' },
+          { source_path: 'y', deploy: 'global' },
+        ],
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', '--all'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('2 files, modules or settings entries failed.')
+  })
+
   it('gives a dry run the exit code of the real run', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
