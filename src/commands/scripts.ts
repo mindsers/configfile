@@ -1,11 +1,10 @@
 import type { Command } from 'commander'
 
-import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import { plural } from '../output.ts'
 import { runScript } from '../process.ts'
-import { listScripts, type Script, systemName } from '../repository.ts'
+import { loadScripts, scriptEnvironment } from '../repository.ts'
 
 export function registerScriptsCommand(program: Command, ctx: Context): void {
   const scripts = program
@@ -26,17 +25,6 @@ export function registerScriptsCommand(program: Command, ctx: Context): void {
     .argument('[args...]', 'arguments passed to the script (put them after "--")')
     .description('run a script')
     .action((name: string, args: string[]) => run(name, args, ctx))
-}
-
-async function loadScripts(ctx: Context): Promise<{ repository: string; scripts: Script[] }> {
-  const config = await new ConfigStore(ctx.home, {
-    warn: message => ctx.output.warn(message),
-  }).read()
-
-  const scripts = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
-    warn: message => ctx.output.warn(message),
-  })
-  return { repository: config.folderPath, scripts }
 }
 
 async function list(ctx: Context): Promise<void> {
@@ -67,14 +55,7 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
   const output = ctx.output.toStderr()
 
   output.info(`Running "${name}"…`)
-  // Scripts run in the current folder, and a folder script is one level
-  // deeper: this gives them the repository's path, and the system whose
-  // versions run. Documented in docs/src/content/docs/reference/scripts.md.
-  const env = {
-    CONFIGFILE_REPO: repository,
-    CONFIGFILE_SCRIPT: script.name,
-    CONFIGFILE_OS: systemName(ctx.platform),
-  }
+  const env = scriptEnvironment(script, repository, ctx.platform)
   const code = await runScript(script, args, { cwd: ctx.cwd, env })
   // The arguments are never recorded: they may contain secrets.
   ctx.history.record({ kind: 'script', name: script.name, file: script.path, exitCode: code })

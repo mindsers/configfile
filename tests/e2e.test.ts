@@ -76,11 +76,16 @@ describe('built CLI', () => {
     })
 
     /** Starts a long-running script, sends `signal` to configfile only once it runs. */
-    async function interrupt(sandbox: Sandbox, script: string, signal: NodeJS.Signals) {
+    async function interrupt(
+      sandbox: Sandbox,
+      script: string,
+      signal: NodeJS.Signals,
+      args = ['scripts', 'run', 'long'],
+    ) {
       await sandbox.configure()
       await sandbox.write('home/dotfiles/scripts/long.sh', script)
 
-      const child = spawn(process.execPath, [cli, 'scripts', 'run', 'long'], {
+      const child = spawn(process.execPath, [cli, ...args], {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
         detached: true,
@@ -88,9 +93,11 @@ describe('built CLI', () => {
       if (child.pid != null) groups.push(child.pid)
 
       let stdout = ''
+      let sent = false
       child.stdout.on('data', chunk => {
         stdout += chunk
-        if (stdout.includes('ready')) child.kill(signal)
+        // Once: a deployment goes on writing to stdout.
+        if (stdout.includes('ready') && !sent) sent = child.kill(signal)
       })
 
       return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
@@ -105,6 +112,32 @@ describe('built CLI', () => {
       const result = await interrupt(sandbox, 'echo ready\nsleep 0.3\nexit 5\n', 'SIGINT')
 
       expect(result).toEqual({ code: 5, signal: null })
+    })
+
+    it('stops a deployment interrupted during a post_deploy script, even with --keep-going', async () => {
+      const sandbox = await createSandbox()
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/rc`)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
+            post_deploy: 'long',
+          }),
+        )
+      }
+
+      // The script ends by itself with success: configfile was still asked to stop.
+      const result = await interrupt(sandbox, 'echo ready\nsleep 0.3\n', 'SIGINT', [
+        'modules',
+        'deploy',
+        '--all',
+        '--keep-going',
+      ])
+
+      expect(result).toEqual({ code: 130, signal: null })
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+      expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
     })
 
     it('forwards SIGTERM to the script', async () => {

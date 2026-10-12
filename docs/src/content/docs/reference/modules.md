@@ -28,7 +28,7 @@ An entry without `deploy` or `global` is not deployed, and `modules deploy` warn
 
 When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A link that already points to the right file is left as is, so deploying twice is safe.
 
-When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
+When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files of its module are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
 
 *configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links that point to the repository's files and the local copies *configfile* made, as long as a copy is still the file it made and matches the repository's current version, and moves the most recent backup it made back in place, if that backup is unchanged. Anything else is left untouched: files it did not create (even when identical to the repository), apart from links to the repository's files, local copies that differ from the repository (changed by you, or because the repository changed since) or were saved again by an editor, and `.old` files you made yourself.
 
@@ -36,9 +36,47 @@ When an entry leaves the repository (removed, set to `"deploy": "none"`, given a
 
 To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose `settings.json` cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
 
-`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, up to 10 seconds, then stops with an error (the lock is `~/.configfile/lock`). Other commands, such as `update`, don't wait for it.
+`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, up to 10 seconds, then stops with an error (the lock is `~/.configfile/lock`). Both take the lock for the files of each module in turn, and release it while a [script of the module](#run-scripts-when-a-module-is-deployed-or-undeployed) runs: another deployment can take its turn between two modules, and a deployment that cannot take the lock again stops there, saying which modules were left out. Other commands, such as `update`, don't wait for it.
 
 > **Deploying a repository means trusting it**, like code you run: its files end up in your shell configuration, and its scripts run on your machine. Only deploy repositories you trust. [Safety and trust](/concepts/safety/) explains what *configfile* protects, and what it refuses to touch.
+
+## Run scripts when a module is deployed or undeployed
+
+[Run scripts when a module is deployed](/guides/module-scripts/) is a step-by-step guide. Some modules need a step around their files: installing what the configuration needs, installing the plugins it lists, rebuilding a cache, starting a service, and the reverse when the module is removed. Name [scripts](/reference/scripts/) of the repository next to `files`:
+
+```json
+{
+  "files": [
+    { "source_path": "tmux.conf", "target_path": "~/.tmux.conf", "deploy": "global" }
+  ],
+  "post_deploy": "tmux-plugins",
+  "pre_undeploy": "tmux-plugins-remove"
+}
+```
+
+| Setting | The script runs |
+| --- | --- |
+| `pre_deploy` | before `modules deploy` deploys the files of the module |
+| `post_deploy` | once `modules deploy` has deployed all of them |
+| `pre_undeploy` | before `modules undeploy` removes the files of the module, while they are still in place |
+| `post_undeploy` | once `modules undeploy` has removed them |
+
+Each one is a script's name, as `configfile scripts list` shows it: here `scripts/tmux-plugins.sh`, or `scripts/tmux-plugins.macos.sh` on macOS. It is run the way `configfile scripts run tmux-plugins` runs it (same interpreters, in the current folder, with the same variables), without arguments, and also gets the setting's name in `CONFIGFILE_HOOK`, the module's name in `CONFIGFILE_MODULE` and `global` or `local` in `CONFIGFILE_DEPLOY`.
+
+`modules deploy` and `modules undeploy` work on one module at a time, in the order of `modules list`: the `pre_` script of a module, its files, its `post_` script, then the next module.
+
+- The scripts run **every time** the module is deployed or undeployed, including when its files were already up to date or not deployed, so write them to be safe to run again.
+- They only run when the module has files of the kind the command works on (local files with `--local`, global files otherwise).
+- When a `pre_` script fails, the files of the module are **left as they are** (not deployed, or still deployed) and its `post_` script is not run.
+- The `post_deploy` script only runs when all the files of the module are in place. When a file fails or is skipped, or an entry is invalid, it is not run, with a warning. In the same way, the `post_undeploy` script is not run when a file could not be undeployed; a file that `undeploy` keeps on purpose (a copy you modified, a file it did not create) does not prevent it.
+- When a script fails (it exits with an error, cannot be started, or is not found), the modules after it are **left as they are** and the command fails. What was already done stays done. `--keep-going` goes on with the remaining modules anyway; the command still fails. It exits with `1`, not with the script's exit code, which is in the [history](/reference/history/).
+- Ctrl+C while a script runs is left to the script, as with `scripts run`; once it ends, the command stops there, with or without `--keep-going`, and exits with `130`.
+- `--no-hooks` deploys or undeploys the files without running any script.
+- `--dry-run` shows the scripts that would run, and those that would not because a file would fail or be skipped, without running them. It fails when a script that would run does not exist.
+- A setting that is not a script name (not text, or empty) is an error that every `modules` command shows. The files are still deployed or undeployed, no script runs for it, and the command it belongs to fails (`modules deploy` for `pre_deploy` and `post_deploy`, `modules undeploy` for the other two).
+- `modules list` names the settings a module uses, and `modules status` shows the scripts, and says when one does not exist.
+
+No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. A `settings.json` in the 0.3 list format cannot have these keys.
 
 ## Completion and validation in your editor
 

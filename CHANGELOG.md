@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#295](https://github.com/mindsers/configfile/issues/295)).
 - A JSON Schema for `settings.json`, at `https://docs.configfile.sh/schemas/settings.json`: with
   `"$schema"` at the top of the file, editors complete and check it as you type.
+- Modules can name scripts to run when they are deployed or undeployed, with `"pre_deploy"`,
+  `"post_deploy"`, `"pre_undeploy"` and `"post_undeploy"` in `settings.json`. A script that fails
+  stops the command there, unless `--keep-going` is given, and a `pre_` script that fails leaves
+  the files of its module as they are; `--no-hooks` runs none. `modules status` shows the scripts
+  ([#298](https://github.com/mindsers/configfile/issues/298)).
+
+### Changed
+- `modules deploy` and `modules undeploy` work on one module at a time, taking the lock for each
+  module in turn instead of the whole run. When a local file already exists, the question to
+  replace it is asked once the other files of its module are deployed, no longer at the very end.
 
 ### Fixed
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings

@@ -10,6 +10,7 @@ import { CliError, isPromptExit } from './errors.ts'
 import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { configfilePaths } from './paths.ts'
+import { HOOKS, type Hook } from './repository.ts'
 
 /** At most this many changes are written per run; the rest are counted. */
 const MAX_CHANGES = 1000
@@ -53,7 +54,8 @@ export type Change =
   | { kind: 'failed'; module: string; reason: string }
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
   | { kind: 'saved-patch'; file: string }
-  | { kind: 'script'; name: string; file: string; exitCode: number }
+  /** `hook` and `module`: the script ran as the `pre_deploy` or `post_deploy` of that module. */
+  | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }
 
@@ -135,7 +137,9 @@ export function describeInvocation(action: Command): Invocation {
     case 'modules undeploy':
     case 'modules status':
       options.modules = Array.isArray(args[0]) ? args[0] : []
-      copy('local', 'all', 'force', 'dryRun', 'removed')
+      copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing')
+      // On unless turned off with --no-hooks.
+      if (given.hooks === false) options.hooks = false
       break
     case 'scripts run':
       options.script = args[0]
@@ -514,7 +518,12 @@ function isChange(value: unknown): value is Change {
     case 'configured':
       return typeof value.file === 'string'
     case 'script':
-      return areStrings(value.name, value.file) && Number.isInteger(value.exitCode)
+      return (
+        areStrings(value.name, value.file) &&
+        Number.isInteger(value.exitCode) &&
+        (value.module === undefined || typeof value.module === 'string') &&
+        (value.hook === undefined || HOOKS.includes(value.hook as Hook))
+      )
     case 'cloned':
     case 'reused':
       return areStrings(value.repository, value.folder)

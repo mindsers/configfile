@@ -37,7 +37,7 @@ Short form: `configfile m l`.
 
 ## `configfile modules status`
 
-Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file. Without module names, it also lists the deployed files the repository no longer deploys.
+Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file, and the scripts each module runs when it is deployed or undeployed. Without module names, it also lists the deployed files the repository no longer deploys.
 
 <!-- generated: configfile modules status -->
 ```sh
@@ -54,7 +54,7 @@ Short form: `configfile m st`.
 
 ## `configfile modules deploy`
 
-Deploys the global files of the given modules. Without module names, asks to deploy all modules.
+Deploys the global files of the given modules, one module at a time, and runs the [`pre_deploy` and `post_deploy` scripts](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) of the modules that have them. Without module names, asks to deploy all modules.
 
 <!-- generated: configfile modules deploy -->
 ```sh
@@ -70,11 +70,13 @@ Short form: `configfile m d`.
 | `-a, --all` | deploy every module without asking |
 | `-f, --force` | replace existing local files without asking (they are moved to .old) |
 | `-n, --dry-run` | show what would be done, without changing anything |
+| `--no-hooks` | do not run the pre_deploy and post_deploy scripts of the modules |
+| `--keep-going` | deploy the remaining modules when a pre_deploy or post_deploy script fails |
 <!-- /generated -->
 
 ## `configfile modules undeploy`
 
-Removes the deployed global files of the given modules and restores their backups. Without module names, asks to undeploy all modules. `--local` and `--dry-run` work as for `deploy`. [Modules](/reference/modules/) explains which files `--removed` covers; with `--local`, it covers the copies made in the current folder.
+Removes the deployed global files of the given modules and restores their backups, one module at a time, and runs the [`pre_undeploy` and `post_undeploy` scripts](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) of the modules that have them. Without module names, asks to undeploy all modules. `--local` and `--dry-run` work as for `deploy`. [Modules](/reference/modules/) explains which files `--removed` covers; with `--local`, it covers the copies made in the current folder.
 
 <!-- generated: configfile modules undeploy -->
 ```sh
@@ -90,6 +92,8 @@ Short form: `configfile m u`.
 | `-a, --all` | undeploy every module without asking, and the files the repository no longer deploys |
 | `--removed` | only undeploy the files the repository no longer deploys |
 | `-n, --dry-run` | show what would be done, without changing anything |
+| `--no-hooks` | do not run the pre_undeploy and post_undeploy scripts of the modules |
+| `--keep-going` | undeploy the remaining modules when a pre_undeploy or post_undeploy script fails |
 <!-- /generated -->
 
 ## `configfile scripts list`

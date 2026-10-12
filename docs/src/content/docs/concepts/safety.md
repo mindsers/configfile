@@ -9,7 +9,7 @@ sidebar:
 
 ## Deploying a repository means trusting it
 
-The files of a repository end up in your shell's and your tools' configuration, and its scripts run on your machine with your permissions. Treat deploying a dotfiles repository like running its code: only deploy repositories you trust, and read a shared one before using it.
+The files of a repository end up in your shell's and your tools' configuration, and its scripts run on your machine with your permissions, including the scripts a module names, which `modules deploy` and `modules undeploy` run by themselves (`--dry-run` lists them, `--no-hooks` skips them). Treat deploying a dotfiles repository like running its code: only deploy repositories you trust, and read a shared one before using it.
 
 ## A copy of what is replaced
 
@@ -38,7 +38,7 @@ A `target_path` can't put something important at risk: your home folder, the cur
 
 ## Deployments don't overlap
 
-`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, up to 10 seconds, then stops with an error, which names the other process when it can. The lock is `~/.configfile/lock`; the lock of a process that no longer exists is taken over. Other commands, such as `update`, don't wait for it, so don't run them during a deployment.
+`modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, up to 10 seconds, then stops with an error, which names the other process when it can. The lock is `~/.configfile/lock`; the lock of a process that no longer exists is taken over. Both take it for the files of each module in turn, and release it while a script of the module runs, so that script can run *configfile* itself. Another deployment can therefore take its turn between two modules; files are still never changed by two processes at once. Other commands, such as `update`, don't wait for it, so don't run them during a deployment.
 
 ## Your configuration and history stay private
 
