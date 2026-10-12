@@ -202,4 +202,5 @@ configfile modules undeploy zsh
 
 - [Modules and `settings.json`](/reference/modules/): local files copied into a project, files kept in the repository without being deployed, and every rule for targets.
 - [Scripts](/reference/scripts/): scripts in any language, folder scripts, and versions per system (`setup.macos.sh`).
+- [Run scripts when a module is deployed](/guides/module-scripts/): install plugins or start a service each time a module is deployed, and clean up when it is undeployed.
 - [Commands](/reference/commands/): every command and option, including the ones for running *configfile* from scripts and CI.

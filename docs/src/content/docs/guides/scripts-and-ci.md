@@ -23,6 +23,8 @@ $ configfile modules deploy < /dev/null
 | `configfile modules deploy` and `undeploy` | whether to use every module | module names, or `--all` |
 | `configfile modules deploy --local` | whether to replace an existing file that differs | `--force` (without it, the file is skipped and the command fails) |
 
+Two more options matter in a script, although no question stands behind them: `--keep-going` deploys (or undeploys) the remaining modules when a [script named by a module](/guides/module-scripts/) fails, and `--no-hooks` runs none of these scripts.
+
 `configfile init --folder <path>` also lets a script choose where the repository is cloned. The [commands reference](/reference/commands/) lists every option.
 
 ## Exit codes
@@ -32,13 +34,14 @@ $ configfile modules deploy < /dev/null
 - `0` when the command succeeded;
 - another code when it failed, with an error message saying why: usually `1`, or git's own code when a git command fails (for example `128` when the repository can't be fetched);
 - the script's own exit code with `configfile scripts run`, so a failing setup script fails the step that runs it;
-- `130` when you press Ctrl+C at a question.
+- `1` when a [script named by a module](/guides/module-scripts/) fails during `modules deploy` or `undeploy` (its own exit code is in the [history](/reference/history/));
+- `130` when you press Ctrl+C at a question, or while a script named by a module runs.
 
 In a shell script, `set -e` therefore stops at the first *configfile* command that fails.
 
 ## Output
 
-With `configfile scripts run`, *configfile*'s own messages go to stderr and the script's output to stdout, unchanged: you can pipe or redirect the script's output as if you had run it directly.
+With `configfile scripts run`, *configfile*'s own messages go to stderr and the script's output to stdout, unchanged: you can pipe or redirect the script's output as if you had run it directly. During `modules deploy` and `undeploy`, the output of the scripts named by the modules is mixed with *configfile*'s on stdout.
 
 `configfile history --json` prints the [history](/reference/history/) as JSON Lines, one run per line, for scripts that need to know what *configfile* did.
 
@@ -73,7 +76,7 @@ jobs:
       - run: configfile modules deploy --all --dry-run
 ```
 
-`init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
+`init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included, and if a module names a script to run when it is deployed that doesn't exist. It lists these scripts without running them. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
 
 To also test your setup script, add a step that runs it, on the systems it supports:
 

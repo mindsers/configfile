@@ -48,6 +48,8 @@ configfile modules deploy --all
 
 Files that already exist where yours go, such as the default `~/.zshrc` of a new machine, are moved aside to `.old`, so you can compare them or bring them back with `configfile modules undeploy`.
 
+Modules that [name a script to run when they are deployed](/guides/module-scripts/), for example to install plugins, run it at this step, and the dry run lists it. If one fails, the modules after it are not deployed: fix the cause and run the command again.
+
 ## 5. Run your setup script
 
 If your repository has a setup script, for example to install your tools, run it:
