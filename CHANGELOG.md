@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#295](https://github.com/mindsers/configfile/issues/295)).
 - A JSON Schema for `settings.json`, at `https://docs.configfile.sh/schemas/settings.json`: with
   `"$schema"` at the top of the file, editors complete and check it as you type.
+- A documentation site, [docs.configfile.sh](https://docs.configfile.sh), with a tutorial, guides,
+  a reference and explanations. The README is now a short introduction that links to it.
 
 ### Fixed
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
