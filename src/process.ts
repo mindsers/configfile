@@ -17,20 +17,23 @@ import type { Script } from './repository.ts'
  * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
  *
  * `env` is merged over configfile's own environment, which the child inherits:
- * its values replace variables of the same name.
+ * its values replace variables of the same name. `onSignal` is told about each
+ * of these signals configfile receives meanwhile, for callers that have more
+ * to do once the child ends.
  */
 export function run(
   command: string,
   args: string[],
-  { cwd, env }: { cwd: string; env?: Readonly<Record<string, string>> | undefined },
+  { cwd, env, onSignal }: RunOptions,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     // Installed before the child starts: a signal arriving in between would
     // otherwise end configfile and leave the script running on its own.
     let child: ChildProcess | undefined
     let pending: NodeJS.Signals | undefined
-    const ignore = () => {}
+    const ignore = (signal: NodeJS.Signals) => onSignal?.(signal)
     const forward = (signal: NodeJS.Signals) => {
+      onSignal?.(signal)
       if (child == null) pending = signal
       else child.kill(signal)
     }
@@ -75,6 +78,12 @@ export function run(
   })
 }
 
+interface RunOptions {
+  cwd: string
+  env?: Readonly<Record<string, string>> | undefined
+  onSignal?: ((signal: NodeJS.Signals) => void) | undefined
+}
+
 /** Used for scripts that have no shebang line. */
 const INTERPRETERS: Record<string, string> = {
   '.js': process.execPath,
@@ -95,14 +104,14 @@ const INTERPRETERS: Record<string, string> = {
 export async function runScript(
   script: Script,
   args: string[],
-  { cwd, env }: { cwd: string; env?: Readonly<Record<string, string>> | undefined },
+  { cwd, env, onSignal }: RunOptions,
 ): Promise<number> {
   const executable = await isExecutable(script.path)
   const shebang = await readShebang(script)
 
   const launch = async (command: string, commandArgs: string[]) => {
     try {
-      return await run(command, commandArgs, { cwd, env })
+      return await run(command, commandArgs, { cwd, env, onSignal })
     } catch (error) {
       throw launchError(script, shebang?.[0], error)
     }

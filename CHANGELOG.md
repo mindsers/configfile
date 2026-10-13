@@ -13,8 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"$schema"` at the top of the file, editors complete and check it as you type.
 - A documentation site, [docs.configfile.sh](https://docs.configfile.sh), with a tutorial, guides,
   a reference and explanations. The README is now a short introduction that links to it.
+- Modules can name scripts to run when they are deployed or undeployed, with `"pre_deploy"`,
+  `"post_deploy"`, `"pre_undeploy"` and `"post_undeploy"` in `settings.json`. A script that fails
+  stops the command there, unless `--keep-going` is given, and a `pre_` script that fails leaves
+  the files of its module as they are; `--no-hooks` runs none. A name that matches no script
+  fails the command before anything is changed. `modules status` shows the scripts
+  ([#298](https://github.com/mindsers/configfile/issues/298)).
+
+### Changed
+- `modules deploy` and `modules undeploy` work on one module at a time, taking the lock for each
+  module in turn instead of the whole run. When a local file already exists, the question to
+  replace it is asked once the other files of its module are deployed, no longer at the very end.
 
 ### Fixed
+- When `~/.configfile` or its lock file cannot be created or written, `modules deploy` and
+  `modules undeploy` say that the lock cannot be taken, and why, instead of reporting an
+  unexpected error.
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
   entrys" instead of "settings entries".
 

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { CliError } from './errors.ts'
-import { errnoCode } from './fsutil.ts'
+import { errnoCode, messageOf } from './fsutil.ts'
 import { configfilePaths } from './paths.ts'
 
 const RETRY_DELAY_MS = 100
@@ -21,7 +21,11 @@ export async function withLock<T>(
   { maxWaitMs = MAX_WAIT_MS }: { maxWaitMs?: number } = {},
 ): Promise<T> {
   const lock = path.join(configfilePaths(home).dir, 'lock')
-  await mkdir(path.dirname(lock), { recursive: true, mode: 0o700 })
+  const unusable = (error: unknown) =>
+    new CliError(`Cannot take the lock ${lock}: ${messageOf(error)}`, { cause: error })
+  await mkdir(path.dirname(lock), { recursive: true, mode: 0o700 }).catch(error => {
+    throw unusable(error)
+  })
 
   const started = Date.now()
   for (;;) {
@@ -30,7 +34,7 @@ export async function withLock<T>(
       await handle.writeFile(String(process.pid))
       break
     } catch (error) {
-      if (errnoCode(error) !== 'EEXIST') throw error
+      if (errnoCode(error) !== 'EEXIST') throw unusable(error)
     }
 
     const content = await readFile(lock, 'utf8').catch(() => '')

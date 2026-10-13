@@ -15,7 +15,7 @@ Scripts can be written in any language:
 - a `.js` (or `.mjs`, `.cjs`) or `.sh` script without shebang line is run with `node` or `sh`;
 - any other executable file (such as a compiled program) is run directly.
 
-*configfile* never changes the permissions of your files. Scripts run in the current folder, their output is not modified (the messages of *configfile* go to stderr), and their exit code is forwarded.
+*configfile* never changes the permissions of your files. Scripts run in the current folder and their output is not modified. With `configfile scripts run`, the messages of *configfile* go to stderr and the script's exit code is forwarded.
 
 Scripts get these environment variables, in addition to *configfile*'s own environment (they replace variables of the same name):
 
@@ -24,3 +24,11 @@ Scripts get these environment variables, in addition to *configfile*'s own envir
 | `CONFIGFILE_REPO` | the full path of the dotfiles repository (`folder_path`), to reach its files: `"$CONFIGFILE_REPO/Brewfile"` |
 | `CONFIGFILE_SCRIPT` | the script's name (`setup`) |
 | `CONFIGFILE_OS` | the system: `macos` or `linux`, as in the names of script versions |
+
+A module can name scripts to run each time it is deployed or undeployed, with [`pre_deploy`, `post_deploy`, `pre_undeploy` and `post_undeploy`](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) in its `settings.json`. [Run scripts when a module is deployed](/guides/module-scripts/) shows how. Their exit code is not forwarded: when one fails, `modules deploy` or `modules undeploy` exits with `1`. Such a script gets no arguments, and three more variables:
+
+| Variable | Value |
+| --- | --- |
+| `CONFIGFILE_HOOK` | the setting that named the script: `pre_deploy`, `post_deploy`, `pre_undeploy` or `post_undeploy` |
+| `CONFIGFILE_MODULE` | the name of the module being deployed or undeployed (`tmux`) |
+| `CONFIGFILE_DEPLOY` | `global` or `local` (with `--local`) |

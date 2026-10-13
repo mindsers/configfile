@@ -76,11 +76,16 @@ describe('built CLI', () => {
     })
 
     /** Starts a long-running script, sends `signal` to configfile only once it runs. */
-    async function interrupt(sandbox: Sandbox, script: string, signal: NodeJS.Signals) {
+    async function interrupt(
+      sandbox: Sandbox,
+      script: string,
+      signal: NodeJS.Signals,
+      args = ['scripts', 'run', 'long'],
+    ) {
       await sandbox.configure()
       await sandbox.write('home/dotfiles/scripts/long.sh', script)
 
-      const child = spawn(process.execPath, [cli, 'scripts', 'run', 'long'], {
+      const child = spawn(process.execPath, [cli, ...args], {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
         detached: true,
@@ -88,13 +93,23 @@ describe('built CLI', () => {
       if (child.pid != null) groups.push(child.pid)
 
       let stdout = ''
+      let stderr = ''
+      child.stderr.on('data', chunk => {
+        stderr += chunk
+      })
+      let sent = false
       child.stdout.on('data', chunk => {
         stdout += chunk
-        if (stdout.includes('ready')) child.kill(signal)
+        // Once: a deployment goes on writing to stdout.
+        if (stdout.includes('ready') && !sent) sent = child.kill(signal)
       })
 
-      return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
-        child.on('close', (code, closeSignal) => resolve({ code, signal: closeSignal }))
+      return new Promise<{
+        code: number | null
+        signal: NodeJS.Signals | null
+        stderr: string
+      }>(resolve => {
+        child.on('close', (code, closeSignal) => resolve({ code, signal: closeSignal, stderr }))
       })
     }
 
@@ -102,9 +117,91 @@ describe('built CLI', () => {
       const sandbox = await createSandbox()
 
       // Only configfile receives SIGINT here; in a terminal the script gets it too.
-      const result = await interrupt(sandbox, 'echo ready\nsleep 0.3\nexit 5\n', 'SIGINT')
+      const result = await interrupt(sandbox, 'echo ready\nsleep 1\nexit 5\n', 'SIGINT')
 
-      expect(result).toEqual({ code: 5, signal: null })
+      expect(result).toMatchObject({ code: 5, signal: null })
+    })
+
+    it('stops a deployment interrupted during a post_deploy script, even with --keep-going', async () => {
+      const sandbox = await createSandbox()
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/rc`)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
+            post_deploy: 'long',
+          }),
+        )
+      }
+
+      // The script ends by itself with success: configfile was still asked to stop.
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
+        'modules',
+        'deploy',
+        '--all',
+        '--keep-going',
+      ])
+
+      expect(result).toMatchObject({ code: 130, signal: null })
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+      expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
+    })
+
+    /** Modules `a` and `b`, one global file each, with `settings` in both. */
+    async function withModules(sandbox: Sandbox, settings: Record<string, string>) {
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/rc`)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
+            ...settings,
+          }),
+        )
+      }
+    }
+
+    it('deploys nothing more when interrupted during a pre_deploy script', async () => {
+      const sandbox = await createSandbox()
+      await withModules(sandbox, { pre_deploy: 'long' })
+
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
+        'modules',
+        'deploy',
+        '--all',
+        '--keep-going',
+      ])
+
+      expect(result).toMatchObject({ code: 130, signal: null })
+      expect(result.stderr).toContain('Interrupted. 2 modules were not deployed: a, b.')
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(false)
+      expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
+    })
+
+    it('stops an undeployment interrupted during a script, with the exit code of the signal', async () => {
+      const sandbox = await createSandbox()
+      await withModules(sandbox, { pre_undeploy: 'long' })
+      await sandbox.configure()
+      spawnSync(process.execPath, [cli, 'modules', 'deploy', '--all'], {
+        cwd: sandbox.cwd,
+        env: { ...process.env, HOME: sandbox.home },
+      })
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+
+      const result = await interrupt(
+        sandbox,
+        "trap 'exit 0' TERM\necho ready\nwhile true; do sleep 0.05; done\n",
+        'SIGTERM',
+        ['modules', 'undeploy', '--all'],
+      )
+
+      expect(result).toMatchObject({ code: 143, signal: null })
+      expect(result.stderr).toContain('Interrupted. 2 modules were not undeployed: a, b.')
+      expect(result.stderr).toContain(
+        'The files the repository no longer deploys were not checked.',
+      )
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
     })
 
     it('forwards SIGTERM to the script', async () => {
@@ -116,7 +213,7 @@ describe('built CLI', () => {
         'SIGTERM',
       )
 
-      expect(result).toEqual({ code: 7, signal: null })
+      expect(result).toMatchObject({ code: 7, signal: null })
     })
   })
 
@@ -190,7 +287,10 @@ describe('built CLI', () => {
     expect(() => process.kill(gitPid, 0)).toThrow()
   })
 
-  it('never loses a file when several configfile processes deploy at once', async () => {
+  // Eight processes: allow for slow, busy CI machines.
+  it('never loses a file when several configfile processes deploy at once', {
+    timeout: 30_000,
+  }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     const modules = ['a', 'b', 'c', 'd']

@@ -36,10 +36,10 @@ async function scriptsOf(
   platform: NodeJS.Platform = 'linux',
 ) {
   const warnings: string[] = []
-  const scripts = await listScripts(sandbox.repo, extensions, platform, {
+  const { scripts, otherSystems } = await listScripts(sandbox.repo, extensions, platform, {
     warn: message => warnings.push(message),
   })
-  return { scripts, warnings }
+  return { scripts, otherSystems, warnings }
 }
 
 describe('listModules', () => {
@@ -266,6 +266,29 @@ describe('listModules', () => {
     expect(zsh.deprecations).toEqual([
       expect.stringContaining('settings.json is a list (configfile 0.3 format)'),
       expect.stringContaining('"global": true | false is deprecated'),
+    ])
+  })
+
+  it('reads the scripts to run before and after the module is deployed', async () => {
+    const sandbox = await createSandbox()
+    const write = (module: string, content: unknown) =>
+      sandbox.write(`home/dotfiles/files/${module}/settings.json`, JSON.stringify(content))
+    await write('a', { files: [], pre_deploy: 'check', post_deploy: ' plugins ' })
+    await write('b', { files: [] })
+    await write('c', { files: [], pre_deploy: '', post_deploy: 42 })
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(usable)).toMatchObject([
+      { hooks: { pre_deploy: 'check', post_deploy: 'plugins' }, hookProblems: {} },
+      { hooks: {}, hookProblems: {} },
+      {
+        hooks: {},
+        hookProblems: {
+          pre_deploy: expect.stringContaining('"pre_deploy" is ignored'),
+          post_deploy: expect.stringContaining('"post_deploy" is ignored'),
+        },
+      },
     ])
   })
 

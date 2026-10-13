@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { CliError } from '../src/errors.ts'
 import { withLock } from '../src/lock.ts'
 import { createSandbox } from './helpers.ts'
 
@@ -23,6 +24,32 @@ describe('withLock', () => {
 
     await expect(withLock(home, () => Promise.reject(new Error('boom')))).rejects.toThrow('boom')
     await expect(withLock(home, async () => 'again')).resolves.toBe('again')
+  })
+
+  it('says why when its folder cannot be created', async () => {
+    const { home, write } = await createSandbox()
+    await write('home/.configfile', 'not a folder')
+
+    const result = withLock(home, async () => 'done')
+
+    await expect(result).rejects.toThrow(CliError)
+    await expect(result).rejects.toThrow(/^Cannot take the lock .*\.configfile\/lock: /)
+  })
+
+  // root writes to a folder whatever its permissions.
+  it.skipIf(process.getuid?.() === 0)('says why when the lock cannot be written', async () => {
+    const { home } = await createSandbox()
+    const folder = path.join(home, '.configfile')
+    await mkdir(folder, { mode: 0o555 })
+
+    try {
+      const result = withLock(home, async () => 'done')
+
+      await expect(result).rejects.toThrow(CliError)
+      await expect(result).rejects.toThrow(/^Cannot take the lock .*: EACCES/)
+    } finally {
+      await chmod(folder, 0o755)
+    }
   })
 
   it('takes over the lock of a process that no longer exists', async () => {

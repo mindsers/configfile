@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.configfile.sh/schemas/settings.json",
   "title": "configfile module settings",
-  "description": "The settings.json file of a configfile module: the files of the module and how each one is deployed. See https://docs.configfile.sh/reference/modules/",
+  "description": "The settings.json file of a configfile module: the files of the module, how each one is deployed, and the scripts run when the module is deployed or undeployed. See https://docs.configfile.sh/reference/modules/",
   "oneOf": [
     {
       "type": "object",
@@ -15,6 +15,22 @@
           "description": "The files of the module.",
           "type": "array",
           "items": { "$ref": "#/$defs/entry" }
+        },
+        "pre_deploy": {
+          "$ref": "#/$defs/path",
+          "description": "The name of a script of the repository (as listed by configfile scripts list), run by configfile modules deploy before the files of the module are deployed. When it fails, the module is not deployed."
+        },
+        "post_deploy": {
+          "$ref": "#/$defs/path",
+          "description": "The name of a script of the repository (as listed by configfile scripts list), run by configfile modules deploy once the files of the module are deployed."
+        },
+        "pre_undeploy": {
+          "$ref": "#/$defs/path",
+          "description": "The name of a script of the repository, run by configfile modules undeploy before the files of the module are removed. When it fails, the module stays deployed."
+        },
+        "post_undeploy": {
+          "$ref": "#/$defs/path",
+          "description": "The name of a script of the repository, run by configfile modules undeploy once the files of the module are removed."
         }
       },
       "required": ["files"],

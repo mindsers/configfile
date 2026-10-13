@@ -22,7 +22,11 @@ async function configfileAccepts(settings: unknown): Promise<boolean> {
 
   const [module] = await listModules(sandbox.repo, { ...sandbox, warn: () => {} })
   if (module == null) throw new Error('no module')
-  return module.error == null && module.invalidEntries.length === 0
+  return (
+    module.error == null &&
+    module.invalidEntries.length === 0 &&
+    Object.keys(module.hookProblems).length === 0
+  )
 }
 
 const zshrc = { source_path: 'zshrc', target_path: '~/.zshrc' }
@@ -37,6 +41,8 @@ const accepted: [string, unknown][] = [
   ['the deprecated "global": false', { files: [{ ...zshrc, global: false }] }],
   ['the deprecated 0.3 list format', [{ ...zshrc, deploy: 'global' }]],
   ['no files', { files: [] }],
+  ['scripts to run when deployed', { files: [], pre_deploy: 'check', post_deploy: 'setup' }],
+  ['scripts to run when undeployed', { files: [], pre_undeploy: 'stop', post_undeploy: 'clean' }],
   ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/settings.json', files: [] }],
 ]
 
@@ -52,6 +58,10 @@ const refused: [string, unknown][] = [
   ['a global file without target', { files: [{ source_path: 'zshrc', deploy: 'global' }] }],
   ['a local file without target', { files: [{ source_path: 'zshrc', deploy: 'local' }] }],
   ['an empty target', { files: [{ ...zshrc, target_path: '', deploy: 'global' }] }],
+  ['a "post_deploy" that is not a string', { files: [], post_deploy: ['setup'] }],
+  ['an empty "post_deploy"', { files: [], post_deploy: ' ' }],
+  ['a "pre_deploy" that is not a string', { files: [], pre_deploy: 42 }],
+  ['an empty "post_undeploy"', { files: [], post_undeploy: '' }],
   ['a source that is not a string', { files: [{ ...zshrc, source_path: 42, deploy: 'global' }] }],
 ]
 
@@ -85,7 +95,11 @@ describe('settings.json schema', () => {
     )
     const documented = [...page.matchAll(/^\| `(\w+)` \|/gm)].map(match => match[1])
 
-    expect(Object.keys(schema.$defs.entry.properties).sort()).toEqual(documented.sort())
+    // The keys of an entry, and those of the file itself next to "files".
+    const { $schema, files, ...settings } = schema.oneOf[0].properties
+    const described = [...Object.keys(schema.$defs.entry.properties), ...Object.keys(settings)]
+
+    expect(described.sort()).toEqual(documented.sort())
   })
 
   it('is served where its $id says, from the documentation site', () => {
