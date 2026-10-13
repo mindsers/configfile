@@ -66,17 +66,18 @@ Each one is a script's name, as `configfile scripts list` shows it: here `script
 `modules deploy` and `modules undeploy` work on one module at a time, in the order of `modules list`: the `pre_` script of a module, its files, its `post_` script, then the next module.
 
 - The scripts run **every time** the module is deployed or undeployed, including when its files were already up to date or not deployed, so write them to be safe to run again.
-- They only run when the module has files of the kind the command works on (local files with `--local`, global files otherwise).
+- They only run when the module has files of the kind the command works on (local files with `--local`, global files otherwise). Otherwise the command says, with a warning, that the script was not run.
 - When a `pre_` script fails, the files of the module are **left as they are** (not deployed, or still deployed) and its `post_` script is not run.
 - The `post_deploy` script only runs when all the files of the module are in place. When a file fails or is skipped, or an entry is invalid, it is not run, with a warning. In the same way, the `post_undeploy` script is not run when a file could not be undeployed; a file that `undeploy` keeps on purpose (a copy you modified, a file it did not create) does not prevent it.
-- When a script fails (it exits with an error, cannot be started, or is not found), the modules after it are **left as they are** and the command fails. What was already done stays done. `--keep-going` goes on with the remaining modules anyway; the command still fails. It exits with `1`, not with the script's exit code, which is in the [history](/reference/history/).
+- When a script fails (it exits with an error or cannot be started), the modules after it are **left as they are** and the command fails. What was already done stays done. `--keep-going` goes on with the remaining modules anyway; the command still fails. It exits with `1`, not with the script's exit code, which is in the [history](/reference/history/).
+- A name that matches no script is found **before anything is changed**: the command names every such script and fails. With `--keep-going`, it starts anyway, and the script fails when its turn comes.
 - Ctrl+C while a script runs is left to the script, as with `scripts run`; once it ends, the command stops there, with or without `--keep-going`, and exits with `130`.
 - `--no-hooks` deploys or undeploys the files without running any script.
-- `--dry-run` shows the scripts that would run, and those that would not because a file would fail or be skipped, without running them. It fails when a script that would run does not exist.
-- A setting that is not a script name (not text, or empty) is an error that every `modules` command shows. The files are still deployed or undeployed, no script runs for it, and the command it belongs to fails (`modules deploy` for `pre_deploy` and `post_deploy`, `modules undeploy` for the other two).
+- `--dry-run` shows the scripts that would run, and those that would not because a file would fail or be skipped, without running them. It fails like the real command when a script does not exist.
+- A setting that is not a script name (not text, or empty) is ignored: no script runs for it. The command it belongs to reports it as an error and fails, once the files are deployed or undeployed (`modules deploy` for `pre_deploy` and `post_deploy`, `modules undeploy` for the other two). The other one only warns about it; `modules list` and `status` show it as an error.
 - `modules list` names the settings a module uses, and `modules status` shows the scripts, and says when one does not exist.
 
-No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. A `settings.json` in the 0.3 list format cannot have these keys.
+No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. With `--all`, they are undeployed after the modules; when a script stops the command before that, they are left in place, and the command says so. A `settings.json` in the 0.3 list format cannot have these keys.
 
 ## Completion and validation in your editor
 

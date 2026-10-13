@@ -81,7 +81,9 @@ When the script exits with an error, the command stops there and fails: the modu
  Error  The post_deploy script of tmux failed. 1 module was not deployed: zsh. Use --keep-going to go on after a script that fails.
 ```
 
-Fix the cause and deploy again: files already in place are left as they are, and the script runs again. To deploy the other modules anyway, pass `--keep-going`; the command still fails, so a bootstrap script notices. To deploy the files without running any script, pass `--no-hooks`.
+Fix the cause and deploy again: files already in place are left as they are, and the script runs again.
+
+A name that matches no script is caught earlier: *configfile* checks the names before it changes anything, and fails without deploying any module. To deploy the other modules anyway, pass `--keep-going`; the command still fails, so a bootstrap script notices. To deploy the files without running any script, pass `--no-hooks`.
 
 ## Clean up when the module is undeployed
 

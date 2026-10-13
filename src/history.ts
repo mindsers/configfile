@@ -54,7 +54,7 @@ export type Change =
   | { kind: 'failed'; module: string; reason: string }
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
   | { kind: 'saved-patch'; file: string }
-  /** `hook` and `module`: the script ran as the `pre_deploy` or `post_deploy` of that module. */
+  /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
   | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }

@@ -35,7 +35,7 @@ Two more options matter in a script, although no question stands behind them: `-
 - another code when it failed, with an error message saying why: usually `1`, or git's own code when a git command fails (for example `128` when the repository can't be fetched);
 - the script's own exit code with `configfile scripts run`, so a failing setup script fails the step that runs it;
 - `1` when a [script named by a module](/guides/module-scripts/) fails during `modules deploy` or `undeploy` (its own exit code is in the [history](/reference/history/));
-- `130` when you press Ctrl+C at a question, or while a script named by a module runs.
+- `130` when you press Ctrl+C at a question, or while a script named by a module runs (`143` when *configfile* gets SIGTERM during such a script).
 
 In a shell script, `set -e` therefore stops at the first *configfile* command that fails.
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.configfile.sh/schemas/settings.json",
   "title": "configfile module settings",
-  "description": "The settings.json file of a configfile module: the files of the module and how each one is deployed. See https://docs.configfile.sh/reference/modules/",
+  "description": "The settings.json file of a configfile module: the files of the module, how each one is deployed, and the scripts run when the module is deployed or undeployed. See https://docs.configfile.sh/reference/modules/",
   "oneOf": [
     {
       "type": "object",
