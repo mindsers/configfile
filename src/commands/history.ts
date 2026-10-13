@@ -166,6 +166,11 @@ function describeChange(change: Change): string {
         `${change.name}  exit ${change.exitCode}` +
           (change.module == null ? '' : `  (${change.hook ?? 'hook'} of ${change.module})`),
       )
+    case 'script-skipped':
+      return line(
+        'skipped',
+        `${change.name}  (${change.hook} of ${change.module}: ${change.reason})`,
+      )
     case 'cloned':
       return line('cloned', `${change.repository} into ${change.folder}`)
     case 'reused':

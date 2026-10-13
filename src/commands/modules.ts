@@ -34,7 +34,9 @@ import {
   loadScripts,
   type Module,
   type ModuleFile,
+  type Script,
   scriptEnvironment,
+  systemName,
 } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 
@@ -245,9 +247,14 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
     for (const hook of HOOKS) {
       if (module.hooks[hook] == null) continue
-      const missing =
-        scripts != null && findHook(module, hook, scripts) == null ? ' (not found in scripts/)' : ''
-      output.print(`  ${hook}: script "${module.hooks[hook]}"${missing}`)
+      const found = scripts == null ? null : findHook(module, hook, scripts)
+      const note =
+        found === 'missing'
+          ? ' (not found in scripts/)'
+          : found === 'other-system'
+            ? ' (no version for this system)'
+            : ''
+      output.print(`  ${hook}: script "${module.hooks[hook]}"${note}`)
     }
   }
 
@@ -289,20 +296,23 @@ function hooksOf(verb: Verb): readonly [Hook, Hook] {
  *
  * A name that matches no script is a mistake in the repository, found here
  * before anything is changed: the command fails, unless `--keep-going` is
- * given (the script then fails when its turn comes). Says so too when a
- * selected module names a script that will not run, because it has no file
- * of the kind the command works on.
+ * given (the script then fails when its turn comes). A script that only has
+ * versions for other systems is not a mistake: it is skipped in its turn.
+ *
+ * `named`: the modules were named on the command line. A named module whose
+ * script will not run, because it has no file of the kind the command works
+ * on, is said so; with every module selected, that is the usual case.
  */
 async function loadHookScripts(
   verb: Verb,
-  modules: readonly UsableModule[],
+  { modules, named: explicit }: { modules: readonly UsableModule[]; named: boolean },
   units: readonly Unit[],
   options: Options,
   ctx: Context,
 ): Promise<Scripts | null> {
   if (!options.hooks) return null
 
-  for (const module of modules) {
+  for (const module of explicit ? modules : []) {
     if (units.some(unit => unit.module === module)) continue
     for (const hook of hooksOf(verb)) {
       if (module.hooks[hook] == null) continue
@@ -323,14 +333,16 @@ async function loadHookScripts(
     scripts = await loadScripts(ctx)
   } catch (error) {
     if (!(error instanceof CliError)) throw error
+    const message = messageOf(error)
     throw new CliError(
-      `${messageOf(error)} Use --no-hooks to ${verb} without running the scripts the modules name.`,
+      `${message}${/[.!?]$/.test(message) ? '' : '.'} ` +
+        `Use --no-hooks to ${verb} without running the scripts the modules name.`,
       { cause: error },
     )
   }
   if (options.keepGoing) return scripts
 
-  const missing = named.filter(({ module, hook }) => findHook(module, hook, scripts) == null)
+  const missing = named.filter(({ module, hook }) => findHook(module, hook, scripts) === 'missing')
   if (missing.length === 0) return scripts
   for (const { module, hook } of missing) reportHookError(module, hookNotFound(module, hook), ctx)
   throw new CliError(
@@ -345,17 +357,24 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
   if (run == null) return
 
   const units = unitsOf(run.modules, options.strategy)
-  const scripts = await loadHookScripts('deploy', run.modules, units, options, ctx)
+  const scripts = await loadHookScripts(
+    'deploy',
+    { modules: run.modules, named: !run.all },
+    units,
+    options,
+    ctx,
+  )
   if (units.length === 0) return
   let failures = run.failures
 
   if (options.dryRun) {
     const context = await deployContext(ctx)
+    const failed = new FailedHooks('deploy')
     let wouldSkip = 0
     for (const { module, files } of units) {
       // Without its pre_deploy script, the files of a module would not be deployed.
       if (!planHook(module, 'pre_deploy', scripts, ctx)) {
-        failures++
+        failed.add('pre_deploy', module)
         continue
       }
 
@@ -376,9 +395,12 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
           reportFileError(file, error, ctx)
         }
       }
-      if (!planHook(module, 'post_deploy', scripts, ctx, { complete })) failures++
+      if (!planHook(module, 'post_deploy', scripts, ctx, { complete })) {
+        failed.add('post_deploy', module)
+      }
     }
-    finish(failures, skippedProblems(wouldSkip, prompts.interactive), 'Dry run finished.', ctx)
+    const problems = [...skippedProblems(wouldSkip, prompts.interactive), ...failed.problems(true)]
+    finish(failures, problems, 'Dry run finished.', ctx)
     return
   }
 
@@ -481,15 +503,26 @@ async function eachModule(
   work: (unit: Unit) => Promise<boolean>,
 ): Promise<{ problems: string[]; stopped: boolean; exitCode?: number }> {
   const [pre, post] = hooksOf(verb)
-  const failed: Record<string, string[]> = { [pre]: [], [post]: [] }
-  /** Something was done already: a script ran, or the files of a module were handled. */
+  const failed = new FailedHooks(verb)
+  /**
+   * Something was attempted already: a script was due to run (even one that
+   * is missing or could not be started), or the files of a module were handled.
+   */
   let started = false
   /** The modules whose files were left untouched, and why. */
   const leftOut: { name: string; reason: string }[] = []
+  let recorded = 0
   let hint = ''
   let exitCode: number | undefined
   const leaveOut = (from: number, to: number, reason: string) => {
     for (const { module } of units.slice(from, to)) leftOut.push({ name: module.name, reason })
+  }
+  /** Writes them to the history: called on every way out, each module once. */
+  const recordLeftOut = () => {
+    for (const { name, reason } of leftOut.slice(recorded)) {
+      ctx.history.record({ kind: 'failed', module: name, reason: `not ${verb}ed: ${reason}` })
+    }
+    recorded = leftOut.length
   }
 
   /** Runs a script of the module at `index`. `stop`: the run ends there. */
@@ -499,7 +532,7 @@ async function eachModule(
 
     started = true
     const result = await runHook(module, hook, scripts, options.strategy, ctx)
-    if (!result.ok) failed[hook]?.push(module.name)
+    if (!result.ok) failed.add(hook, module)
     // Before its files, the module itself is left out too.
     const next = hook === pre ? index : index + 1
 
@@ -535,16 +568,14 @@ async function eachModule(
     } catch (error) {
       // A question cancelled with Ctrl+C ends the command as usual: only the
       // history says what was left out (the files of this module may be done).
-      if (isPromptExit(error)) {
-        for (const { module } of units.slice(index + 1)) {
-          const reason = `not ${verb}ed: cancelled`
-          ctx.history.record({ kind: 'failed', module: module.name, reason })
-        }
-      }
+      if (isPromptExit(error)) leaveOut(index + 1, units.length, 'cancelled')
       // The lock is taken again for each module: when it (or the record) can
       // no longer be, say what was left out. Before anything was done, the
       // error says it all.
-      if (!(error instanceof CliError) || !started) throw error
+      if (!(error instanceof CliError) || !started) {
+        recordLeftOut()
+        throw error
+      }
       ctx.output.error(messageOf(error))
       leaveOut(index, units.length, messageOf(error))
       stopped = true
@@ -553,31 +584,49 @@ async function eachModule(
     started = true
 
     if (!complete && scripts != null && unit.module.hooks[post] != null) {
-      const reason = `${describeHook(unit.module, post)} was not run, ${hookNeedsFiles(verb)}`
-      ctx.output.warn(`${unit.module.name}: ${reason}.`)
-      ctx.history.record({ kind: 'failed', module: unit.module.name, reason })
+      const reason = hookNeedsFiles(verb)
+      ctx.output.warn(
+        `${unit.module.name}: ${describeHook(unit.module, post)} was not run, ${reason}.`,
+      )
+      recordSkippedHook(unit.module, post, reason, ctx)
       continue
     }
     stopped = complete && (await runStep(post, index)) === 'stop'
     if (stopped) break
   }
 
-  const problems: string[] = []
-  for (const hook of [pre, post]) {
-    const modules = failed[hook] ?? []
-    if (modules.length > 0) problems.push(`The ${hook} script of ${modules.join(', ')} failed.`)
-  }
+  const problems = failed.problems(false)
   if (exitCode != null) problems.push('Interrupted.')
+  recordLeftOut()
   if (leftOut.length > 0) {
-    for (const { name, reason } of leftOut) {
-      ctx.history.record({ kind: 'failed', module: name, reason: `not ${verb}ed: ${reason}` })
-    }
     problems.push(
       `${plural(leftOut.length, 'module')} ${leftOut.length === 1 ? 'was' : 'were'} ` +
         `not ${verb}ed: ${leftOut.map(({ name }) => name).join(', ')}.${hint}`,
     )
   }
   return { problems, stopped, ...(exitCode != null && { exitCode }) }
+}
+
+/** The modules whose scripts failed, for the summary of a run or of a dry run. */
+class FailedHooks {
+  readonly #modules = new Map<Hook, string[]>()
+
+  constructor(verb: Verb) {
+    for (const hook of hooksOf(verb)) this.#modules.set(hook, [])
+  }
+
+  add(hook: Hook, module: UsableModule): void {
+    this.#modules.get(hook)?.push(module.name)
+  }
+
+  problems(dryRun: boolean): string[] {
+    return [...this.#modules]
+      .filter(([, modules]) => modules.length > 0)
+      .map(
+        ([hook, modules]) =>
+          `The ${hook} script of ${modules.join(', ')} ${dryRun ? 'would fail' : 'failed'}.`,
+      )
+  }
 }
 
 /** A `post_` script only runs once every file of its module is handled. */
@@ -591,8 +640,34 @@ function describeHook(module: UsableModule, hook: Hook): string {
   return `${hook} script "${module.hooks[hook]}"`
 }
 
-function findHook(module: UsableModule, hook: Hook, { scripts }: Scripts) {
-  return scripts.find(script => script.name === module.hooks[hook])
+/**
+ * The script a setting of the module names. `other-system`: it only has
+ * versions for other systems, so there is nothing to run on this one.
+ */
+function findHook(
+  module: UsableModule,
+  hook: Hook,
+  { scripts, otherSystems }: Scripts,
+): Script | 'other-system' | 'missing' {
+  const name = module.hooks[hook]
+  const script = scripts.find(candidate => candidate.name === name)
+  if (script != null) return script
+  return name != null && otherSystems.includes(name) ? 'other-system' : 'missing'
+}
+
+/** A script that is not run on purpose: said in the history, without failing the run. */
+function recordSkippedHook(module: UsableModule, hook: Hook, reason: string, ctx: Context): void {
+  ctx.history.record({
+    kind: 'script-skipped',
+    name: module.hooks[hook] ?? '',
+    hook,
+    module: module.name,
+    reason,
+  })
+}
+
+function noVersionFor(ctx: Context): string {
+  return `no version for ${systemName(ctx.platform)}`
 }
 
 function hookNotFound(module: UsableModule, hook: Hook): string {
@@ -609,7 +684,8 @@ function reportHookError(module: UsableModule, reason: string, ctx: Context): vo
 
 /**
  * Dry runs: says whether a script of the module would run. Returns `false`
- * when the real run would fail there, because the script does not exist.
+ * when the script does not exist, which only happens with `--keep-going`:
+ * without it, `loadHookScripts` has already failed the command.
  * `complete: false`: some files of the module would not be handled, so its
  * `post_` script would not run.
  */
@@ -629,11 +705,14 @@ function planHook(
     ctx.output.print(describe(`would not run, ${hookNeedsFiles(verb)}`))
     return true
   }
-  if (findHook(module, hook, scripts) == null) {
+  const script = findHook(module, hook, scripts)
+  if (script === 'missing') {
     reportHookError(module, hookNotFound(module, hook), ctx)
     return false
   }
-  ctx.output.print(describe('would run'))
+  ctx.output.print(
+    describe(script === 'other-system' ? `would be skipped, ${noVersionFor(ctx)}` : 'would run'),
+  )
   return true
 }
 
@@ -645,7 +724,8 @@ function planHook(
  *
  * Returns whether it succeeded, and the signal configfile received while it
  * ran, if any (Ctrl+C, SIGTERM…): the script is left to end, then the run
- * must stop.
+ * must stop. A script that only has versions for other systems is skipped,
+ * which is a success.
  */
 async function runHook(
   module: UsableModule,
@@ -655,9 +735,15 @@ async function runHook(
   ctx: Context,
 ): Promise<{ ok: boolean; signal?: NodeJS.Signals }> {
   const script = findHook(module, hook, scripts)
-  if (script == null) {
+  if (script === 'missing') {
     reportHookError(module, hookNotFound(module, hook), ctx)
     return { ok: false }
+  }
+  if (script === 'other-system') {
+    const reason = noVersionFor(ctx)
+    ctx.output.info(`${module.name}: ${describeHook(module, hook)} has ${reason}, skipped.`)
+    recordSkippedHook(module, hook, reason, ctx)
+    return { ok: true }
   }
 
   ctx.output.info(`Running "${script.name}", the ${hook} script of ${module.name}…`)
@@ -706,13 +792,19 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
 
   const repo = await loadRepository(ctx)
   const run = options.removed
-    ? { files: [], modules: [], failures: 0, all: false }
+    ? { modules: [], failures: 0, all: false }
     : await prepare('undeploy', repo, names, options, ctx)
   // Undeploying every module also undeploys what the repository no longer deploys.
   const withRemoved = options.removed || options.all || run?.all === true
   if (run == null && !withRemoved) return
   const units = unitsOf(run?.modules ?? [], options.strategy)
-  const scripts = await loadHookScripts('undeploy', run?.modules ?? [], units, options, ctx)
+  const scripts = await loadHookScripts(
+    'undeploy',
+    { modules: run?.modules ?? [], named: run != null && !run.all },
+    units,
+    options,
+    ctx,
+  )
   let failures = run?.failures ?? 0
 
   /** Returns whether the file was handled (removed, kept on purpose, or not deployed). */
@@ -788,17 +880,23 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   let count = units.reduce((sum, unit) => sum + unit.files.length, 0)
   if (options.dryRun) {
     const context = await deployContext(ctx)
+    const failed = new FailedHooks('undeploy')
     for (const { module, files } of units) {
       // Without its pre_undeploy script, the files of a module would stay deployed.
       if (!planHook(module, 'pre_undeploy', scripts, ctx)) {
-        failures++
+        failed.add('pre_undeploy', module)
         continue
       }
       const complete = await undeployFiles(files, context)
-      if (!planHook(module, 'post_undeploy', scripts, ctx, { complete })) failures++
+      if (!planHook(module, 'post_undeploy', scripts, ctx, { complete })) {
+        failed.add('post_undeploy', module)
+      }
     }
     if (withRemoved) count += await undeployRemoved(context)
-    if (count > 0 || failures > 0) finish(failures, [], count > 0 ? 'Dry run finished.' : '', ctx)
+    const problems = failed.problems(true)
+    if (count > 0 || failures > 0 || problems.length > 0) {
+      finish(failures, problems, count > 0 ? 'Dry run finished.' : '', ctx)
+    }
     return
   }
 
@@ -815,8 +913,9 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
       } catch (error) {
         // After the modules: what they did, and what failed, is still reported.
         if (!(error instanceof CliError) || (units.length === 0 && failures === 0)) throw error
-        output.error(messageOf(error))
-        problems.push('The files the repository no longer deploys were not checked.')
+        problems.push(
+          `The files the repository no longer deploys were not checked: ${messageOf(error)}`,
+        )
       }
     }
   }
@@ -836,7 +935,10 @@ async function deployContext(ctx: Context): Promise<DeployContext> {
  * Selects the modules and files a deploy or undeploy works on, and reports
  * modules and settings entries that are skipped (they count as failures, as
  * do the settings that cannot name a script this command would run).
- * Returns `null` when there is nothing to do.
+ *
+ * Returns `null` when no module is selected. When the selected modules have
+ * no file of the kind the command works on, says so and still returns them:
+ * their scripts are reported as not run.
  */
 async function prepare(
   verb: Verb,
@@ -845,7 +947,6 @@ async function prepare(
   options: Options,
   ctx: Context,
 ): Promise<{
-  files: ModuleFile[]
   /** The selected modules that can be used, in repository order. */
   modules: UsableModule[]
   failures: number
@@ -854,7 +955,7 @@ async function prepare(
 } | null> {
   const { output } = ctx
   const { selected, all } = await selectModules(verb, modules, names, options, ctx)
-  if (selected.length === 0) return all ? { files: [], modules: [], failures: 0, all } : null
+  if (selected.length === 0) return all ? { modules: [], failures: 0, all } : null
 
   let failures = 0
   const usable: UsableModule[] = []
@@ -898,7 +999,7 @@ async function prepare(
         `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry', 'modules or settings entries')} failed.`,
       )
     output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
-    return { files, modules: usable, failures, all }
+    return { modules: usable, failures, all }
   }
 
   const action = verb === 'deploy' ? 'Deploying' : 'Undeploying'
@@ -907,7 +1008,7 @@ async function prepare(
       ? `Dry run, nothing is changed. ${action} ${moduleNames} would do:`
       : `${action} ${moduleNames}…`,
   )
-  return { files, modules: usable, failures, all }
+  return { modules: usable, failures, all }
 }
 
 async function selectModules(

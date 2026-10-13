@@ -117,6 +117,6 @@ rm -rf "$HOME/.tmux/plugins"
 
 - **One script for several settings or modules.** A script gets the setting that named it in `CONFIGFILE_HOOK`, the module in `CONFIGFILE_MODULE`, and `global` or `local` in `CONFIGFILE_DEPLOY`, in addition to the [variables every script gets](/reference/scripts/).
 - **Local files.** `configfile modules deploy --local` runs the scripts too, in the project folder, for the modules that have local files. A script that only makes sense once per machine can leave early: `[ "$CONFIGFILE_DEPLOY" = global ] || exit 0`.
-- **Versions per system.** As for any script, `tmux-plugins.macos.sh` is used on macOS instead of `tmux-plugins.sh`.
+- **Versions per system.** As for any script, `tmux-plugins.macos.sh` is used on macOS instead of `tmux-plugins.sh`. A script that only has a version for another system is skipped on this one, and the module is deployed all the same: a step that only makes sense on macOS needs no empty script for Linux.
 - **Scripts that run configfile.** They can: no deployment is in progress while a script runs.
 - **Trust.** These scripts run without a question, as part of `modules deploy` and `modules undeploy`. Read the scripts of a repository that isn't yours before deploying it, or use `--dry-run` to see which ones would run. See [Safety and trust](/concepts/safety/).

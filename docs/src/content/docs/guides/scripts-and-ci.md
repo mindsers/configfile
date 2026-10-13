@@ -76,7 +76,7 @@ jobs:
       - run: configfile modules deploy --all --dry-run
 ```
 
-`init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included, and if a module names a script to run when it is deployed that doesn't exist. It lists these scripts without running them. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
+`init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included. It lists the scripts the modules name to run when they are deployed, without running them, and fails before listing anything if one of them doesn't exist. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
 
 To also test your setup script, add a step that runs it, on the systems it supports:
 

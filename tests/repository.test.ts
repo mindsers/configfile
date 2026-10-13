@@ -36,10 +36,10 @@ async function scriptsOf(
   platform: NodeJS.Platform = 'linux',
 ) {
   const warnings: string[] = []
-  const scripts = await listScripts(sandbox.repo, extensions, platform, {
+  const { scripts, otherSystems } = await listScripts(sandbox.repo, extensions, platform, {
     warn: message => warnings.push(message),
   })
-  return { scripts, warnings }
+  return { scripts, otherSystems, warnings }
 }
 
 describe('listModules', () => {

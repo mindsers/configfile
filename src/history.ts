@@ -56,6 +56,8 @@ export type Change =
   | { kind: 'saved-patch'; file: string }
   /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
   | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
+  /** A script a module names was not run, without this being a failure. */
+  | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }
 
@@ -523,6 +525,10 @@ function isChange(value: unknown): value is Change {
         Number.isInteger(value.exitCode) &&
         (value.module === undefined || typeof value.module === 'string') &&
         (value.hook === undefined || HOOKS.includes(value.hook as Hook))
+      )
+    case 'script-skipped':
+      return (
+        areStrings(value.name, value.module, value.reason) && HOOKS.includes(value.hook as Hook)
       )
     case 'cloned':
     case 'reused':

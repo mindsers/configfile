@@ -97,13 +97,13 @@ export async function loadRepository(
 /** The scripts, and the folder of the repository they come from. */
 export async function loadScripts(
   ctx: Context,
-): Promise<{ repository: string; scripts: Script[] }> {
+): Promise<{ repository: string; scripts: Script[]; otherSystems: string[] }> {
   const warn = (message: string) => ctx.output.warn(message)
   const config = await new ConfigStore(ctx.home, { warn }).read()
-  const scripts = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
+  const listed = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
     warn,
   })
-  return { repository: config.folderPath, scripts }
+  return { repository: config.folderPath, ...listed }
 }
 
 /**
@@ -358,17 +358,21 @@ export function unsafeTarget(
  * `setup` script. A second part naming a system (`setup.macos.sh`,
  * `setup.linux/`) makes it that system's version: used instead of `setup.sh`
  * on that system, and ignored on the others.
+ *
+ * `otherSystems` names the scripts that only have versions for other systems:
+ * they are not scripts here, but their name is not a mistake either.
  */
 export async function listScripts(
   folderPath: string,
   extensions: readonly string[] | null,
   platform: NodeJS.Platform,
   env: Pick<Environment, 'warn'>,
-): Promise<Script[]> {
+): Promise<{ scripts: Script[]; otherSystems: string[] }> {
   const scriptsDir = path.join(folderPath, 'scripts')
   const scripts: Script[] = []
   /** Names of the scripts that are this system's version. */
   const forSystem = new Set<string>()
+  const elsewhere = new Set<string>()
   const allowed = (name: string) => extensions == null || extensions.includes(path.extname(name))
 
   for (const entry of await readDirOrFail(scriptsDir)) {
@@ -387,8 +391,11 @@ export async function listScripts(
 
     const [baseName = '', tag] = entry.name.split('.')
     const system = tag == null ? undefined : SCRIPT_SYSTEMS.get(tag)
-    if (system != null && system !== platform) continue
     const name = slugify(baseName)
+    if (system != null && system !== platform) {
+      elsewhere.add(name)
+      continue
+    }
     const script = { name, file, path: path.join(scriptsDir, file) }
 
     // This system's version replaces the generic one, whichever comes first.
@@ -406,7 +413,8 @@ export async function listScripts(
     if (system != null) forSystem.add(name)
   }
 
-  return scripts
+  const otherSystems = [...elsewhere].filter(name => !scripts.some(script => script.name === name))
+  return { scripts, otherSystems }
 }
 
 /** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */

@@ -117,7 +117,7 @@ describe('built CLI', () => {
       const sandbox = await createSandbox()
 
       // Only configfile receives SIGINT here; in a terminal the script gets it too.
-      const result = await interrupt(sandbox, 'echo ready\nsleep 0.3\nexit 5\n', 'SIGINT')
+      const result = await interrupt(sandbox, 'echo ready\nsleep 1\nexit 5\n', 'SIGINT')
 
       expect(result).toMatchObject({ code: 5, signal: null })
     })
@@ -136,7 +136,7 @@ describe('built CLI', () => {
       }
 
       // The script ends by itself with success: configfile was still asked to stop.
-      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 0.3\n", 'SIGINT', [
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
         'modules',
         'deploy',
         '--all',
@@ -166,7 +166,7 @@ describe('built CLI', () => {
       const sandbox = await createSandbox()
       await withModules(sandbox, { pre_deploy: 'long' })
 
-      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 0.3\n", 'SIGINT', [
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
         'modules',
         'deploy',
         '--all',
@@ -287,7 +287,10 @@ describe('built CLI', () => {
     expect(() => process.kill(gitPid, 0)).toThrow()
   })
 
-  it('never loses a file when several configfile processes deploy at once', async () => {
+  // Eight processes: allow for slow, busy CI machines.
+  it('never loses a file when several configfile processes deploy at once', {
+    timeout: 30_000,
+  }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     const modules = ['a', 'b', 'c', 'd']

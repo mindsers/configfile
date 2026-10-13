@@ -2866,6 +2866,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     // The files of "a" are left out, as its pre_deploy script cannot run.
     expect(planned.code).toBe(1)
     expect(planned.stderr).toContain('a: pre_deploy script "missing" not found.')
+    expect(planned.stderr).toContain('The pre_deploy script of a would fail.')
     expect(planned.stdout).not.toContain('.arc')
     expect(planned.stdout).toContain('.brc (would be linked)')
     expect(planned.stdout).toContain('- script "fine" (post_deploy of b: would run)')
@@ -2945,8 +2946,17 @@ describe('scripts run when a module is deployed or undeployed', () => {
     await sandbox.write('cwd/arc', 'mine')
 
     const refused = await runCli(sandbox, ['modules', 'deploy', '--local', 'a'], [false])
+    expect(refused.code).toBe(0)
     expect(refused.stderr).toContain('a: post_deploy script "plugins" was not run')
     expect(await logOf(sandbox)).toBe('')
+    // The run succeeded: the script that was not run is not a failure.
+    const [line] = await readHistory(sandbox)
+    expect(line?.changes).toMatchObject([
+      { kind: 'skipped' },
+      { kind: 'script-skipped', name: 'plugins', hook: 'post_deploy', module: 'a' },
+    ])
+    const history = await runCli(sandbox, ['history'])
+    expect(history.stdout).toMatch(/skipped\s+plugins {2}\(post_deploy of a: some files/)
 
     const agreed = await runCli(sandbox, ['modules', 'deploy', '--local', 'a'], [true])
     expect(agreed.code, agreed.stderr).toBe(0)
@@ -2998,7 +3008,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     ])
   })
 
-  it('only runs the scripts of the modules that have files to deploy, and says so', async () => {
+  it('only runs the scripts of the modules that have files to deploy', async () => {
     const sandbox = await createSandbox()
     await withHooks(sandbox, { a: 'plugins' })
     await sandbox.write('home/dotfiles/scripts/plugins.sh', logging(sandbox, 'ran'))
@@ -3010,19 +3020,20 @@ describe('scripts run when a module is deployed or undeployed', () => {
       }),
     )
 
-    const planned = await runCli(sandbox, ['modules', 'deploy', '--local', '--all', '--dry-run'])
-    const result = await runCli(sandbox, ['modules', 'deploy', '--local', '--all'])
-    const alone = await runCli(sandbox, ['modules', 'deploy', '--local', 'a'])
+    // With every module, a module without local files is the usual case: nothing is said.
+    const all = await runCli(sandbox, ['modules', 'deploy', '--local', '--all'])
+    const planned = await runCli(sandbox, ['modules', 'deploy', '--local', 'a', '--dry-run'])
+    const named = await runCli(sandbox, ['modules', 'deploy', '--local', 'a'])
 
+    expect(all.code, all.stderr).toBe(0)
+    expect(all.stderr).not.toContain('post_deploy')
     expect(planned.stderr).toContain(
       'a: post_deploy script "plugins" would not run, the module has no local file.',
     )
-    for (const run of [result, alone]) {
-      expect(run.code, run.stderr).toBe(0)
-      expect(run.stderr).toContain(
-        'a: post_deploy script "plugins" was not run, the module has no local file.',
-      )
-    }
+    expect(named.code, named.stderr).toBe(0)
+    expect(named.stderr).toContain(
+      'a: post_deploy script "plugins" was not run, the module has no local file.',
+    )
     expect(await logOf(sandbox)).toBe('')
   })
   it('shows the scripts in a dry run, without running them', async () => {
@@ -3201,43 +3212,51 @@ describe('scripts run when a module is deployed or undeployed', () => {
     expect(kept.stdout).not.toContain('.brc')
   })
 
-  it('does not run post_undeploy when a file of the module cannot be undeployed', async () => {
-    const sandbox = await createSandbox()
-    await withHooks(
-      sandbox,
-      {},
-      {},
-      { a: { post_undeploy: 'clean' }, b: { post_undeploy: 'clean' } },
-    )
-    await sandbox.write('home/dotfiles/scripts/clean.sh', logging(sandbox, '$CONFIGFILE_MODULE'))
-    await sandbox.write(
-      'home/dotfiles/files/a/settings.json',
-      JSON.stringify({
-        files: [{ source_path: 'rc', target_path: '~/locked/.arc', deploy: 'global' }],
-        post_undeploy: 'clean',
-      }),
-    )
-    await runCli(sandbox, ['modules', 'deploy', '--all'])
-    const locked = path.join(sandbox.home, 'locked')
-    await chmod(locked, 0o555)
-
-    try {
-      const result = await runCli(sandbox, ['modules', 'undeploy', '--all'])
-
-      expect(result.code).toBe(1)
-      expect(result.stderr).toContain(
-        'a: post_undeploy script "clean" was not run, some files of the module could not be undeployed.',
+  // root removes files from a folder whatever its permissions.
+  it.skipIf(process.getuid?.() === 0)(
+    'does not run post_undeploy when a file of the module cannot be undeployed',
+    async () => {
+      const sandbox = await createSandbox()
+      await withHooks(
+        sandbox,
+        {},
+        {},
+        { a: { post_undeploy: 'clean' }, b: { post_undeploy: 'clean' } },
       )
-      // The other modules are not held back: no script failed.
-      expect(await logOf(sandbox)).toBe('b\n')
-      const history = await readHistory(sandbox)
-      expect(history.at(-1)?.changes).toContainEqual(
-        expect.objectContaining({ kind: 'failed', module: 'a' }),
+      await sandbox.write('home/dotfiles/scripts/clean.sh', logging(sandbox, '$CONFIGFILE_MODULE'))
+      await sandbox.write(
+        'home/dotfiles/files/a/settings.json',
+        JSON.stringify({
+          files: [{ source_path: 'rc', target_path: '~/locked/.arc', deploy: 'global' }],
+          post_undeploy: 'clean',
+        }),
       )
-    } finally {
-      await chmod(locked, 0o755)
-    }
-  })
+      await runCli(sandbox, ['modules', 'deploy', '--all'])
+      const locked = path.join(sandbox.home, 'locked')
+      await chmod(locked, 0o555)
+
+      try {
+        const result = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+        expect(result.code).toBe(1)
+        expect(result.stderr).toContain(
+          'a: post_undeploy script "clean" was not run, some files of the module could not be undeployed.',
+        )
+        // The other modules are not held back: no script failed.
+        expect(await logOf(sandbox)).toBe('b\n')
+        const history = await readHistory(sandbox)
+        expect(history.at(-1)?.changes).toContainEqual({
+          kind: 'script-skipped',
+          name: 'clean',
+          hook: 'post_undeploy',
+          module: 'a',
+          reason: 'some files of the module could not be undeployed',
+        })
+      } finally {
+        await chmod(locked, 0o755)
+      }
+    },
+  )
 
   it('undeploys the files the repository no longer deploys only when the run was not stopped', async () => {
     const sandbox = await createSandbox()
@@ -3295,7 +3314,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
       }),
     )
 
-    const local = await runCli(sandbox, ['modules', 'undeploy', '--local', '--all'])
+    const local = await runCli(sandbox, ['modules', 'undeploy', '--local', 'a'])
 
     expect(local.code, local.stderr).toBe(0)
     expect(local.stderr).toContain(
@@ -3358,7 +3377,9 @@ describe('scripts run when a module is deployed or undeployed', () => {
     expect(status.stdout).toContain('  post_deploy: script "plugins"\n')
     expect(status.stdout).toContain('  pre_undeploy: script "missing" (not found in scripts/)\n')
     // The script only has a version for macOS.
-    expect(elsewhere.stdout).toContain('  post_deploy: script "plugins" (not found in scripts/)\n')
+    expect(elsewhere.stdout).toContain(
+      '  post_deploy: script "plugins" (no version for this system)\n',
+    )
   })
 
   it('still shows the status of the files when the scripts cannot be listed', async () => {
@@ -3378,11 +3399,11 @@ describe('scripts run when a module is deployed or undeployed', () => {
     expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(false)
   })
 
-  it('ends as usual when a question is cancelled, after the scripts of the modules before', async () => {
+  it('ends as usual when a question is cancelled, and records the modules left out', async () => {
     const sandbox = await createSandbox()
-    await withHooks(sandbox, { a: 'plugins' })
+    await withHooks(sandbox, { a: 'plugins', b: 'plugins' })
     await sandbox.write('home/dotfiles/scripts/plugins.sh', logging(sandbox, 'ran'))
-    await sandbox.write('cwd/brc', 'mine')
+    await sandbox.write('cwd/arc', 'mine')
 
     const result = await runCli(
       sandbox,
@@ -3392,10 +3413,14 @@ describe('scripts run when a module is deployed or undeployed', () => {
 
     expect(result.code).toBe(130)
     expect(result.stderr).not.toContain('not deployed')
-    expect(await logOf(sandbox)).toBe('ran\n')
+    expect(existsSync(path.join(sandbox.cwd, 'brc'))).toBe(false)
+    expect(await logOf(sandbox)).toBe('')
+    const [line] = await readHistory(sandbox)
+    expect(line?.changes).toEqual([
+      { kind: 'failed', module: 'b', reason: 'not deployed: cancelled' },
+    ])
   })
-
-  it('reports a lock that cannot be taken as it did before, when nothing was done yet', async () => {
+  it('reports a lock that cannot be used as an expected error, when nothing was done yet', async () => {
     const sandbox = await createSandbox()
     await withHooks(sandbox)
     await sandbox.write('home/.configfile', 'not a folder')
@@ -3403,9 +3428,72 @@ describe('scripts run when a module is deployed or undeployed', () => {
     const result = await runCli(sandbox, ['modules', 'deploy', '--all'])
 
     expect(result.code).toBe(1)
-    expect(result.stderr).toContain('Cannot take the lock')
+    expect(result.stderr).toContain(
+      `Cannot take the lock ${path.join(sandbox.home, '.configfile/lock')}:`,
+    )
     expect(result.stderr).not.toContain('Unexpected error')
     expect(result.stderr).not.toContain('not deployed')
+  })
+
+  it('skips a script that only has versions for other systems', async () => {
+    const sandbox = await createSandbox()
+    await withHooks(sandbox, { a: 'plugins' }, { a: 'plugins' })
+    await sandbox.write('home/dotfiles/scripts/plugins.macos.sh', logging(sandbox, 'ran'))
+
+    const planned = await runCli(sandbox, ['modules', 'deploy', '--all', '--dry-run'])
+    const result = await runCli(sandbox, ['modules', 'deploy', '--all'])
+
+    expect(planned.code, planned.stderr).toBe(0)
+    expect(planned.stdout).toContain(
+      '- script "plugins" (pre_deploy of a: would be skipped, no version for linux)',
+    )
+    // Not a mistake in the repository: every module is deployed.
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toContain(
+      'a: post_deploy script "plugins" has no version for linux, skipped.',
+    )
+    expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+    expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(true)
+    expect(await logOf(sandbox)).toBe('')
+    const [line] = await readHistory(sandbox)
+    expect(line?.changes).toMatchObject([
+      { kind: 'script-skipped', hook: 'pre_deploy', module: 'a', reason: 'no version for linux' },
+      { kind: 'deployed' },
+      { kind: 'script-skipped', hook: 'post_deploy', module: 'a' },
+      { kind: 'deployed' },
+    ])
+
+    const onMac = await runCli(sandbox, ['modules', 'deploy', 'a'], [], { platform: 'darwin' })
+
+    expect(onMac.code, onMac.stderr).toBe(0)
+    expect(await logOf(sandbox)).toBe('ran\nran\n')
+  })
+
+  it('keeps the summary of an undeployment when the removed files cannot be checked', async () => {
+    const sandbox = await createSandbox()
+    await withHooks(sandbox, {}, {}, { b: { post_undeploy: 'breaks' } })
+    // The record is read again for the files the repository no longer deploys.
+    await sandbox.write(
+      'home/dotfiles/scripts/breaks.sh',
+      `echo broken > "${sandbox.home}/.configfile/state.json"\n`,
+    )
+    await runCli(sandbox, ['modules', 'deploy', '--all'])
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--all'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('The files the repository no longer deploys were not checked: ')
+    expect(result.stderr).toContain('state.json')
+    expect(result.stderr).not.toContain('Unexpected error')
+    expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(false)
+    expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
+
+    // Alone, the error says it all.
+    const alone = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(alone.code).toBe(1)
+    expect(alone.stderr).toContain('state.json')
+    expect(alone.stderr).not.toContain('were not checked')
   })
   it('shows which module a script ran for in the history', async () => {
     const sandbox = await createSandbox()
