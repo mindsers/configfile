@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import {
   chmod,
@@ -1513,6 +1513,22 @@ describe('init', () => {
   const readConfig = async (sandbox: Sandbox) =>
     JSON.parse(await readFile(path.join(sandbox.home, '.configfilerc'), 'utf8'))
 
+  it('waits for another configfile that holds the lock, after its questions', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    await sandbox.write('home/.configfile/lock', String(other.pid))
+    setTimeout(() => other.kill(), 500)
+
+    const started = Date.now()
+    const result = await runCli(sandbox, ['init'], [remote])
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(400)
+    expect(result.asked).toEqual(['Dotfiles repository URL:'])
+    expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/.git'))).toBe(true)
+  })
+
   it('clones the repository and saves the configuration', async () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
@@ -1743,6 +1759,8 @@ describe('init', () => {
       const sandbox = await createSandbox()
       const remote = await withRemote(sandbox)
       const folder = path.join(sandbox.root, 'clone')
+      // configfile's own folder can be written (its lock is there), not the home folder.
+      await mkdir(path.join(sandbox.home, '.configfile'))
       await chmod(sandbox.home, 0o555)
 
       try {
@@ -1752,6 +1770,27 @@ describe('init', () => {
         expect(result.stderr).toContain('Cannot save the configuration')
         expect(result.stderr).toContain(`The repository is in ${folder}`)
         expect(existsSync(path.join(folder, '.git'))).toBe(true)
+      } finally {
+        await chmod(sandbox.home, 0o755)
+      }
+    },
+  )
+
+  // root writes to a folder whatever its permissions.
+  it.skipIf(process.getuid?.() === 0)(
+    'fails before cloning when the lock cannot be taken',
+    async () => {
+      const sandbox = await createSandbox()
+      const remote = await withRemote(sandbox)
+      const folder = path.join(sandbox.root, 'clone')
+      await chmod(sandbox.home, 0o555)
+
+      try {
+        const result = await runCli(sandbox, ['init', '--repo', remote, '--folder', folder])
+
+        expect(result.code).toBe(1)
+        expect(result.stderr).toContain('Cannot take the lock')
+        expect(existsSync(folder)).toBe(false)
       } finally {
         await chmod(sandbox.home, 0o755)
       }
@@ -1854,6 +1893,81 @@ describe('update', () => {
     const folder = path.join(sandbox.home, '.configfile/saved')
     return existsSync(folder) ? (await readdir(folder)).map(name => path.join(folder, name)) : []
   }
+
+  /** Holds the lock as another configfile would, until the returned function is called. */
+  async function holdLock(sandbox: Sandbox) {
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    await sandbox.write('home/.configfile/lock', String(other.pid))
+    return () => other.kill()
+  }
+
+  it('waits for another configfile that holds the lock, then syncs', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'new')
+    const release = await holdLock(sandbox)
+    setTimeout(release, 500)
+
+    const started = Date.now()
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(400)
+    expect(result.stdout).toMatch(/Waiting for another configfile \(process \d+\) to finish…\n/)
+    expect(result.stdout.match(/Waiting for/g)).toHaveLength(1)
+    expect(await readFile(path.join(sandbox.repo, 'files/zsh/zshrc'), 'utf8')).toBe('new')
+  })
+
+  it('holds the lock for the whole sync, the fetch included', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'new')
+    const lock = path.join(sandbox.home, '.configfile/lock')
+    const seen = path.join(sandbox.root, 'seen')
+    // Run by git when the fetch updates the remote branches.
+    await sandbox.write(
+      'hooks/reference-transaction',
+      `#!/bin/sh\n[ "$1" = committed ] && cat "${lock}" >> "${seen}"\nexit 0\n`,
+      0o755,
+    )
+    git(sandbox.repo, 'config', 'core.hooksPath', path.join(sandbox.root, 'hooks'))
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(await readFile(seen, 'utf8')).toContain(String(process.pid))
+    expect(existsSync(lock)).toBe(false)
+  })
+
+  // root writes to a folder whatever its permissions.
+  it.skipIf(process.getuid?.() === 0)(
+    'fails before syncing when the lock cannot be taken, and records it',
+    async () => {
+      const sandbox = await createSandbox()
+      const { commitInRemote } = await withMirror(sandbox)
+      await commitInRemote('files/zsh/zshrc', 'new')
+      const folder = path.join(sandbox.home, '.configfile')
+      // The history can still be appended to; the lock cannot be created.
+      await sandbox.write('home/.configfile/history.jsonl', '')
+      await chmod(folder, 0o555)
+
+      try {
+        const result = await runCli(sandbox, ['update'])
+
+        expect(result.code).toBe(1)
+        expect(result.stderr).toContain('Cannot take the lock')
+      } finally {
+        await chmod(folder, 0o755)
+      }
+      expect(existsSync(path.join(sandbox.repo, 'files/zsh/zshrc'))).toBe(false)
+      const [line] = await readHistory(sandbox)
+      expect(line).toMatchObject({
+        command: 'update',
+        exitCode: 1,
+        error: { message: expect.stringContaining('Cannot take the lock') },
+      })
+    },
+  )
 
   it('syncs the mirror with the remote', async () => {
     const sandbox = await createSandbox()

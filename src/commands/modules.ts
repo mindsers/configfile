@@ -23,7 +23,7 @@ import {
 } from '../deploy.ts'
 import { CliError, isPromptExit } from '../errors.ts'
 import { messageOf } from '../fsutil.ts'
-import { withLock } from '../lock.ts'
+import { withCommandLock } from '../lock.ts'
 import { plural } from '../output.ts'
 import { runScript } from '../process.ts'
 import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
@@ -406,7 +406,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
 
   let skipped = 0
   const outcome = await eachModule('deploy', units, scripts, options, ctx, async unit => {
-    const result = await withLock(ctx.home, async () =>
+    const result = await withCommandLock(ctx, async () =>
       deployFiles(unit.files, options, await deployContext(ctx), ctx),
     )
     failures += result.failures
@@ -901,7 +901,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   }
 
   const outcome = await eachModule('undeploy', units, scripts, options, ctx, unit =>
-    withLock(ctx.home, async () => undeployFiles(unit.files, await deployContext(ctx))),
+    withCommandLock(ctx, async () => undeployFiles(unit.files, await deployContext(ctx))),
   )
   const problems = outcome.problems
   if (withRemoved) {
@@ -909,7 +909,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
       problems.push('The files the repository no longer deploys were not checked.')
     } else {
       try {
-        count += await withLock(ctx.home, async () => undeployRemoved(await deployContext(ctx)))
+        count += await withCommandLock(ctx, async () => undeployRemoved(await deployContext(ctx)))
       } catch (error) {
         // After the modules: what they did, and what failed, is still reported.
         if (!(error instanceof CliError) || (units.length === 0 && failures === 0)) throw error

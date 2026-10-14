@@ -8,6 +8,7 @@ import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import { checkRepositoryUrl } from '../git-url.ts'
+import { withCommandLock } from '../lock.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
@@ -95,6 +96,21 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     await mkdir(own.dir, { recursive: true, mode: 0o700 })
   }
 
+  // After the questions, so that an answer never keeps the others waiting: the
+  // folder and the configuration that deployments and syncs read change here.
+  await withCommandLock(ctx, () => setUp(folder, folderPath, repoUrl, store, ctx))
+  output.success(`configfile is ready. Configuration saved to ${store.path}.`)
+}
+
+/** Clones the repository or reuses the folder, then saves the configuration. */
+async function setUp(
+  folder: Awaited<ReturnType<typeof inspectFolder>>,
+  folderPath: string,
+  repoUrl: string,
+  store: ConfigStore,
+  ctx: Context,
+): Promise<void> {
+  const { output } = ctx
   switch (folder) {
     case 'not-a-directory':
       throw new CliError(`${folderPath} exists and is not a folder.`)
@@ -129,7 +145,6 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     )
   }
   ctx.history.record({ kind: 'configured', file: store.path })
-  output.success(`configfile is ready. Configuration saved to ${store.path}.`)
 }
 
 async function inspectFolder(folderPath: string) {

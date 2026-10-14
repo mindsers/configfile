@@ -15,7 +15,7 @@ Scripts can be written in any language:
 - a `.js` (or `.mjs`, `.cjs`) or `.sh` script without shebang line is run with `node` or `sh`;
 - any other executable file (such as a compiled program) is run directly.
 
-*configfile* never changes the permissions of your files. Scripts run in the current folder and their output is not modified. With `configfile scripts run`, the messages of *configfile* go to stderr and the script's exit code is forwarded.
+*configfile* never changes the permissions of your files. Scripts run in the current folder and their output is not modified. `scripts run` doesn't wait for other *configfile* commands: don't run a script while `update` syncs the repository, as it could read files being replaced. With `configfile scripts run`, the messages of *configfile* go to stderr and the script's exit code is forwarded.
 
 Scripts get these environment variables, in addition to *configfile*'s own environment (they replace variables of the same name):
 

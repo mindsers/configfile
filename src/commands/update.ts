@@ -7,6 +7,7 @@ import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import { errnoCode, messageOf } from '../fsutil.ts'
+import { withCommandLock } from '../lock.ts'
 import { plural } from '../output.ts'
 import { configfilePaths } from '../paths.ts'
 import { ensureGit } from '../process.ts'
@@ -39,9 +40,12 @@ async function update(ctx: Context): Promise<void> {
   }
 
   await ensureGit()
-  output.info(`Syncing ${folderPath}…`)
-  const result = await syncMirror(folderPath, configfilePaths(ctx.home).saved, {
-    onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
+  // Deployments read the mirror, which the sync replaces: they never overlap.
+  const result = await withCommandLock(ctx, () => {
+    output.info(`Syncing ${folderPath}…`)
+    return syncMirror(folderPath, configfilePaths(ctx.home).saved, {
+      onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
+    })
   })
   ctx.history.record({
     kind: 'synced',

@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replace it is asked once the other files of its module are deployed, no longer at the very end.
 
 ### Fixed
+- `update` and `init` take the lock that `modules deploy` and `undeploy` use, so a deployment
+  never reads files that a sync or a new configuration is replacing: each waits for the other,
+  and says so ([#313](https://github.com/mindsers/configfile/issues/313)).
+- A lock left empty by a configfile that stopped before writing to it no longer makes the next
+  commands wait and fail, and a lock that cannot be removed no longer hides the result of the
+  command.
 - When `~/.configfile` or its lock file cannot be created or written, `modules deploy` and
   `modules undeploy` say that the lock cannot be taken, and why, instead of reporting an
   unexpected error.

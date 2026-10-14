@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { chmod, mkdir, readFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, utimes } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -52,6 +52,46 @@ describe('withLock', () => {
     }
   })
 
+  it('takes over a lock left empty by a process that died before writing its pid', async () => {
+    const { home, write } = await createSandbox()
+    const lock = await write('home/.configfile/lock', '')
+    const old = new Date(Date.now() - 60_000)
+    await utimes(lock, old, old)
+
+    await expect(withLock(home, async () => 'done', { maxWaitMs: 300 })).resolves.toBe('done')
+  })
+
+  it('waits for a lock that is being created', async () => {
+    const { home, write } = await createSandbox()
+    await write('home/.configfile/lock', '')
+
+    await expect(withLock(home, async () => 'never', { maxWaitMs: 300 })).rejects.toThrow(
+      'Another configfile is changing files',
+    )
+  })
+
+  // root removes files from a folder whatever its permissions.
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps the result of the task when the lock cannot be removed',
+    async () => {
+      const { home } = await createSandbox()
+      const folder = path.join(home, '.configfile')
+
+      try {
+        const result = await withLock(home, async () => {
+          await chmod(folder, 0o555)
+          return 'done'
+        })
+
+        expect(result).toBe('done')
+      } finally {
+        await chmod(folder, 0o755)
+      }
+      // The lock left behind names a process that is still running: this one.
+      expect(await readFile(path.join(folder, 'lock'), 'utf8')).toBe(String(process.pid))
+    },
+  )
+
   it('takes over the lock of a process that no longer exists', async () => {
     const { home, write } = await createSandbox()
     const dead = spawn(process.execPath, ['-e', ''])
@@ -74,6 +114,22 @@ describe('withLock', () => {
     } finally {
       other.kill()
     }
+  })
+
+  it('says once that it waits, naming the process', async () => {
+    const { home, write } = await createSandbox()
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    const waits: string[] = []
+    try {
+      await write('home/.configfile/lock', String(other.pid))
+      setTimeout(() => other.kill(), 400)
+
+      await withLock(home, async () => 'done', { onWait: who => waits.push(who) })
+    } finally {
+      other.kill()
+    }
+
+    expect(waits).toEqual([`another configfile (process ${other.pid})`])
   })
 
   it('serializes tasks', async () => {
