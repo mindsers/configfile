@@ -71,7 +71,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: npm install --global https://github.com/mindsers/configfile/releases/download/1.0.0/configfile-1.0.0.tgz
+      - run: npm install --global https://github.com/mindsers/configfile/releases/download/1.1.0/configfile-1.1.0.tgz
       # The following steps use a throwaway home folder, not the runner's.
       - run: |
           mkdir -p "$RUNNER_TEMP/home"
