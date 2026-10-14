@@ -39,6 +39,10 @@ Two more options matter in a script, although no question stands behind them: `-
 
 In a shell script, `set -e` therefore stops at the first *configfile* command that fails.
 
+Commands that change files (`init`, `update`, `modules deploy` and `undeploy`) never run at the same time: started in parallel, one waits for the other, saying `Waiting for another configfile (process N) to finish…`, and fails with `1` after 10 seconds. In a script, run them one after the other, for example `update`, then `modules deploy --all`.
+
+A git prompt for a password or a passphrase makes `update` and `init` wait for an answer, and holds the lock meanwhile: without a terminal it fails. Give scripts a way to reach the repository without a question, such as an SSH key loaded in an agent or a git credential helper.
+
 ## Output
 
 With `configfile scripts run`, *configfile*'s own messages go to stderr and the script's output to stdout, unchanged: you can pipe or redirect the script's output as if you had run it directly. During `modules deploy` and `undeploy`, the output of the scripts named by the modules is mixed with *configfile*'s on stdout.
