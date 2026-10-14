@@ -26,9 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replace it is asked once the other files of its module are deployed, no longer at the very end.
 
 ### Fixed
-- When `~/.configfile` or its lock file cannot be created or written, `modules deploy` and
-  `modules undeploy` say that the lock cannot be taken, and why, instead of reporting an
-  unexpected error.
+- `update` and `init` take the lock that `modules deploy` and `undeploy` use, so files are never
+  deployed while a sync or a new configuration replaces them: each waits for the other, and says
+  so ([#313](https://github.com/mindsers/configfile/issues/313)).
+- Two configfile commands started together could both take over the lock of a process that no
+  longer exists, and change files at the same time. The lock is now created with its owner's pid
+  already in it (where the filesystem supports hard links), and taken over by one process at a
+  time. A lock that cannot be read, or that holds no process number, is no longer taken over.
+- A lock that cannot be removed at the end of a command no longer hides the command's result: a
+  warning says to delete it. A lock replaced or removed by someone else while a command held it is
+  reported too.
+- When `~/.configfile` or its lock file cannot be created, written or read, the commands that take
+  the lock (`init`, `update`, `modules deploy` and `undeploy`) say that the lock cannot be taken,
+  and why, instead of reporting an unexpected error or waiting.
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
   entrys" instead of "settings entries".
 
