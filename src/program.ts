@@ -13,16 +13,24 @@ import { CliError, isPromptExit } from './errors.ts'
 import { messageOf } from './fsutil.ts'
 import { describeInvocation, type Invocation, shouldRecord } from './history.ts'
 
-const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-  version: string
-}
+/** Set by tools/build-binary.ts: a standalone binary has no package.json to read. */
+declare const CONFIGFILE_VERSION: string | undefined
+
+const version =
+  typeof CONFIGFILE_VERSION === 'string'
+    ? CONFIGFILE_VERSION
+    : (
+        JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+          version: string
+        }
+      ).version
 
 export function buildProgram(ctx: Context): Command {
   // showHelpAfterError, exitOverride and configureOutput are copied to
   // subcommands when they are created, so they are set before registering them.
   const program = new Command('configfile')
     .description('Manage your configuration files from a dotfiles git repository.')
-    .version(pkg.version)
+    .version(version)
     .showHelpAfterError('(add --help for additional information)')
     .exitOverride()
     .configureOutput({
@@ -56,7 +64,7 @@ export async function main(args: string[], ctx: Context): Promise<number> {
   if (shouldRecord(invocation, error)) {
     const failed = await ctx.history.save({
       time,
-      version: pkg.version,
+      version,
       invocation,
       cwd: ctx.cwd,
       exitCode: code,

@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-- Node.js 24.11 or later is required, on macOS or Linux. Install again as described in [Installation](/getting-started/installation/). To switch to Homebrew, remove the npm version first (`npm uninstall --global configfile`).
+- With Homebrew or npm, Node.js 24.11 or later is required, on macOS or Linux; the standalone binary needs none. Install again as described in [Installation](/getting-started/installation/). To switch to Homebrew or the install script, remove the npm version first (`npm uninstall --global configfile`).
 - `~/.configfilerc`, the repository layout and `settings.json` work as before, including `settings.json` files that are a plain list (the 0.3.1 format, deprecated: put the list in a `"files"` key). Links deployed by 0.3 are recognised as deployed.
 - If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` still works but is deprecated: replace it with `"deploy": "global" | "local"`.

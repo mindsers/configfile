@@ -9,13 +9,13 @@ This guide takes a machine from nothing to your configuration, using a dotfiles 
 
 ## 1. Install configfile
 
-On macOS, install [Homebrew](https://brew.sh) first if it isn't there yet, then:
+On a new machine, install the standalone binary, which needs neither a package manager nor Node.js:
 
 ```sh
-brew install mindsers/tap/configfile
+curl -fsSL https://docs.configfile.sh/install.sh | sh
 ```
 
-Homebrew also installs Node.js and git. [Installation](/getting-started/installation/) lists the other ways.
+It installs `~/.local/bin/configfile`, and says how to add that folder to your `PATH` when it is not there. *configfile* also needs git: on macOS, `xcode-select --install` installs it. [Installation](/getting-started/installation/) lists the other ways, such as Homebrew.
 
 ## 2. Give the machine access to your repository
 
@@ -77,7 +77,10 @@ To set up machines regularly, put the steps in a script. Without a terminal to a
 #!/bin/sh
 set -e
 
-brew install mindsers/tap/configfile
+# Downloaded first: in "curl ... | sh", set -e would not see a failed download.
+curl -fsSL https://docs.configfile.sh/install.sh -o /tmp/install-configfile.sh
+sh /tmp/install-configfile.sh
+export PATH="$HOME/.local/bin:$PATH"
 configfile init --repo git@github.com:me/dotfiles.git
 configfile modules deploy --all
 configfile scripts run setup

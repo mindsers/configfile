@@ -3,6 +3,7 @@ import { constants, type Stats } from 'node:fs'
 import { access, open, readFile, stat } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
+import { isSea } from 'node:sea'
 
 import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
@@ -84,11 +85,17 @@ interface RunOptions {
   onSignal?: ((signal: NodeJS.Signals) => void) | undefined
 }
 
+/**
+ * The Node.js that runs JavaScript scripts: configfile's own, or in a
+ * standalone binary (which runs nothing but configfile) the `node` in PATH.
+ */
+const NODE = isSea() ? 'node' : process.execPath
+
 /** Used for scripts that have no shebang line. */
 const INTERPRETERS: Record<string, string> = {
-  '.js': process.execPath,
-  '.mjs': process.execPath,
-  '.cjs': process.execPath,
+  '.js': NODE,
+  '.mjs': NODE,
+  '.cjs': NODE,
   '.sh': 'sh',
 }
 
@@ -98,7 +105,8 @@ const INTERPRETERS: Record<string, string> = {
  * - a script with a shebang line (`#!/usr/bin/env python3`) is run directly
  *   when executable, otherwise with that interpreter (arguments of the
  *   shebang line are split on spaces);
- * - a `.js` or `.sh` script without shebang line is run with node or sh;
+ * - a `.js` (`.mjs`, `.cjs`) or `.sh` script without shebang line is run with
+ *   Node.js (see `NODE`) or sh;
  * - any other executable file (such as a compiled program) is run directly.
  */
 export async function runScript(
@@ -125,6 +133,23 @@ export async function runScript(
   }
 
   const interpreter = INTERPRETERS[path.extname(script.path)]
+  if (interpreter === 'node') {
+    try {
+      return await run(interpreter, [script.path, ...args], { cwd, env, onSignal })
+    } catch (error) {
+      if (errnoCode(error) === 'EACCES') {
+        throw new CliError(
+          `Cannot run script "${script.name}": the node found in PATH cannot be executed ` +
+            '(permission denied).',
+        )
+      }
+      if (errnoCode(error) !== 'ENOENT') throw launchError(script, undefined, error)
+      throw new CliError(
+        `Script "${script.name}" needs Node.js, which is not installed. Install it, or add a ` +
+          'shebang line (such as "#!/bin/sh") to run it with another program.',
+      )
+    }
+  }
   if (interpreter != null) return launch(interpreter, [script.path, ...args])
   if (executable) return launch(script.path, args)
 

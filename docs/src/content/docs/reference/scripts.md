@@ -12,7 +12,7 @@ A script can have a version for each system: `macos` or `linux` after the first 
 Scripts can be written in any language:
 
 - a script with a shebang line (such as `#!/usr/bin/env python3`) is run directly when it is executable, and with that interpreter otherwise;
-- a `.js` (or `.mjs`, `.cjs`) or `.sh` script without shebang line is run with `node` or `sh`;
+- a `.js` (or `.mjs`, `.cjs`) or `.sh` script without shebang line is run with Node.js or `sh`: *configfile*'s own Node.js when installed with Homebrew or npm, the `node` in your `PATH` with the [standalone binary](/getting-started/installation/) (the script then fails, saying so, when there is none);
 - any other executable file (such as a compiled program) is run directly.
 
 *configfile* never changes the permissions of your files. Scripts run in the current folder and their output is not modified. `scripts run` doesn't wait for other *configfile* commands: don't run a script while `update` syncs the repository, as it could read files being replaced. With `configfile scripts run`, the messages of *configfile* go to stderr and the script's exit code is forwarded.
