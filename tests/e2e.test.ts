@@ -11,17 +11,27 @@ import { createSandbox, type Sandbox } from './helpers.ts'
 // Built by tests/global-setup.ts before the test run.
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
 
+/**
+ * The command that runs configfile as users do: the built package, or the
+ * standalone binary named by CONFIGFILE_BINARY (tools/build-binary.ts).
+ */
+function command(args: string[]): [string, string[]] {
+  const binary = process.env.CONFIGFILE_BINARY
+  return binary ? [binary, args] : [process.execPath, [cli, ...args]]
+}
+
 async function exec(args: string[]) {
   const sandbox = await createSandbox()
   await sandbox.configure()
   await sandbox.write('home/dotfiles/files/zsh/settings.json', '{"files": []}')
   await sandbox.write('home/dotfiles/scripts/fail.sh', 'exit 4\n')
+  await sandbox.write('home/dotfiles/scripts/hello.js', 'console.log("hello from Node.js")\n')
 
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: sandbox.home, NO_COLOR: '1' }
   // FORCE_COLOR (set by many CI and shells) would override NO_COLOR.
   delete env.FORCE_COLOR
 
-  const result = spawnSync(process.execPath, [cli, ...args], {
+  const result = spawnSync(...command([...args]), {
     cwd: sandbox.cwd,
     env,
     encoding: 'utf8',
@@ -31,6 +41,23 @@ async function exec(args: string[]) {
 }
 
 describe('built CLI', () => {
+  it('says its version', async () => {
+    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+
+    await expect(exec(['--version'])).resolves.toMatchObject({
+      code: 0,
+      stdout: `${pkg.version}\n`,
+    })
+  })
+
+  it('runs a JavaScript script without shebang line, with Node.js', async () => {
+    // In a standalone binary, with the node found in PATH.
+    await expect(exec(['scripts', 'run', 'hello'])).resolves.toMatchObject({
+      code: 0,
+      stdout: 'hello from Node.js\n',
+    })
+  })
+
   it('runs a command', async () => {
     await expect(exec(['modules', 'list'])).resolves.toMatchObject({
       code: 0,
@@ -76,11 +103,16 @@ describe('built CLI', () => {
     })
 
     /** Starts a long-running script, sends `signal` to configfile only once it runs. */
-    async function interrupt(sandbox: Sandbox, script: string, signal: NodeJS.Signals) {
+    async function interrupt(
+      sandbox: Sandbox,
+      script: string,
+      signal: NodeJS.Signals,
+      args = ['scripts', 'run', 'long'],
+    ) {
       await sandbox.configure()
       await sandbox.write('home/dotfiles/scripts/long.sh', script)
 
-      const child = spawn(process.execPath, [cli, 'scripts', 'run', 'long'], {
+      const child = spawn(...command([...args]), {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
         detached: true,
@@ -88,13 +120,23 @@ describe('built CLI', () => {
       if (child.pid != null) groups.push(child.pid)
 
       let stdout = ''
+      let stderr = ''
+      child.stderr.on('data', chunk => {
+        stderr += chunk
+      })
+      let sent = false
       child.stdout.on('data', chunk => {
         stdout += chunk
-        if (stdout.includes('ready')) child.kill(signal)
+        // Once: a deployment goes on writing to stdout.
+        if (stdout.includes('ready') && !sent) sent = child.kill(signal)
       })
 
-      return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
-        child.on('close', (code, closeSignal) => resolve({ code, signal: closeSignal }))
+      return new Promise<{
+        code: number | null
+        signal: NodeJS.Signals | null
+        stderr: string
+      }>(resolve => {
+        child.on('close', (code, closeSignal) => resolve({ code, signal: closeSignal, stderr }))
       })
     }
 
@@ -102,9 +144,91 @@ describe('built CLI', () => {
       const sandbox = await createSandbox()
 
       // Only configfile receives SIGINT here; in a terminal the script gets it too.
-      const result = await interrupt(sandbox, 'echo ready\nsleep 0.3\nexit 5\n', 'SIGINT')
+      const result = await interrupt(sandbox, 'echo ready\nsleep 1\nexit 5\n', 'SIGINT')
 
-      expect(result).toEqual({ code: 5, signal: null })
+      expect(result).toMatchObject({ code: 5, signal: null })
+    })
+
+    it('stops a deployment interrupted during a post_deploy script, even with --keep-going', async () => {
+      const sandbox = await createSandbox()
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/rc`)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
+            post_deploy: 'long',
+          }),
+        )
+      }
+
+      // The script ends by itself with success: configfile was still asked to stop.
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
+        'modules',
+        'deploy',
+        '--all',
+        '--keep-going',
+      ])
+
+      expect(result).toMatchObject({ code: 130, signal: null })
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+      expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
+    })
+
+    /** Modules `a` and `b`, one global file each, with `settings` in both. */
+    async function withModules(sandbox: Sandbox, settings: Record<string, string>) {
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/rc`)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
+            ...settings,
+          }),
+        )
+      }
+    }
+
+    it('deploys nothing more when interrupted during a pre_deploy script', async () => {
+      const sandbox = await createSandbox()
+      await withModules(sandbox, { pre_deploy: 'long' })
+
+      const result = await interrupt(sandbox, "trap '' INT\necho ready\nsleep 1\n", 'SIGINT', [
+        'modules',
+        'deploy',
+        '--all',
+        '--keep-going',
+      ])
+
+      expect(result).toMatchObject({ code: 130, signal: null })
+      expect(result.stderr).toContain('Interrupted. 2 modules were not deployed: a, b.')
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(false)
+      expect(existsSync(path.join(sandbox.home, '.brc'))).toBe(false)
+    })
+
+    it('stops an undeployment interrupted during a script, with the exit code of the signal', async () => {
+      const sandbox = await createSandbox()
+      await withModules(sandbox, { pre_undeploy: 'long' })
+      await sandbox.configure()
+      spawnSync(...command(['modules', 'deploy', '--all']), {
+        cwd: sandbox.cwd,
+        env: { ...process.env, HOME: sandbox.home },
+      })
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
+
+      const result = await interrupt(
+        sandbox,
+        "trap 'exit 0' TERM\necho ready\nwhile true; do sleep 0.05; done\n",
+        'SIGTERM',
+        ['modules', 'undeploy', '--all'],
+      )
+
+      expect(result).toMatchObject({ code: 143, signal: null })
+      expect(result.stderr).toContain('Interrupted. 2 modules were not undeployed: a, b.')
+      expect(result.stderr).toContain(
+        'The files the repository no longer deploys were not checked.',
+      )
+      expect(existsSync(path.join(sandbox.home, '.arc'))).toBe(true)
     })
 
     it('forwards SIGTERM to the script', async () => {
@@ -116,22 +240,18 @@ describe('built CLI', () => {
         'SIGTERM',
       )
 
-      expect(result).toEqual({ code: 7, signal: null })
+      expect(result).toMatchObject({ code: 7, signal: null })
     })
   })
 
   it('says how to install git when it is missing, before changing anything', async () => {
     const sandbox = await createSandbox()
 
-    const result = spawnSync(
-      process.execPath,
-      [cli, 'init', '--repo', 'https://example.com/dotfiles.git'],
-      {
-        cwd: sandbox.cwd,
-        env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
-        encoding: 'utf8',
-      },
-    )
+    const result = spawnSync(...command(['init', '--repo', 'https://example.com/dotfiles.git']), {
+      cwd: sandbox.cwd,
+      env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
+      encoding: 'utf8',
+    })
 
     expect(result.status).toBe(1)
     expect(result.stderr).toMatch(/git is not installed\. Install it with/)
@@ -144,7 +264,7 @@ describe('built CLI', () => {
     await sandbox.configure()
     await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
 
-    const result = spawnSync(process.execPath, [cli, 'update'], {
+    const result = spawnSync(...command(['update']), {
       cwd: sandbox.cwd,
       env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
       encoding: 'utf8',
@@ -162,7 +282,7 @@ describe('built CLI', () => {
     const pidFile = path.join(sandbox.root, 'git.pid')
     await sandbox.write('bin/git', `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 60\n`, 0o755)
 
-    const child = spawn(process.execPath, [cli, 'update'], {
+    const child = spawn(...command(['update']), {
       cwd: sandbox.cwd,
       env: {
         ...process.env,
@@ -190,7 +310,10 @@ describe('built CLI', () => {
     expect(() => process.kill(gitPid, 0)).toThrow()
   })
 
-  it('never loses a file when several configfile processes deploy at once', async () => {
+  // Eight processes: allow for slow, busy CI machines.
+  it('never loses a file when several configfile processes deploy at once', {
+    timeout: 30_000,
+  }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     const modules = ['a', 'b', 'c', 'd']
@@ -208,7 +331,7 @@ describe('built CLI', () => {
     const runs = modules.map(
       name =>
         new Promise<number | null>(resolve => {
-          const child = spawn(process.execPath, [cli, 'modules', 'deploy', name], {
+          const child = spawn(...command(['modules', 'deploy', name]), {
             cwd: sandbox.cwd,
             env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
             stdio: 'ignore',
@@ -226,7 +349,7 @@ describe('built CLI', () => {
 
     // Undeploying every module unwinds the backups down to the original file.
     for (const _ of modules) {
-      spawnSync(process.execPath, [cli, 'modules', 'undeploy', '--all'], {
+      spawnSync(...command(['modules', 'undeploy', '--all']), {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
       })
@@ -246,7 +369,7 @@ describe('built CLI', () => {
       { length: 16 },
       () =>
         new Promise<number | null>(resolve => {
-          const child = spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+          const child = spawn(...command(['scripts', 'run', 'ok']), {
             cwd: sandbox.cwd,
             env,
             stdio: 'ignore',
@@ -295,7 +418,7 @@ describe('built CLI', () => {
         { length: 16 },
         () =>
           new Promise(resolve => {
-            spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+            spawn(...command(['scripts', 'run', 'ok']), {
               cwd: sandbox.cwd,
               env,
               stdio: 'ignore',

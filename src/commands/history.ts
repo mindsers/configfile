@@ -105,6 +105,8 @@ function describeRun(line: HistoryLine): string {
   for (const flag of ['local', 'all', 'force', 'removed'] as const) {
     if (options[flag] === true) words.push(`--${flag}`)
   }
+  if (options.keepGoing === true) words.push('--keep-going')
+  if (options.hooks === false) words.push('--no-hooks')
   if (typeof options.argCount === 'number' && options.argCount > 0) {
     words.push(`(${plural(options.argCount, 'argument')})`)
   }
@@ -159,7 +161,16 @@ function describeChange(change: Change): string {
     case 'saved-patch':
       return line('saved', `local changes to ${change.file}`)
     case 'script':
-      return line('script', `${change.name}  exit ${change.exitCode}`)
+      return line(
+        'script',
+        `${change.name}  exit ${change.exitCode}` +
+          (change.module == null ? '' : `  (${change.hook ?? 'hook'} of ${change.module})`),
+      )
+    case 'script-skipped':
+      return line(
+        'skipped',
+        `${change.name}  (${change.hook} of ${change.module}: ${change.reason})`,
+      )
     case 'cloned':
       return line('cloned', `${change.repository} into ${change.folder}`)
     case 'reused':

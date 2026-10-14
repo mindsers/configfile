@@ -4,7 +4,13 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { CliError } from '../src/errors.ts'
-import { listModules, listScripts, type Module, type Script } from '../src/repository.ts'
+import {
+  listModules,
+  listScripts,
+  type Module,
+  type Script,
+  systemName,
+} from '../src/repository.ts'
 import { createSandbox, type Sandbox } from './helpers.ts'
 
 const settings = (files: unknown) => JSON.stringify({ files })
@@ -30,10 +36,10 @@ async function scriptsOf(
   platform: NodeJS.Platform = 'linux',
 ) {
   const warnings: string[] = []
-  const scripts = await listScripts(sandbox.repo, extensions, platform, {
+  const { scripts, otherSystems } = await listScripts(sandbox.repo, extensions, platform, {
     warn: message => warnings.push(message),
   })
-  return { scripts, warnings }
+  return { scripts, otherSystems, warnings }
 }
 
 describe('listModules', () => {
@@ -263,6 +269,29 @@ describe('listModules', () => {
     ])
   })
 
+  it('reads the scripts to run before and after the module is deployed', async () => {
+    const sandbox = await createSandbox()
+    const write = (module: string, content: unknown) =>
+      sandbox.write(`home/dotfiles/files/${module}/settings.json`, JSON.stringify(content))
+    await write('a', { files: [], pre_deploy: 'check', post_deploy: ' plugins ' })
+    await write('b', { files: [] })
+    await write('c', { files: [], pre_deploy: '', post_deploy: 42 })
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(usable)).toMatchObject([
+      { hooks: { pre_deploy: 'check', post_deploy: 'plugins' }, hookProblems: {} },
+      { hooks: {}, hookProblems: {} },
+      {
+        hooks: {},
+        hookProblems: {
+          pre_deploy: expect.stringContaining('"pre_deploy" is ignored'),
+          post_deploy: expect.stringContaining('"post_deploy" is ignored'),
+        },
+      },
+    ])
+  })
+
   it('refuses a target that contains the repository', async () => {
     const sandbox = await createSandbox()
     // The repository lives in ~/.config/dot and a module targets ~/.config.
@@ -324,6 +353,14 @@ describe('listModules', () => {
     await sandbox.write('home/dotfiles', 'not a folder')
     await expect(modulesOf(sandbox)).rejects.toThrow(CliError)
     await expect(modulesOf(sandbox)).rejects.toThrow(/is not a folder/)
+  })
+})
+
+describe('systemName', () => {
+  it('names systems as script versions do', () => {
+    expect(systemName('darwin')).toBe('macos')
+    expect(systemName('linux')).toBe('linux')
+    expect(systemName('freebsd')).toBe('freebsd')
   })
 })
 

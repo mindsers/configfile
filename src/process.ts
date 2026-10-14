@@ -3,6 +3,7 @@ import { constants, type Stats } from 'node:fs'
 import { access, open, readFile, stat } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
+import { isSea } from 'node:sea'
 
 import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
@@ -15,15 +16,25 @@ import type { Script } from './repository.ts'
  * them to both processes) and SIGTERM / SIGHUP are forwarded to it, so the
  * child is not left running when configfile is asked to stop, and its own exit
  * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
+ *
+ * `env` is merged over configfile's own environment, which the child inherits:
+ * its values replace variables of the same name. `onSignal` is told about each
+ * of these signals configfile receives meanwhile, for callers that have more
+ * to do once the child ends.
  */
-export function run(command: string, args: string[], { cwd }: { cwd: string }): Promise<number> {
+export function run(
+  command: string,
+  args: string[],
+  { cwd, env, onSignal }: RunOptions,
+): Promise<number> {
   return new Promise((resolve, reject) => {
     // Installed before the child starts: a signal arriving in between would
     // otherwise end configfile and leave the script running on its own.
     let child: ChildProcess | undefined
     let pending: NodeJS.Signals | undefined
-    const ignore = () => {}
+    const ignore = (signal: NodeJS.Signals) => onSignal?.(signal)
     const forward = (signal: NodeJS.Signals) => {
+      onSignal?.(signal)
       if (child == null) pending = signal
       else child.kill(signal)
     }
@@ -39,7 +50,11 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
     }
 
     try {
-      child = spawn(command, args, { cwd, stdio: 'inherit' })
+      child = spawn(command, args, {
+        cwd,
+        stdio: 'inherit',
+        ...(env != null && { env: { ...process.env, ...env } }),
+      })
     } catch (error) {
       cleanup()
       reject(error)
@@ -64,11 +79,23 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
   })
 }
 
+interface RunOptions {
+  cwd: string
+  env?: Readonly<Record<string, string>> | undefined
+  onSignal?: ((signal: NodeJS.Signals) => void) | undefined
+}
+
+/**
+ * The Node.js that runs JavaScript scripts: configfile's own, or in a
+ * standalone binary (which runs nothing but configfile) the `node` in PATH.
+ */
+const NODE = isSea() ? 'node' : process.execPath
+
 /** Used for scripts that have no shebang line. */
 const INTERPRETERS: Record<string, string> = {
-  '.js': process.execPath,
-  '.mjs': process.execPath,
-  '.cjs': process.execPath,
+  '.js': NODE,
+  '.mjs': NODE,
+  '.cjs': NODE,
   '.sh': 'sh',
 }
 
@@ -78,20 +105,21 @@ const INTERPRETERS: Record<string, string> = {
  * - a script with a shebang line (`#!/usr/bin/env python3`) is run directly
  *   when executable, otherwise with that interpreter (arguments of the
  *   shebang line are split on spaces);
- * - a `.js` or `.sh` script without shebang line is run with node or sh;
+ * - a `.js` (`.mjs`, `.cjs`) or `.sh` script without shebang line is run with
+ *   Node.js (see `NODE`) or sh;
  * - any other executable file (such as a compiled program) is run directly.
  */
 export async function runScript(
   script: Script,
   args: string[],
-  { cwd }: { cwd: string },
+  { cwd, env, onSignal }: RunOptions,
 ): Promise<number> {
   const executable = await isExecutable(script.path)
   const shebang = await readShebang(script)
 
   const launch = async (command: string, commandArgs: string[]) => {
     try {
-      return await run(command, commandArgs, { cwd })
+      return await run(command, commandArgs, { cwd, env, onSignal })
     } catch (error) {
       throw launchError(script, shebang?.[0], error)
     }
@@ -105,6 +133,23 @@ export async function runScript(
   }
 
   const interpreter = INTERPRETERS[path.extname(script.path)]
+  if (interpreter === 'node') {
+    try {
+      return await run(interpreter, [script.path, ...args], { cwd, env, onSignal })
+    } catch (error) {
+      if (errnoCode(error) === 'EACCES') {
+        throw new CliError(
+          `Cannot run script "${script.name}": the node found in PATH cannot be executed ` +
+            '(permission denied).',
+        )
+      }
+      if (errnoCode(error) !== 'ENOENT') throw launchError(script, undefined, error)
+      throw new CliError(
+        `Script "${script.name}" needs Node.js, which is not installed. Install it, or add a ` +
+          'shebang line (such as "#!/bin/sh") to run it with another program.',
+      )
+    }
+  }
   if (interpreter != null) return launch(interpreter, [script.path, ...args])
   if (executable) return launch(script.path, args)
 

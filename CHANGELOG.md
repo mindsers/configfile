@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-14
+### Added
+- Standalone binaries for macOS (13.5 or later) and Linux (GNU C library 2.28 or later), on x64
+  and arm64, with each release, and an install script:
+  `curl -fsSL https://docs.configfile.sh/install.sh | sh` installs configfile on a new machine
+  without Node.js or a package manager ([#301](https://github.com/mindsers/configfile/issues/301)).
+- Scripts get the repository folder, their name and the system in the `CONFIGFILE_REPO`,
+  `CONFIGFILE_SCRIPT` and `CONFIGFILE_OS` environment variables
+  ([#295](https://github.com/mindsers/configfile/issues/295)).
+- A JSON Schema for `settings.json`, at `https://docs.configfile.sh/schemas/settings.json`: with
+  `"$schema"` at the top of the file, editors complete and check it as you type.
+- A documentation site, [docs.configfile.sh](https://docs.configfile.sh), with a tutorial, guides,
+  a reference and explanations. The README is now a short introduction that links to it.
+- Modules can name scripts to run when they are deployed or undeployed, with `"pre_deploy"`,
+  `"post_deploy"`, `"pre_undeploy"` and `"post_undeploy"` in `settings.json`. A script that fails
+  stops the command there, unless `--keep-going` is given, and a `pre_` script that fails leaves
+  the files of its module as they are; `--no-hooks` runs none. A name that matches no script
+  fails the command before anything is changed. `modules status` shows the scripts
+  ([#298](https://github.com/mindsers/configfile/issues/298)).
+
+### Changed
+- `modules deploy` and `modules undeploy` work on one module at a time, taking the lock for each
+  module in turn instead of the whole run. When a local file already exists, the question to
+  replace it is asked once the other files of its module are deployed, no longer at the very end.
+
+### Fixed
+- `update` and `init` take the lock that `modules deploy` and `undeploy` use, so files are never
+  deployed while a sync or a new configuration replaces them: each waits for the other, and says
+  so ([#313](https://github.com/mindsers/configfile/issues/313)).
+- Two configfile commands started together could both take over the lock of a process that no
+  longer exists, and change files at the same time. The lock is now created with its owner's pid
+  already in it (where the filesystem supports hard links), and taken over by one process at a
+  time. A lock that cannot be read, or that holds no process number, is no longer taken over.
+- A lock that cannot be removed at the end of a command no longer hides the command's result: a
+  warning says to delete it. A lock replaced or removed by someone else while a command held it is
+  reported too.
+- When `~/.configfile` or its lock file cannot be created, written or read, the commands that take
+  the lock (`init`, `update`, `modules deploy` and `undeploy`) say that the lock cannot be taken,
+  and why, instead of reporting an unexpected error or waiting.
+- When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
+  entrys" instead of "settings entries".
+
 ## [1.0.0] - 2026-10-05
 ### Added
 - The `modules undeploy` command to remove the files configfile deployed and restore the saved
@@ -125,7 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `run` command to run custom and saved scripts. Scripts can be write in all languages.
 - The README file to give first information on the project (installation, usage, etc.).
 
-[Unreleased]: https://github.com/mindsers/configfile/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/mindsers/configfile/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/mindsers/configfile/tree/1.1.0
 [1.0.0]: https://github.com/mindsers/configfile/tree/1.0.0
 [0.3.1]: https://github.com/mindsers/configfile/tree/0.3.1
 [0.3.0]: https://github.com/mindsers/configfile/tree/0.3.0

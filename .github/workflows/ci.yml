@@ -19,13 +19,17 @@ jobs:
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.9.18 # mise version, updated by Renovate
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm lint
       - run: pnpm typecheck
       - name: Check the workflows
         run: |
           actionlint
           zizmor --persona regular .github/workflows
+      - name: Check the install script
+        # Served at https://docs.configfile.sh/install.sh, run by any POSIX shell.
+        run: shellcheck --shell=sh docs/public/install.sh
 
   test:
     strategy:
@@ -46,7 +50,8 @@ jobs:
           version: 2026.9.18 # mise version, updated by Renovate
           # One cache per Node.js version: the override is not part of mise.toml.
           cache_key_prefix: mise-node-${{ matrix.node }}
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm test:coverage
 
   package:
@@ -59,7 +64,8 @@ jobs:
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.9.18 # mise version, updated by Renovate
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm pack --out "$RUNNER_TEMP/configfile.tgz"
       - name: Check npm publishes package.json as written
         # npm publish silently drops what it considers invalid (a "./" bin path
@@ -78,3 +84,69 @@ jobs:
           configfile --version
           configfile --help
           HOME="$RUNNER_TEMP/home" configfile history
+
+  binary:
+    # Builds the standalone binary on each system it is made for, as
+    # publish.yml does for a release, and runs the end-to-end tests with it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+      # The CLI only: the documentation site (docs/) is built by the docs job.
+      - run: pnpm install --frozen-lockfile --filter configfile
+      - run: pnpm build:binary
+      - name: Install the binary with the install script
+        # As users get it: from a release laid out as on GitHub, with SHA256SUMS.
+        run: |
+          archive=$(ls release/configfile-*.tar.gz)
+          name=$(basename "$archive")
+          tar -tzf "$archive" | sort > "$RUNNER_TEMP/members"
+          printf '%s\n' ./ ./LICENSE ./THIRD-PARTY-LICENSES ./configfile | sort |
+            diff - "$RUNNER_TEMP/members"
+          release="$RUNNER_TEMP/releases/download/ci"
+          mkdir -p "$release"
+          cp "$archive" "$release/"
+          (cd "$release" && shasum -a 256 "$name" > SHA256SUMS)
+          CONFIGFILE_DOWNLOAD_URL="file://$RUNNER_TEMP/releases" CONFIGFILE_VERSION=ci \
+            CONFIGFILE_INSTALL_DIR="$RUNNER_TEMP/bin" sh docs/public/install.sh
+      - name: Run the end-to-end tests with the installed binary
+        run: CONFIGFILE_BINARY="$RUNNER_TEMP/bin/configfile" pnpm vitest run tests/e2e.test.ts
+      - name: Answer a question on a terminal, whatever NODE_OPTIONS says
+        run: |
+          bin="$RUNNER_TEMP/bin/configfile"
+          export HOME="$RUNNER_TEMP/home" NODE_OPTIONS="--require /nonexistent.js"
+          mkdir -p "$HOME"
+          remote="$RUNNER_TEMP/remote"
+          git init --quiet "$remote"
+          git -C "$remote" -c user.name=ci -c user.email=ci@example.com commit --quiet --allow-empty -m first
+          # The URL is typed once the question is shown; the input stays open meanwhile.
+          answer() { sleep 3; printf '%s\r' "$remote"; sleep 10; }
+          if [ "$RUNNER_OS" = macOS ]; then
+            answer | script -q /dev/null "$bin" init
+          else
+            answer | script -qec "$bin init" /dev/null
+          fi
+          grep -F "$remote" "$HOME/.configfilerc"
+
+  docs:
+    # Builds the documentation site (docs/), as docs-deploy.yml publishes it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the pages show when they were last updated, from git
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter configfile-docs typecheck
+      - run: pnpm docs:build

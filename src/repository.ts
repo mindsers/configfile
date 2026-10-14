@@ -55,12 +55,20 @@ export type Module = ModuleBase &
         readonly invalidEntries: readonly string[]
         /** Deprecated settings used by the module. */
         readonly deprecations: readonly string[]
+        /** The names of the scripts run before and after the module is deployed or undeployed. */
+        readonly hooks: Readonly<Partial<Record<Hook, string>>>
+        /** Why some of these settings cannot be used (not a string, or empty). */
+        readonly hookProblems: Readonly<Partial<Record<Hook, string>>>
       }
     | {
         /** Why settings.json could not be used. Such a module has no files. */
         readonly error: string
       }
   )
+
+/** The settings that name a script run when the module is deployed or undeployed. */
+export const HOOKS = ['pre_deploy', 'post_deploy', 'pre_undeploy', 'post_undeploy'] as const
+export type Hook = (typeof HOOKS)[number]
 
 export interface Script {
   readonly name: string
@@ -84,6 +92,36 @@ export async function loadRepository(
     warn: message => ctx.output.warn(message),
   })
   return { repository: folderPath, modules }
+}
+
+/** The scripts, and the folder of the repository they come from. */
+export async function loadScripts(
+  ctx: Context,
+): Promise<{ repository: string; scripts: Script[]; otherSystems: string[] }> {
+  const warn = (message: string) => ctx.output.warn(message)
+  const config = await new ConfigStore(ctx.home, { warn }).read()
+  const listed = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
+    warn,
+  })
+  return { repository: config.folderPath, ...listed }
+}
+
+/**
+ * The variables every script gets. Scripts run in the current folder, and a
+ * folder script is one level deeper: this gives them the repository's path,
+ * and the system whose versions run. Documented in
+ * docs/src/content/docs/reference/scripts.md.
+ */
+export function scriptEnvironment(
+  script: Script,
+  repository: string,
+  platform: NodeJS.Platform,
+): Record<string, string> {
+  return {
+    CONFIGFILE_REPO: repository,
+    CONFIGFILE_SCRIPT: script.name,
+    CONFIGFILE_OS: systemName(platform),
+  }
 }
 
 /**
@@ -257,7 +295,18 @@ async function readModuleFiles(
     )
   }
 
-  return { error: null, files, undecided, invalidEntries, deprecations }
+  // The 0.3 list format has no place for it.
+  const hooks: Partial<Record<Hook, string>> = {}
+  const hookProblems: Partial<Record<Hook, string>> = {}
+  for (const hook of legacyList ? [] : HOOKS) {
+    const name = (settings as Record<string, unknown>)[hook]
+    if (name === undefined) continue
+    if (typeof name === 'string' && name.trim() !== '') hooks[hook] = name.trim()
+    else
+      hookProblems[hook] = `"${hook}" is ignored: it must be the name of a script of the repository`
+  }
+
+  return { error: null, files, undecided, invalidEntries, deprecations, hooks, hookProblems }
 }
 
 /**
@@ -309,17 +358,21 @@ export function unsafeTarget(
  * `setup` script. A second part naming a system (`setup.macos.sh`,
  * `setup.linux/`) makes it that system's version: used instead of `setup.sh`
  * on that system, and ignored on the others.
+ *
+ * `otherSystems` names the scripts that only have versions for other systems:
+ * they are not scripts here, but their name is not a mistake either.
  */
 export async function listScripts(
   folderPath: string,
   extensions: readonly string[] | null,
   platform: NodeJS.Platform,
   env: Pick<Environment, 'warn'>,
-): Promise<Script[]> {
+): Promise<{ scripts: Script[]; otherSystems: string[] }> {
   const scriptsDir = path.join(folderPath, 'scripts')
   const scripts: Script[] = []
   /** Names of the scripts that are this system's version. */
   const forSystem = new Set<string>()
+  const elsewhere = new Set<string>()
   const allowed = (name: string) => extensions == null || extensions.includes(path.extname(name))
 
   for (const entry of await readDirOrFail(scriptsDir)) {
@@ -338,8 +391,11 @@ export async function listScripts(
 
     const [baseName = '', tag] = entry.name.split('.')
     const system = tag == null ? undefined : SCRIPT_SYSTEMS.get(tag)
-    if (system != null && system !== platform) continue
     const name = slugify(baseName)
+    if (system != null && system !== platform) {
+      elsewhere.add(name)
+      continue
+    }
     const script = { name, file, path: path.join(scriptsDir, file) }
 
     // This system's version replaces the generic one, whichever comes first.
@@ -357,7 +413,14 @@ export async function listScripts(
     if (system != null) forSystem.add(name)
   }
 
-  return scripts
+  const otherSystems = [...elsewhere].filter(name => !scripts.some(script => script.name === name))
+  return { scripts, otherSystems }
+}
+
+/** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */
+export function systemName(platform: NodeJS.Platform): string {
+  for (const [name, system] of SCRIPT_SYSTEMS) if (system === platform) return name
+  return platform
 }
 
 /** The systems a script can be made for, by the second part of its name. */

@@ -1,6 +1,6 @@
 {
   "name": "configfile",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Manage your dotfiles and setup scripts from a git repository.",
   "keywords": [
     "dotfiles",
@@ -8,7 +8,7 @@
     "cli",
     "symlink"
   ],
-  "homepage": "https://github.com/mindsers/configfile#readme",
+  "homepage": "https://docs.configfile.sh",
   "bugs": "https://github.com/mindsers/configfile/issues",
   "funding": "https://github.com/sponsors/mindsers",
   "repository": {
@@ -42,6 +42,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "docs:dev": "pnpm --filter configfile-docs dev",
+    "docs:build": "pnpm --filter configfile-docs build",
+    "docs:commands": "node tools/docs-commands.ts",
+    "build:binary": "node tools/build-binary.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "prepack": "node --run clean && tsc -p tsconfig.build.json"
   },
@@ -53,6 +57,9 @@
     "@biomejs/biome": "2.5.15",
     "@types/node": "24.19.0",
     "@vitest/coverage-v8": "5.0.3",
+    "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6",
     "typescript": "7.0.2",
     "vitest": "5.0.3"
   }
