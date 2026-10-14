@@ -1,12 +1,30 @@
 import { spawn } from 'node:child_process'
-import { chmod, mkdir, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { CliError } from '../src/errors.ts'
 import { withLock } from '../src/lock.ts'
 import { createSandbox } from './helpers.ts'
+
+/** The pid of a process that has ended. */
+async function deadPid(): Promise<number> {
+  const dead = spawn(process.execPath, ['-e', ''])
+  await new Promise(resolve => dead.on('exit', resolve))
+  return dead.pid as number
+}
+
+/** A process that keeps running until it is killed (at the end of the test at the latest). */
+const living: ReturnType<typeof spawn>[] = []
+function livingPid(): number {
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+  living.push(other)
+  return other.pid as number
+}
+afterEach(() => {
+  for (const other of living.splice(0)) other.kill()
+})
 
 describe('withLock', () => {
   it('runs the task while holding ~/.configfile/lock, then releases it', async () => {
@@ -111,11 +129,15 @@ describe('withLock', () => {
             await chmod(folder, 0o555)
             return 'done'
           },
-          { onLeftBehind: lock => left.push(lock) },
+          { onLeftBehind: message => left.push(message) },
         )
 
         expect(result).toBe('done')
-        expect(left).toEqual([path.join(folder, 'lock')])
+        expect(left).toEqual([
+          expect.stringMatching(
+            /^.*\.configfile\/lock could not be removed \(.*EACCES.*\)\. Delete it if no configfile is running\.$/,
+          ),
+        ])
       } finally {
         await chmod(folder, 0o755)
       }
@@ -172,11 +194,16 @@ describe('withLock', () => {
   async function race(home: string, count: number): Promise<string> {
     const log = path.join(home, 'log')
     const go = path.join(home, 'go')
-    // Every process waits for the same signal, so they all find the lock at once.
+    const ready = path.join(home, 'ready')
+    await mkdir(ready)
+    // Every process says it is ready, then waits for the same signal, so they
+    // all find the lock at once.
     const script =
-      `import { appendFileSync, existsSync } from 'node:fs'\n` +
+      `import { appendFileSync, existsSync, writeFileSync } from 'node:fs'\n` +
       `import { withLock } from ${JSON.stringify(new URL('../src/lock.ts', import.meta.url).href)}\n` +
-      `while (!existsSync(${JSON.stringify(go)})) await new Promise(resolve => setTimeout(resolve, 1))\n` +
+      `writeFileSync(${JSON.stringify(ready)} + '/' + process.pid, '')\n` +
+      `const until = Date.now() + 20000\n` +
+      `while (!existsSync(${JSON.stringify(go)}) && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 1))\n` +
       `await withLock(${JSON.stringify(home)}, async () => {\n` +
       `  appendFileSync(${JSON.stringify(log)}, '+')\n` +
       `  await new Promise(resolve => setTimeout(resolve, 50))\n` +
@@ -184,15 +211,25 @@ describe('withLock', () => {
       `}, { maxWaitMs: 20000 })\n`
     const runs = Array.from({ length: count }, () => {
       const child = spawn(process.execPath, ['--input-type=module', '-e', script])
+      let stderr = ''
+      child.stderr.on('data', chunk => {
+        stderr += chunk
+      })
       return new Promise((resolve, reject) => {
         child.on('error', reject)
-        child.on('close', code => (code === 0 ? resolve(code) : reject(new Error(`exit ${code}`))))
+        child.on('close', code =>
+          code === 0 ? resolve(code) : reject(new Error(`exit ${code}: ${stderr}`)),
+        )
       })
     })
     // Once they have all started.
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    const until = Date.now() + 20_000
+    while ((await readdir(ready)).length < count && Date.now() < until) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
     await writeFile(go, '')
     await Promise.all(runs)
+    await rm(ready, { recursive: true })
     return readFile(log, 'utf8')
   }
 
@@ -210,6 +247,101 @@ describe('withLock', () => {
     expect(log).toBe('+-'.repeat(8))
     // No lock and no draft left behind.
     expect(await readdir(path.join(home, '.configfile'))).toEqual([])
+  })
+
+  it('never lets two processes hold the lock when the takeover guard was left behind', {
+    timeout: 30_000,
+  }, async () => {
+    const { home, write } = await createSandbox()
+    const dead = await deadPid()
+    await write('home/.configfile/lock', String(dead))
+    await write('home/.configfile/lock.takeover', String(dead))
+
+    const log = await race(home, 8)
+
+    expect(log).toBe('+-'.repeat(8))
+    expect(await readdir(path.join(home, '.configfile'))).toEqual([])
+  })
+
+  it('waits for another process taking over the lock, and gives up in time', async () => {
+    const { home, write } = await createSandbox()
+    const other = livingPid()
+    await write('home/.configfile/lock', String(await deadPid()))
+    const guard = await write('home/.configfile/lock.takeover', String(other))
+
+    const started = Date.now()
+    await expect(withLock(home, async () => 'never', { maxWaitMs: 300 })).rejects.toThrow(
+      `Another configfile (process ${other}) is changing files. Try again when it is done, or delete ${guard} if no configfile is running.`,
+    )
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(await readFile(guard, 'utf8')).toBe(String(other))
+  })
+
+  it('takes over a takeover guard left behind, by another process or by this one', async () => {
+    for (const owner of [await deadPid(), process.pid]) {
+      const { home, write } = await createSandbox()
+      await write('home/.configfile/lock', String(await deadPid()))
+      await write('home/.configfile/lock.takeover', String(owner))
+
+      await expect(withLock(home, async () => 'done', { maxWaitMs: 300 })).resolves.toBe('done')
+      expect(await readdir(path.join(home, '.configfile'))).toEqual([])
+    }
+  })
+
+  it('never removes a lock it does not hold any more, and says so', async () => {
+    const { home } = await createSandbox()
+    const lock = path.join(home, '.configfile/lock')
+    const other = livingPid()
+    const said: string[] = []
+
+    await withLock(home, async () => writeFile(lock, String(other)), {
+      onLeftBehind: message => said.push(message),
+    })
+    // Left as it is: it names another process, still running.
+    expect(await readFile(lock, 'utf8')).toBe(String(other))
+    await rm(lock)
+    await withLock(home, async () => rm(lock), { onLeftBehind: message => said.push(message) })
+
+    expect(said).toEqual([
+      `${lock} was replaced while this configfile held it: another configfile may have changed files at the same time. Delete ${lock} if no configfile is running.`,
+      `${lock} was removed while this configfile held it: another configfile may have changed files at the same time.`,
+    ])
+  })
+
+  // 600 calls: allow for slow, busy CI machines.
+  it('never runs two tasks of the same process at once', { timeout: 30_000 }, async () => {
+    const { home } = await createSandbox()
+    let running = 0
+    let overlaps = 0
+
+    // Thirty callers, each taking the lock twenty times in a row.
+    await Promise.all(
+      Array.from({ length: 30 }, async () => {
+        for (let call = 0; call < 20; call++) {
+          await withLock(home, async () => {
+            running++
+            if (running > 1) overlaps++
+            await new Promise(resolve => setTimeout(resolve, 1))
+            running--
+          })
+        }
+      }),
+    )
+
+    expect(overlaps).toBe(0)
+  })
+
+  it('removes the drafts left by processes that no longer exist', async () => {
+    const { home, write } = await createSandbox()
+    const uuid = '0f0e0d0c-0b0a-4908-8706-050403020100'
+    await write(`home/.configfile/lock.${await deadPid()}.${uuid}`, '1')
+    await write(`home/.configfile/lock.takeover.${await deadPid()}.${uuid}`, '1')
+    const living = `lock.${livingPid()}.${uuid}`
+    await write(`home/.configfile/${living}`, '1')
+
+    await withLock(home, async () => 'done')
+
+    expect(await readdir(path.join(home, '.configfile'))).toEqual([living])
   })
 
   it('serializes tasks', async () => {

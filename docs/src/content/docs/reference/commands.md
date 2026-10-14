@@ -7,7 +7,7 @@ Every command prints its own help with `--help`, and most have a short form, sho
 
 ## `configfile init`
 
-Asks for the URL of your dotfiles repository (any URL git can clone, such as `https://github.com/me/dotfiles.git` or `git@github.com:me/dotfiles.git`, or an existing local folder), clones it into `~/.configfile/dotfiles` and saves the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept. After its questions, it waits for a deployment or `update` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds; it then checks the folder and the configuration again, as they may have changed meanwhile.
+Asks for the URL of your dotfiles repository (any URL git can clone, such as `https://github.com/me/dotfiles.git` or `git@github.com:me/dotfiles.git`, or an existing local folder), clones it into `~/.configfile/dotfiles` and saves the configuration in `~/.configfilerc`. If the folder already contains a git repository, it is used as is. When you run `init` again, the existing folder is kept. After its questions, it waits for a deployment or `update` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds; it then checks the folder and the configuration again: it reuses a repository another configfile cloned meanwhile, and stops if another configfile saved a configuration meanwhile (unless `--force`).
 
 <!-- generated: configfile init -->
 ```sh
@@ -127,7 +127,7 @@ Short form: `configfile s r`.
 
 ## `configfile update`
 
-Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it.
+Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it, up to 10 seconds: a slow fetch can make them fail.
 
 <!-- generated: configfile update -->
 ```sh
