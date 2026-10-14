@@ -11,17 +11,27 @@ import { createSandbox, type Sandbox } from './helpers.ts'
 // Built by tests/global-setup.ts before the test run.
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
 
+/**
+ * The command that runs configfile as users do: the built package, or the
+ * standalone binary named by CONFIGFILE_BINARY (tools/build-binary.ts).
+ */
+function command(args: string[]): [string, string[]] {
+  const binary = process.env.CONFIGFILE_BINARY
+  return binary ? [binary, args] : [process.execPath, [cli, ...args]]
+}
+
 async function exec(args: string[]) {
   const sandbox = await createSandbox()
   await sandbox.configure()
   await sandbox.write('home/dotfiles/files/zsh/settings.json', '{"files": []}')
   await sandbox.write('home/dotfiles/scripts/fail.sh', 'exit 4\n')
+  await sandbox.write('home/dotfiles/scripts/hello.js', 'console.log("hello from Node.js")\n')
 
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: sandbox.home, NO_COLOR: '1' }
   // FORCE_COLOR (set by many CI and shells) would override NO_COLOR.
   delete env.FORCE_COLOR
 
-  const result = spawnSync(process.execPath, [cli, ...args], {
+  const result = spawnSync(...command([...args]), {
     cwd: sandbox.cwd,
     env,
     encoding: 'utf8',
@@ -31,6 +41,23 @@ async function exec(args: string[]) {
 }
 
 describe('built CLI', () => {
+  it('says its version', async () => {
+    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+
+    await expect(exec(['--version'])).resolves.toMatchObject({
+      code: 0,
+      stdout: `${pkg.version}\n`,
+    })
+  })
+
+  it('runs a JavaScript script without shebang line, with Node.js', async () => {
+    // In a standalone binary, with the node found in PATH.
+    await expect(exec(['scripts', 'run', 'hello'])).resolves.toMatchObject({
+      code: 0,
+      stdout: 'hello from Node.js\n',
+    })
+  })
+
   it('runs a command', async () => {
     await expect(exec(['modules', 'list'])).resolves.toMatchObject({
       code: 0,
@@ -85,7 +112,7 @@ describe('built CLI', () => {
       await sandbox.configure()
       await sandbox.write('home/dotfiles/scripts/long.sh', script)
 
-      const child = spawn(process.execPath, [cli, ...args], {
+      const child = spawn(...command([...args]), {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
         detached: true,
@@ -183,7 +210,7 @@ describe('built CLI', () => {
       const sandbox = await createSandbox()
       await withModules(sandbox, { pre_undeploy: 'long' })
       await sandbox.configure()
-      spawnSync(process.execPath, [cli, 'modules', 'deploy', '--all'], {
+      spawnSync(...command(['modules', 'deploy', '--all']), {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home },
       })
@@ -220,15 +247,11 @@ describe('built CLI', () => {
   it('says how to install git when it is missing, before changing anything', async () => {
     const sandbox = await createSandbox()
 
-    const result = spawnSync(
-      process.execPath,
-      [cli, 'init', '--repo', 'https://example.com/dotfiles.git'],
-      {
-        cwd: sandbox.cwd,
-        env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
-        encoding: 'utf8',
-      },
-    )
+    const result = spawnSync(...command(['init', '--repo', 'https://example.com/dotfiles.git']), {
+      cwd: sandbox.cwd,
+      env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
+      encoding: 'utf8',
+    })
 
     expect(result.status).toBe(1)
     expect(result.stderr).toMatch(/git is not installed\. Install it with/)
@@ -241,7 +264,7 @@ describe('built CLI', () => {
     await sandbox.configure()
     await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
 
-    const result = spawnSync(process.execPath, [cli, 'update'], {
+    const result = spawnSync(...command(['update']), {
       cwd: sandbox.cwd,
       env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1', PATH: '/nonexistent' },
       encoding: 'utf8',
@@ -259,7 +282,7 @@ describe('built CLI', () => {
     const pidFile = path.join(sandbox.root, 'git.pid')
     await sandbox.write('bin/git', `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 60\n`, 0o755)
 
-    const child = spawn(process.execPath, [cli, 'update'], {
+    const child = spawn(...command(['update']), {
       cwd: sandbox.cwd,
       env: {
         ...process.env,
@@ -308,7 +331,7 @@ describe('built CLI', () => {
     const runs = modules.map(
       name =>
         new Promise<number | null>(resolve => {
-          const child = spawn(process.execPath, [cli, 'modules', 'deploy', name], {
+          const child = spawn(...command(['modules', 'deploy', name]), {
             cwd: sandbox.cwd,
             env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
             stdio: 'ignore',
@@ -326,7 +349,7 @@ describe('built CLI', () => {
 
     // Undeploying every module unwinds the backups down to the original file.
     for (const _ of modules) {
-      spawnSync(process.execPath, [cli, 'modules', 'undeploy', '--all'], {
+      spawnSync(...command(['modules', 'undeploy', '--all']), {
         cwd: sandbox.cwd,
         env: { ...process.env, HOME: sandbox.home, NO_COLOR: '1' },
       })
@@ -346,7 +369,7 @@ describe('built CLI', () => {
       { length: 16 },
       () =>
         new Promise<number | null>(resolve => {
-          const child = spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+          const child = spawn(...command(['scripts', 'run', 'ok']), {
             cwd: sandbox.cwd,
             env,
             stdio: 'ignore',
@@ -395,7 +418,7 @@ describe('built CLI', () => {
         { length: 16 },
         () =>
           new Promise(resolve => {
-            spawn(process.execPath, [cli, 'scripts', 'run', 'ok'], {
+            spawn(...command(['scripts', 'run', 'ok']), {
               cwd: sandbox.cwd,
               env,
               stdio: 'ignore',

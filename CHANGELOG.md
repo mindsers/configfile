@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Standalone binaries for macOS (13.5 or later) and Linux (GNU C library 2.28 or later), on x64
+  and arm64, with each release, and an install script:
+  `curl -fsSL https://docs.configfile.sh/install.sh | sh` installs configfile on a new machine
+  without Node.js or a package manager ([#301](https://github.com/mindsers/configfile/issues/301)).
 - Scripts get the repository folder, their name and the system in the `CONFIGFILE_REPO`,
   `CONFIGFILE_SCRIPT` and `CONFIGFILE_OS` environment variables
   ([#295](https://github.com/mindsers/configfile/issues/295)).
