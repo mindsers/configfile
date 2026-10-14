@@ -65,10 +65,10 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     options.folder != null
       ? resolveUserPath(options.folder.trim(), ctx)
       : (previous.folderPath ?? own.dotfiles)
-  const folder = await inspectFolder(folderPath)
   // A clone needs git: checked before asking for the URL, so a missing git is
   // found before the URL is typed and before the folder to clone into is created.
-  if (folder === 'missing' || folder === 'empty') await ensureGit()
+  if (needsClone(await inspectFolder(folderPath))) await ensureGit()
+  const configured = store.exists()
 
   const validate = (value: string) => {
     const checked = checkRepositoryUrl(value, ctx)
@@ -96,21 +96,43 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
     await mkdir(own.dir, { recursive: true, mode: 0o700 })
   }
 
-  // After the questions, so that an answer never keeps the others waiting: the
-  // folder and the configuration that deployments and syncs read change here.
-  await withCommandLock(ctx, () => setUp(folder, folderPath, repoUrl, store, ctx))
+  // After the questions: the folder and the configuration that deployments
+  // and syncs read change here.
+  await withCommandLock(ctx, () =>
+    setUp({ folderPath, repoUrl, configured, force: options.force === true }, store, ctx),
+  )
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
 }
 
-/** Clones the repository or reuses the folder, then saves the configuration. */
+function needsClone(folder: Awaited<ReturnType<typeof inspectFolder>>): boolean {
+  return folder === 'missing' || folder === 'empty'
+}
+
+/**
+ * Clones the repository or reuses the folder, then saves the configuration.
+ * Runs with the lock held: what was seen before waiting for it is checked
+ * again, as another configfile may have cloned or configured meanwhile.
+ * `configured`: a configuration existed when the user answered.
+ */
 async function setUp(
-  folder: Awaited<ReturnType<typeof inspectFolder>>,
-  folderPath: string,
-  repoUrl: string,
+  {
+    folderPath,
+    repoUrl,
+    configured,
+    force,
+  }: { folderPath: string; repoUrl: string; configured: boolean; force: boolean },
   store: ConfigStore,
   ctx: Context,
 ): Promise<void> {
   const { output } = ctx
+  if (!configured && !force && store.exists()) {
+    throw new CliError(
+      `Another configfile saved a configuration to ${store.path} meanwhile. ` +
+        'Run "configfile init" again to replace it.',
+    )
+  }
+  const folder = await inspectFolder(folderPath)
+  if (needsClone(folder)) await ensureGit()
   switch (folder) {
     case 'not-a-directory':
       throw new CliError(`${folderPath} exists and is not a folder.`)

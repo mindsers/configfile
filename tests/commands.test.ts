@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises'
 import path from 'node:path'
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { COMMANDS } from '../src/history.ts'
 import { buildProgram } from '../src/program.ts'
@@ -1517,16 +1517,71 @@ describe('init', () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
     const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
-    await sandbox.write('home/.configfile/lock', String(other.pid))
-    setTimeout(() => other.kill(), 500)
+    try {
+      await sandbox.write('home/.configfile/lock', String(other.pid))
+      setTimeout(() => other.kill(), 500)
 
-    const started = Date.now()
-    const result = await runCli(sandbox, ['init'], [remote])
+      const started = Date.now()
+      const result = await runCli(sandbox, ['init'], [remote])
 
-    expect(result.code, result.stderr).toBe(0)
-    expect(Date.now() - started).toBeGreaterThanOrEqual(400)
-    expect(result.asked).toEqual(['Dotfiles repository URL:'])
-    expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/.git'))).toBe(true)
+      expect(result.code, result.stderr).toBe(0)
+      expect(Date.now() - started).toBeGreaterThanOrEqual(400)
+      expect(result.asked).toEqual(['Dotfiles repository URL:'])
+      expect(result.stdout).toContain(
+        `Waiting for another configfile (process ${other.pid}) to finish…`,
+      )
+      expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/.git'))).toBe(true)
+    } finally {
+      other.kill()
+    }
+  })
+
+  it('checks the folder again once it has waited: another configfile may have cloned it', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+    const folder = path.join(sandbox.home, '.configfile/dotfiles')
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    try {
+      await sandbox.write('home/.configfile/lock', String(other.pid))
+      // While this one waits, the other clones the repository.
+      setTimeout(() => {
+        git(sandbox.root, 'clone', '--quiet', remote, folder)
+        other.kill()
+      }, 300)
+
+      const result = await runCli(sandbox, ['init', '--repo', remote])
+
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stdout).toContain(
+        `${folder} already contains a git repository. It is used as is.`,
+      )
+    } finally {
+      other.kill()
+    }
+  })
+
+  it('does not replace a configuration saved while it waited, without --force', async () => {
+    const sandbox = await createSandbox()
+    const remote = await withRemote(sandbox)
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    try {
+      await sandbox.write('home/.configfile/lock', String(other.pid))
+      setTimeout(() => {
+        void sandbox.configure().then(() => other.kill())
+      }, 300)
+
+      const result = await runCli(sandbox, ['init', '--repo', remote])
+
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain('Another configfile saved a configuration to')
+      expect(
+        JSON.parse(await readFile(path.join(sandbox.home, '.configfilerc'), 'utf8')),
+      ).toMatchObject({
+        folder_path: sandbox.repo,
+      })
+    } finally {
+      other.kill()
+    }
   })
 
   it('clones the repository and saves the configuration', async () => {
@@ -1897,9 +1952,37 @@ describe('update', () => {
   /** Holds the lock as another configfile would, until the returned function is called. */
   async function holdLock(sandbox: Sandbox) {
     const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'])
+    held.push(other)
     await sandbox.write('home/.configfile/lock', String(other.pid))
     return () => other.kill()
   }
+  // Never left running, whatever the outcome of a test.
+  const held: ReturnType<typeof spawn>[] = []
+  afterEach(() => {
+    for (const other of held.splice(0)) other.kill()
+  })
+
+  it('makes a deployment say that it waits for another configfile', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    const release = await holdLock(sandbox)
+    setTimeout(release, 300)
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code, result.stderr).toBe(0)
+    expect(
+      result.stdout.match(/Waiting for another configfile \(process \d+\) to finish…/g),
+    ).toHaveLength(1)
+    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
+  })
 
   it('waits for another configfile that holds the lock, then syncs', async () => {
     const sandbox = await createSandbox()
@@ -1924,10 +2007,11 @@ describe('update', () => {
     await commitInRemote('files/zsh/zshrc', 'new')
     const lock = path.join(sandbox.home, '.configfile/lock')
     const seen = path.join(sandbox.root, 'seen')
-    // Run by git when the fetch updates the remote branches.
+    // Run by git each time it updates references: by the fetch first, then the reset.
     await sandbox.write(
       'hooks/reference-transaction',
-      `#!/bin/sh\n[ "$1" = committed ] && cat "${lock}" >> "${seen}"\nexit 0\n`,
+      `#!/bin/sh\n[ "$1" = committed ] || exit 0\n` +
+        `if [ -f "${lock}" ]; then cat "${lock}"; else printf none; fi >> "${seen}"\necho >> "${seen}"\n`,
       0o755,
     )
     git(sandbox.repo, 'config', 'core.hooksPath', path.join(sandbox.root, 'hooks'))
@@ -1935,8 +2019,47 @@ describe('update', () => {
     const result = await runCli(sandbox, ['update'])
 
     expect(result.code, result.stderr).toBe(0)
-    expect(await readFile(seen, 'utf8')).toContain(String(process.pid))
+    const lines = (await readFile(seen, 'utf8')).trim().split('\n')
+    expect(lines.length).toBeGreaterThanOrEqual(2)
+    expect(lines).toEqual(lines.map(() => String(process.pid)))
     expect(existsSync(lock)).toBe(false)
+  })
+
+  it('makes a deployment started during the sync wait for it', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withMirror(sandbox)
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await commitInRemote('files/zsh/zshrc', 'old')
+    git(sandbox.repo, 'pull', '--quiet')
+    await commitInRemote('files/zsh/zshrc', 'new')
+    const lock = path.join(sandbox.home, '.configfile/lock')
+    // The fetch, first to update references, takes a second: long enough to
+    // start a deployment meanwhile.
+    const slowed = path.join(sandbox.root, 'slowed')
+    await sandbox.write(
+      'hooks/reference-transaction',
+      `#!/bin/sh\n[ "$1" = prepared ] && [ ! -e "${slowed}" ] && touch "${slowed}" && sleep 1\nexit 0\n`,
+      0o755,
+    )
+    git(sandbox.repo, 'config', 'core.hooksPath', path.join(sandbox.root, 'hooks'))
+
+    const update = runCli(sandbox, ['update'])
+    while (!existsSync(lock)) await new Promise(resolve => setTimeout(resolve, 20))
+    const deploy = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const synced = await update
+
+    expect(synced.code, synced.stderr).toBe(0)
+    expect(deploy.code, deploy.stderr).toBe(0)
+    expect(deploy.stdout).toContain(
+      `Waiting for another configfile (process ${process.pid}) to finish…`,
+    )
+    // Deployed once the sync was done: the link leads to the synced file.
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('new')
   })
 
   // root writes to a folder whatever its permissions.
