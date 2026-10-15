@@ -1262,8 +1262,8 @@ function pickModules(modules: Module[], names: string[]): Module[] {
 
 /**
  * Invalid entries (the file is not deployed) and settings that cannot name a
- * script are errors, deprecations are warnings. With `verb`, the command
- * only fails on the scripts it would run: the other settings are warnings.
+ * script are errors. With `verb`, the command only fails on the scripts it
+ * would run: the other settings are warnings.
  */
 function reportSettings(module: Module, ctx: Context, verb?: Verb): void {
   if (module.error != null) return
@@ -1276,9 +1276,6 @@ function reportSettings(module: Module, ctx: Context, verb?: Verb): void {
     if (verb == null || hooksOf(verb).includes(hook))
       ctx.output.error(`${module.name}: ${problem}.`)
     else ctx.output.warn(`${module.name}: ${problem}.`)
-  }
-  for (const deprecation of module.deprecations) {
-    ctx.output.warn(`${module.name}: ${deprecation}.`)
   }
 }
 

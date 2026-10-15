@@ -24,9 +24,8 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 | `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. Targets can be anywhere you can write, except: your home folder, the current folder, the dotfiles repository, the module folder, *configfile*'s own files (`~/.configfilerc`, `~/.configfile/`), one of their parents, or anything inside the repository. These are recognised whatever the path used to reach them (letter case, symbolic links). |
 | `deploy` | Where the file goes. `"global"`: usually into your home folder (a relative `target_path` starts there), with `configfile modules deploy`. `"local"`: into the current folder, typically a project, with `configfile modules deploy --local`. `"none"`: **never deployed**, which keeps it in the repository for later. |
 | `method` | How a global file is deployed. `"copy"` (the default): the file is **copied**, and *configfile* keeps the copy up to date with the repository while keeping the changes made on this machine (see [Global files](#global-files)). `"link"`: the file is a **symbolic link** to *configfile*'s copy of the repository, so whatever writes to it writes there ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). Local files are always copied: `"link"` is an error for them. Copies follow the symbolic links of the source, so they never point into the repository. |
-| `global` | **Deprecated**, removed in 2.0: older spelling of `deploy`. `true` is `"global"`, `false` is `"local"`. It still works in 1.x, with a warning. Use one or the other, not both. |
 
-An entry without `deploy` or `global` is not deployed, and `modules deploy` warns about it.
+An entry without `deploy` is not deployed, and `modules deploy` warns about it. The `"global": true | false` key of *configfile* 1.x, and a `settings.json` that is a plain list (the format of *configfile* 0.3), are no longer read: [Upgrading from 1.x](/guides/upgrading-from-1/#settings-20-no-longer-reads) says how to update them.
 
 When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A copy or a link already in place is left as is, so deploying twice is safe.
 
@@ -105,7 +104,7 @@ Each one is a script's name, as `configfile scripts list` shows it: here `script
 - A setting that is not a script name (not text, or empty) is ignored: no script runs for it. The command it belongs to reports it as an error and fails, once the files are deployed or undeployed, even with `--no-hooks` (`modules deploy` for `pre_deploy` and `post_deploy`, `modules undeploy` for the other two). The other one only warns about it; `modules list` and `status` show it as an error.
 - `modules list` names the settings a module uses, and `modules status` shows the scripts, and says when one does not exist.
 
-No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. With `--all`, they are undeployed after the modules; when a script stops the command before that, they are left in place, and the command says so. A `settings.json` in the 0.3 list format cannot have these keys.
+No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. With `--all`, they are undeployed after the modules; when a script stops the command before that, they are left in place, and the command says so.
 
 ## Completion and validation in your editor
 

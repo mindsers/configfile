@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-*configfile* 2.0 copies global files into your home folder instead of linking them, unless an entry asks for a link with `"method": "link"`. Your repository needs no change.
+*configfile* 2.0 copies global files into your home folder instead of linking them, unless an entry asks for a link with `"method": "link"`. Your repository needs no change, unless it still uses the settings deprecated in 1.x ([Settings 2.0 no longer reads](#settings-20-no-longer-reads)).
 
 ## Why
 
@@ -23,6 +23,13 @@ A copy is yours: *configfile* records what it copied, updates the copy when the 
 Until you deploy again, links keep working as in 1.x, and `update` reminds you of the global files that are still links.
 
 To bring a change made on this machine to your other machines, make it in your working copy, then commit and push: `update` then finds that the copy is the repository's version again.
+
+## Settings 2.0 no longer reads
+
+Two older spellings, deprecated since 1.0, are gone. *configfile* says so, and leaves the files they describe as they are, until the settings are updated:
+
+- `"global": true` and `"global": false` in an entry: write `"deploy": "global"` and `"deploy": "local"` instead. An entry that still has `"global"` is invalid: it is not deployed, and the command fails.
+- A `settings.json` that is a plain list (the format of *configfile* 0.3): put the list in a `"files"` key, `{ "files": [ ... ] }`. Until then, the module cannot be used.
 
 ## Keep a link
 

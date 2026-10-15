@@ -721,20 +721,23 @@ describe('modules status, dry run and undeploy', () => {
     },
   )
 
-  it('deploys a repository written for configfile 0.3.1 (list format)', async () => {
+  it('refuses a repository written for configfile 0.3 (list format), saying how to fix it', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
     await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
     await sandbox.write(
       'home/dotfiles/files/zsh/settings.json',
-      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', global: true }]),
+      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
     )
 
     const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
 
-    expect(result.code).toBe(0)
-    expect(result.stderr).toContain('settings.json is a list (configfile 0.3 format)')
-    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('zshrc')
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+        'Put the list in a "files" key',
+    )
+    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(false)
   })
 
   it('never lets a source outside the module be deployed or undeployed', async () => {
@@ -988,7 +991,7 @@ describe('modules status, dry run and undeploy', () => {
     expect(existsSync(path.join(sandbox.cwd, 'b'))).toBe(false)
   })
 
-  it('warns about the deprecated "global" key', async () => {
+  it('refuses the "global" key of configfile 1.x, saying what replaces it', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
     await sandbox.write(
@@ -998,9 +1001,11 @@ describe('modules status, dry run and undeploy', () => {
 
     const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
 
-    expect(result.code).toBe(0)
-    expect(result.stderr).toContain('"global": true | false is deprecated')
-    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'zsh: entry #1 is ignored: "global" is no longer read (configfile 2.0): use "deploy": "global" or "local".',
+    )
+    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(false)
   })
 })
 

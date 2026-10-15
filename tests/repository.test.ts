@@ -89,8 +89,8 @@ describe('listModules', () => {
     await sandbox.write(
       'home/dotfiles/files/zsh/settings.json',
       settings([
-        { source_path: 'zshrc', target_path: '~/.zshrc', global: true },
-        { source_path: 'local.env', target_path: '.env', global: false },
+        { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+        { source_path: 'local.env', target_path: '.env', deploy: 'local' },
         { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
         { source_path: 'editorconfig', target_path: '.editorconfig', deploy: 'local' },
         { source_path: 'parked', target_path: '~/.parked', deploy: 'none' },
@@ -153,10 +153,6 @@ describe('listModules', () => {
     ])
     expect(zsh.undecided).toEqual(['forgotten'])
     expect(zsh.invalidEntries).toEqual([])
-    expect(zsh.deprecations).toEqual([
-      '"global": true | false is deprecated and will stop working in 2.0. ' +
-        'Use "deploy": "global" | "local" instead',
-    ])
     expect(warnings).toEqual([])
   })
 
@@ -207,8 +203,8 @@ describe('listModules', () => {
 
   it.each([
     [{ deploy: 'symlink' }, 'use "deploy": "global", "local" or "none"'],
-    [{ global: 'yes' }, 'use "deploy": "global", "local" or "none"'],
-    [{ deploy: 'local', global: true }, 'not both'],
+    [{ global: true }, '"global" is no longer read (configfile 2.0): use "deploy"'],
+    [{ deploy: 'local', global: true }, '"global" is no longer read'],
     [{ deploy: 'global', source_path: '' }, '"source_path" is missing'],
     [{ deploy: 'global', target_path: '' }, '"target_path" is missing'],
   ])('reports an invalid entry: %o', async (entry, reason) => {
@@ -282,21 +278,19 @@ describe('listModules', () => {
     )
   })
 
-  it('reads the configfile 0.3.1 list format, with a deprecation', async () => {
+  it('refuses the configfile 0.3 list format, and says how to fix it', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
       'home/dotfiles/files/zsh/settings.json',
-      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', global: true }]),
+      JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
     )
 
     const { modules } = await modulesOf(sandbox)
-    const zsh = usable(modules[0])
 
-    expect(zsh.files.map(file => file.target)).toEqual([path.join(sandbox.home, '.zshrc')])
-    expect(zsh.deprecations).toEqual([
-      expect.stringContaining('settings.json is a list (configfile 0.3 format)'),
-      expect.stringContaining('"global": true | false is deprecated'),
-    ])
+    expect(modules[0]?.error).toBe(
+      'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+        'Put the list in a "files" key: { "files": [ ... ] }',
+    )
   })
 
   it('reads the scripts to run before and after the module is deployed', async () => {
