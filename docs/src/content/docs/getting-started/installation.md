@@ -19,7 +19,7 @@ Installed with Homebrew or npm, *configfile* also needs Node.js 24.11 or later (
 On a new machine, this is the quickest way: no package manager and no Node.js needed.
 
 ```bash
-curl -fsSL https://docs.configfile.sh/install.sh | sh
+curl -fsSL https://configfile.sh/install.sh | sh
 ```
 
 The [script](https://github.com/mindsers/configfile/blob/master/docs/public/install.sh) downloads the standalone binary for your system from the [latest GitHub release](https://github.com/mindsers/configfile/releases/latest), checks it against the release's `SHA256SUMS`, and installs it as `~/.local/bin/configfile`, once it has checked that the binary starts on your system (a configfile already installed is otherwise left as it is). It says when that folder is not in your `PATH`, and how to add it. Two environment variables change what it does:
@@ -31,7 +31,7 @@ The [script](https://github.com/mindsers/configfile/blob/master/docs/public/inst
 
 ```bash
 # For every user of the machine (/usr/local/bin needs administrator rights).
-curl -fsSL https://docs.configfile.sh/install.sh | sudo CONFIGFILE_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://configfile.sh/install.sh | sudo CONFIGFILE_INSTALL_DIR=/usr/local/bin sh
 ```
 
 Run the command again to update *configfile*, with the same `CONFIGFILE_INSTALL_DIR` if you set one (`configfile update` syncs your dotfiles, not *configfile* itself). To uninstall it, delete `~/.local/bin/configfile`; your configuration (`~/.configfilerc`, `~/.configfile/`) stays.

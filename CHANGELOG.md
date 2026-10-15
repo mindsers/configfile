@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- The install script is at `https://configfile.sh/install.sh`:
+  `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
+  `https://docs.configfile.sh/install.sh`, keeps working.
 ### Added
 - Standalone binaries for macOS (13.5 or later) and Linux (GNU C library 2.28 or later), on x64
   and arm64, with each release, and an install script:

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs configfile on macOS or Linux, without Node.js or a package manager:
 #
-#   curl -fsSL https://docs.configfile.sh/install.sh | sh
+#   curl -fsSL https://configfile.sh/install.sh | sh
 #
 # It downloads the standalone binary for this system from the GitHub release,
 # checks it against the release's SHA256SUMS, and installs it as
@@ -17,6 +17,9 @@
 #                            and mirrors)
 #
 # Source: https://github.com/mindsers/configfile/blob/master/docs/public/install.sh
+# Published with the documentation at https://docs.configfile.sh/install.sh,
+# where https://configfile.sh/install.sh redirects: the old address and the
+# redirect both rely on this file staying in docs/public/.
 
 set -eu
 
