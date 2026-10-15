@@ -39,6 +39,8 @@ Short form: `configfile m l`.
 
 Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file, and the scripts each module runs when it is deployed or undeployed. Without module names, it also lists the deployed files the repository no longer deploys.
 
+Under a deployed link, it lists the changes made through it in *configfile*'s copy of the repository, by you or by a tool that writes its own configuration: files changed or deleted through the link, and new files a tool created in a linked folder. The next `update` saves them in a patch and puts the repository's version back, so bring the ones you want to keep into your working copy first ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). This needs git; without it, `status` says that these changes cannot be checked.
+
 <!-- generated: configfile modules status -->
 ```sh
 configfile modules status [options] [modules...]
@@ -127,7 +129,7 @@ Short form: `configfile s r`.
 
 ## `configfile update`
 
-Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) are first saved as a patch in `~/.configfile/saved/`; apply it in your own working copy with `git am <patch>` to keep them. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it, up to 10 seconds: a slow fetch can make them fail.
+Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) that the remote doesn't have are first saved as a patch in `~/.configfile/saved/`, and `update` names the files they change; to keep them, apply the patch in your own working copy with `git -C <your working copy> apply --3way <patch>` (or `git am <patch>`), then commit and push. Changes the remote already has, because you pushed them from your working copy, are not saved. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it, up to 10 seconds: a slow fetch can make them fail.
 
 <!-- generated: configfile update -->
 ```sh

@@ -38,7 +38,7 @@ If *configfile* deployed from your working copy, uncommitted edits, a branch you
 
 The mirror only follows the remote. `update` doesn't merge anything, so your work in progress never blocks it: it fetches the remote and makes the mirror identical to it. It still needs the remote to be reachable, and stops with an error if fetching fails.
 
-You don't edit the mirror. If something changes in it anyway, for example an edit made through a deployed link, `update` first saves the uncommitted changes and unpushed commits as a patch in `~/.configfile/saved/`, so that you can recover them: apply the patch in your working copy with `git am`.
+You don't edit the mirror. If something changes in it anyway, for example an edit made through a deployed link, `update` first saves the uncommitted changes and unpushed commits that the remote doesn't have as a patch in `~/.configfile/saved/`, so that you can recover them, and names the files they change: apply the patch in your working copy with `git -C <your working copy> apply --3way <patch>`, then commit and push.
 
 :::caution
 `update` resets the mirror's folder, whatever it is. A configuration made with *configfile* 0.3 may point to your own working copy (for example `~/.dotfiles`): `update` would then reset your working copy to the remote, after saving its uncommitted changes and unpushed commits as a patch. [Upgrading from 0.3](/guides/upgrading-from-0-3/) explains how to give *configfile* its own copy.
@@ -68,6 +68,14 @@ Each entry says how its file is deployed:
 - **Local files are copied** into the current folder by `configfile modules deploy --local`. They suit files that belong in each project, such as an `.editorconfig`, and that a project may change. A copy doesn't follow the repository: deploy it again to refresh it, and *configfile* asks before replacing a copy that differs.
 
 An entry with `"deploy": "none"` stays in the repository without being deployed.
+
+### Changes made through links
+
+A link leads into the mirror, so whatever writes to `~/.zshrc` writes to the mirror's file: you, with an editor, or a tool that keeps its own configuration, such as `git config --global`, `mise use -g`, an editor's settings screen or a plugin manager's lockfile. When a whole folder is linked, the files a tool creates in it, such as caches, lockfiles or login files, land in the mirror too.
+
+[`configfile modules status`](/reference/commands/#configfile-modules-status) lists these changes under each link. They are not in the repository, so the next `update` saves them in a patch and puts the repository's version back: a change you want on every machine belongs in your working copy, committed and pushed. Once the remote has it, `update` replaces the mirror's file without saving anything.
+
+To keep files that a tool creates in a linked folder and that don't belong in the repository (caches, logs, login files), list them in the repository's `.gitignore`, in the module's folder or at the root: `update` leaves ignored files where they are.
 
 ## Keeping track
 

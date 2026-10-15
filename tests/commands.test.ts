@@ -22,6 +22,7 @@ import { COMMANDS } from '../src/history.ts'
 import { buildProgram, main } from '../src/program.ts'
 import {
   createContext,
+  createMirror,
   createRemote,
   createSandbox,
   git,
@@ -778,6 +779,138 @@ describe('modules status, dry run and undeploy', () => {
     expect(result.code).toBe(0)
     expect(result.stderr).toContain('"global": true | false is deprecated')
     expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(true)
+  })
+})
+
+describe('changes made through links', () => {
+  /** A mirror with `~/.zshrc` and the `~/.config/nvim` folder deployed as links. */
+  async function withLinks(sandbox: Sandbox) {
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await commitInRemote('files/nvim/nvim/init.lua', 'init')
+    await commitInRemote('files/nvim/nvim/old.lua', 'old')
+    await commitInRemote('files/nvim/nvim/.gitignore', 'cache/\n')
+    await commitInRemote(
+      'files/nvim/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'nvim', target_path: '~/.config/nvim', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', '--all'])
+  }
+
+  it('shows the files changed, added and deleted through each link', async () => {
+    const sandbox = await createSandbox()
+    await withLinks(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'edited by a tool')
+    await sandbox.write('home/.config/nvim/lazy-lock.json', '{}')
+    await rm(path.join(sandbox.home, '.config/nvim/old.lua'))
+
+    const result = await runCli(sandbox, ['modules', 'status'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(
+      'nvim:\n' +
+        `  ${sandbox.home}/.config/nvim (deployed)\n` +
+        '    lazy-lock.json (new, not in the repository)\n' +
+        '    old.lua (deleted through the link)\n' +
+        'zsh:\n' +
+        `  ${sandbox.home}/.zshrc (deployed)\n` +
+        '    changed through the link\n',
+    )
+    expect(result.stdout).toContain(
+      'Changes made through links are not in the repository: the next "configfile update" ' +
+        "saves them in a patch, then puts the repository's version back and removes new files " +
+        "(except those the repository's .gitignore lists). To keep them, make them in your " +
+        `working copy, then commit and push. "git -C ${sandbox.repo} diff" shows the changes to its files.`,
+    )
+  })
+
+  it('says nothing about unchanged links and ignored files', async () => {
+    const sandbox = await createSandbox()
+    await withLinks(sandbox)
+    await sandbox.write('home/.config/nvim/cache/state', 'ignored by the repository')
+
+    const result = await runCli(sandbox, ['modules', 'status'])
+
+    expect(result.stdout).toBe(
+      `nvim:\n  ${sandbox.home}/.config/nvim (deployed)\n` +
+        `zsh:\n  ${sandbox.home}/.zshrc (deployed)\n`,
+    )
+  })
+
+  it('still shows the status when git is missing, and says what it cannot check', async () => {
+    const sandbox = await createSandbox()
+    await withLinks(sandbox)
+    vi.stubEnv('PATH', '/nonexistent')
+
+    try {
+      const result = await runCli(sandbox, ['modules', 'status'])
+
+      expect(result.code).toBe(0)
+      expect(result.stdout).toContain(`${sandbox.home}/.zshrc (deployed)\n`)
+      expect(result.stderr).toContain(
+        'Changes made through links cannot be checked: git is not installed.',
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("says why git cannot read the mirror, in git's own words", async () => {
+    const sandbox = await createSandbox()
+    await withLinks(sandbox)
+    await writeFile(path.join(sandbox.repo, '.git/index'), 'not an index')
+
+    const result = await runCli(sandbox, ['modules', 'status'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      'Changes made through links cannot be checked: git status failed:',
+    )
+    expect(result.stderr).toContain('index')
+  })
+
+  it('shows a repository a tool cloned in a linked folder as one new folder', async () => {
+    const sandbox = await createSandbox()
+    await withLinks(sandbox)
+    const plugin = path.join(sandbox.home, '.config/nvim/pack/plugin')
+    await sandbox.write('home/.config/nvim/pack/plugin/init.lua', 'plugin')
+    git(plugin, 'init', '--quiet')
+    git(plugin, 'add', '.')
+    git(plugin, 'commit', '--quiet', '-m', 'plugin')
+
+    const result = await runCli(sandbox, ['modules', 'status', 'nvim'])
+
+    expect(result.stdout).toContain(
+      `nvim:\n  ${sandbox.home}/.config/nvim (deployed)\n` +
+        '    pack/plugin/ (new, not in the repository)\n Info',
+    )
+  })
+
+  it('says nothing when no link is deployed, or the folder is not a git repository', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    vi.stubEnv('PATH', '/nonexistent')
+
+    try {
+      const before = await runCli(sandbox, ['modules', 'status'])
+      await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+      const after = await runCli(sandbox, ['modules', 'status'])
+
+      expect(before.stdout).not.toContain('Changes made through links')
+      expect(after.stdout).toContain(`${sandbox.home}/.zshrc (deployed)`)
+      expect(after.stdout).not.toContain('Changes made through links')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 
@@ -1990,19 +2123,6 @@ describe('init', () => {
 })
 
 describe('update', () => {
-  /** A remote, configfile's mirror of it, and a function to commit in the remote. */
-  async function withMirror(sandbox: Sandbox) {
-    const remote = await createRemote(sandbox)
-    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
-    await sandbox.configure()
-    const commitInRemote = async (file: string, content: string) => {
-      await sandbox.write(`remote/${file}`, content)
-      git(remote, 'add', '.')
-      git(remote, 'commit', '--quiet', '-m', `change ${file}`)
-    }
-    return { remote, commitInRemote }
-  }
-
   const savedPatches = async (sandbox: Sandbox) => {
     const folder = path.join(sandbox.home, '.configfile/saved')
     return existsSync(folder) ? (await readdir(folder)).map(name => path.join(folder, name)) : []
@@ -2023,7 +2143,7 @@ describe('update', () => {
 
   it('waits for another configfile that holds the lock, then syncs', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/zsh/zshrc', 'new')
     const release = await holdLock(sandbox)
     setTimeout(release, 500)
@@ -2042,7 +2162,7 @@ describe('update', () => {
     'holds the lock for the whole sync, the fetch included',
     async () => {
       const sandbox = await createSandbox()
-      const { commitInRemote } = await withMirror(sandbox)
+      const { commitInRemote } = await createMirror(sandbox)
       await commitInRemote('files/zsh/zshrc', 'new')
       const lock = path.join(sandbox.home, '.configfile/lock')
       const seen = path.join(sandbox.root, 'seen')
@@ -2069,7 +2189,7 @@ describe('update', () => {
     'makes a deployment started during the sync wait for it',
     async () => {
       const sandbox = await createSandbox()
-      const { commitInRemote } = await withMirror(sandbox)
+      const { commitInRemote } = await createMirror(sandbox)
       await commitInRemote(
         'files/zsh/settings.json',
         JSON.stringify({
@@ -2128,7 +2248,7 @@ describe('update', () => {
     'fails before syncing when the lock cannot be taken, and records it',
     async () => {
       const sandbox = await createSandbox()
-      const { commitInRemote } = await withMirror(sandbox)
+      const { commitInRemote } = await createMirror(sandbox)
       await commitInRemote('files/zsh/zshrc', 'new')
       const folder = path.join(sandbox.home, '.configfile')
       // The history can still be appended to; the lock cannot be created.
@@ -2155,7 +2275,7 @@ describe('update', () => {
 
   it('syncs the mirror with the remote', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/new-file', 'new')
 
     const result = await runCli(sandbox, ['update'])
@@ -2168,7 +2288,7 @@ describe('update', () => {
 
   it('says when the mirror is already up to date', async () => {
     const sandbox = await createSandbox()
-    await withMirror(sandbox)
+    await createMirror(sandbox)
 
     const result = await runCli(sandbox, ['update'])
 
@@ -2178,7 +2298,7 @@ describe('update', () => {
 
   it('saves local commits, edits and new files as a patch, then syncs anyway', async () => {
     const sandbox = await createSandbox()
-    const { remote, commitInRemote } = await withMirror(sandbox)
+    const { remote, commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/remote-change', 'remote')
     await sandbox.write('home/dotfiles/files/committed', 'committed locally')
     git(sandbox.repo, 'add', '.')
@@ -2190,8 +2310,11 @@ describe('update', () => {
 
     expect(result.code).toBe(0)
     const [patch] = await savedPatches(sandbox)
-    expect(result.stderr).toContain(`had local changes: they were saved to ${patch}`)
-    expect(result.stderr).toContain(`git am ${patch}`)
+    expect(result.stderr).toContain(
+      `${sandbox.repo} had changes that origin/main doesn't have, to files/.gitkeep, ` +
+        `files/committed and files/untracked: they were saved to ${patch} and replaced by origin/main.`,
+    )
+    expect(result.stderr).toContain(`git -C <your working copy> apply --3way ${patch}`)
     // The mirror is now exactly the remote.
     expect(await readFile(path.join(sandbox.repo, 'files/remote-change'), 'utf8')).toBe('remote')
     expect(existsSync(path.join(sandbox.repo, 'files/committed'))).toBe(false)
@@ -2213,7 +2336,7 @@ describe('update', () => {
 
   it('saves an edit made through a deployed link before syncing', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/zsh/zshrc', 'from remote')
     await commitInRemote(
       'files/zsh/settings.json',
@@ -2234,9 +2357,177 @@ describe('update', () => {
     expect(await readFile(patch ?? '', 'utf8')).toContain('+edited through the link')
   })
 
+  /** A mirror with a `zsh` module whose `zshrc` is linked to `~/.zshrc`. */
+  async function withLinkedZshrc(sandbox: Sandbox) {
+    const mirror = await createMirror(sandbox)
+    await mirror.commitInRemote('files/zsh/zshrc', 'from remote')
+    await mirror.commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    return mirror
+  }
+
+  it('saves nothing when the remote already has the changes', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withLinkedZshrc(sandbox)
+    // Made by a tool through the link, then pushed from a working copy.
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'set by a tool')
+    await commitInRemote('files/zsh/zshrc', 'set by a tool')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result).toMatchObject({ code: 0, stderr: '' })
+    expect(await savedPatches(sandbox)).toEqual([])
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('set by a tool')
+    expect((await readHistory(sandbox)).at(-1)?.changes.map(change => change.kind)).toEqual([
+      'synced',
+    ])
+  })
+
+  it('saves only the files whose changes the remote does not have', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withLinkedZshrc(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'pushed')
+    await sandbox.write('home/dotfiles/files/zsh/plugins.lock', 'not pushed')
+    await commitInRemote('files/zsh/zshrc', 'pushed')
+
+    const result = await runCli(sandbox, ['update'])
+
+    const [patch = ''] = await savedPatches(sandbox)
+    expect(result.stderr).toContain("doesn't have, to files/zsh/plugins.lock: they were saved")
+    const content = await readFile(patch, 'utf8')
+    expect(content).toContain('+not pushed')
+    expect(content).not.toContain('files/zsh/zshrc')
+    expect((await readHistory(sandbox)).at(-1)?.changes[0]).toEqual({
+      kind: 'saved-patch',
+      file: patch,
+      paths: ['files/zsh/plugins.lock'],
+    })
+  })
+
+  it('saves nothing for unpushed commits whose content the remote has', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await sandbox.write('home/dotfiles/files/same', 'same content')
+    git(sandbox.repo, 'add', '.')
+    git(sandbox.repo, 'commit', '--quiet', '-m', 'committed in the mirror')
+    await commitInRemote('files/same', 'same content')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result).toMatchObject({ code: 0, stderr: '' })
+    expect(await savedPatches(sandbox)).toEqual([])
+  })
+
+  it('saves only its own changes when the remote history was replaced', async () => {
+    const sandbox = await createSandbox()
+    const { remote } = await createMirror(sandbox)
+    await sandbox.write('home/dotfiles/files/local', 'mine')
+    // The remote is rewritten with a history unrelated to the mirror's.
+    git(remote, 'checkout', '--quiet', '--orphan', 'rewritten')
+    await sandbox.write('remote/files/other', 'theirs')
+    git(remote, 'add', '-A')
+    git(remote, 'commit', '--quiet', '-m', 'new history')
+    git(remote, 'branch', '--quiet', '-M', 'main')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain("doesn't have, to files/local: they were saved")
+    const [patch = ''] = await savedPatches(sandbox)
+    expect(await readFile(patch, 'utf8')).toContain('+mine')
+  })
+
+  it('saves files whose names have spaces or wildcards, and only those', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await sandbox.write('home/dotfiles/files/a b', 'edited')
+    await sandbox.write('home/dotfiles/files/x*', 'edited')
+    await sandbox.write('home/dotfiles/files/x1', 'pushed')
+    await commitInRemote('files/x1', 'pushed')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).toContain("doesn't have, to files/a b and files/x*: they were saved")
+    const [patch = ''] = await savedPatches(sandbox)
+    expect(await readFile(patch, 'utf8')).not.toContain('files/x1')
+  })
+
+  it('saves content that is not UTF-8 byte for byte', async () => {
+    const sandbox = await createSandbox()
+    const { remote } = await createMirror(sandbox)
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]) // "café" in Latin-1
+    await writeFile(path.join(sandbox.repo, 'files/latin1'), latin1)
+
+    await runCli(sandbox, ['update'])
+
+    const [patch = ''] = await savedPatches(sandbox)
+    const workingCopy = path.join(sandbox.root, 'working-copy')
+    git(sandbox.root, 'clone', '--quiet', remote, workingCopy)
+    git(workingCopy, 'apply', patch)
+    expect(await readFile(path.join(workingCopy, 'files/latin1'))).toEqual(latin1)
+  })
+
+  it('saves both names of a file renamed through a linked folder', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('files/vim/vim/old.vim', 'vim')
+    await commitInRemote(
+      'files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    await rename(path.join(sandbox.home, '.vim/old.vim'), path.join(sandbox.home, '.vim/new.vim'))
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).toContain('to files/vim/vim/new.vim and files/vim/vim/old.vim: they were')
+    const [patch = ''] = await savedPatches(sandbox)
+    const content = await readFile(patch, 'utf8')
+    expect(content).toContain('deleted file mode')
+    expect(content).toContain('new file mode')
+  })
+
+  it('lists the first ten saved files, and how many more', async () => {
+    const sandbox = await createSandbox()
+    await createMirror(sandbox)
+    for (let i = 10; i < 22; i++) await sandbox.write(`home/dotfiles/files/f${i}`, 'new')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).toContain(
+      "doesn't have, to files/f10, files/f11, files/f12, files/f13, files/f14, files/f15, " +
+        'files/f16, files/f17, files/f18, files/f19 and 2 more: they were saved',
+    )
+  })
+
+  it('saves a patch that applies to a working copy that has moved on', async () => {
+    const sandbox = await createSandbox()
+    const { remote, commitInRemote } = await withLinkedZshrc(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'from remote\nadded by a tool\n')
+    await commitInRemote('files/zsh/other', 'pushed meanwhile')
+
+    await runCli(sandbox, ['update'])
+
+    const [patch = ''] = await savedPatches(sandbox)
+    const workingCopy = path.join(sandbox.root, 'working-copy')
+    git(sandbox.root, 'clone', '--quiet', remote, workingCopy)
+    await sandbox.write('working-copy/files/zsh/work-in-progress', 'not committed yet')
+    git(workingCopy, 'apply', '--3way', patch)
+    expect(await readFile(path.join(workingCopy, 'files/zsh/zshrc'), 'utf8')).toBe(
+      'from remote\nadded by a tool\n',
+    )
+  })
+
   it('follows the remote default branch when the mirror has no upstream', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     git(sandbox.repo, 'branch', '--unset-upstream')
     await commitInRemote('files/new-file', 'new')
 
@@ -2248,7 +2539,7 @@ describe('update', () => {
 
   it('warns about deployed files the repository no longer deploys', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/zsh/zshrc', 'zshrc')
     await commitInRemote(
       'files/zsh/settings.json',
@@ -2275,7 +2566,7 @@ describe('update', () => {
 
   it('names the folders of removed local copies', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/zsh/zshrc', 'zshrc')
     await commitInRemote('files/zsh/editorconfig', 'root = true')
     await commitInRemote(
@@ -2303,7 +2594,7 @@ describe('update', () => {
 
   it('checks local copies against the folder they were copied into', async () => {
     const sandbox = await createSandbox()
-    const { commitInRemote } = await withMirror(sandbox)
+    const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/web/editorconfig', 'root = true')
     await commitInRemote(
       'files/web/settings.json',
@@ -2324,7 +2615,7 @@ describe('update', () => {
 
   it('still succeeds when the synced repository cannot be read', async () => {
     const sandbox = await createSandbox()
-    const { remote } = await withMirror(sandbox)
+    const { remote } = await createMirror(sandbox)
     await rm(path.join(remote, 'files'), { recursive: true })
     await sandbox.write('remote/files', 'a file, not a folder')
     git(remote, 'add', '-A')
@@ -2465,7 +2756,11 @@ describe('history', () => {
     const [first, second] = await readHistory(sandbox)
     expect(before).not.toBe(after)
     expect(first?.changes).toEqual([
-      { kind: 'saved-patch', file: expect.stringContaining('/.configfile/saved/') },
+      {
+        kind: 'saved-patch',
+        file: expect.stringContaining('/.configfile/saved/'),
+        paths: ['files/local-edit'],
+      },
       { kind: 'synced', folder: sandbox.repo, upstream: 'origin/main', from: before, to: after },
     ])
     expect(second?.changes).toEqual([
@@ -2776,7 +3071,11 @@ describe('history', () => {
         line({
           command: 'update',
           changes: [
-            { kind: 'saved-patch', file: home('.configfile/saved/p.patch') },
+            {
+              kind: 'saved-patch',
+              file: home('.configfile/saved/p.patch'),
+              paths: ['files/zsh/zshrc', 'files/nvim/lock.json'],
+            },
             {
               kind: 'synced',
               folder: home('.configfile/dotfiles'),
@@ -2853,7 +3152,7 @@ describe('history', () => {
         '  …and 3 more changes',
         '',
         'TIME  update  ok',
-        '  saved     local changes to ~/.configfile/saved/p.patch',
+        '  saved     local changes to ~/.configfile/saved/p.patch  (files/zsh/zshrc, files/nvim/lock.json)',
         '  synced    ~/.configfile/dotfiles  with origin/main (7d0289a → 1217e91)',
         '',
         'TIME  update  ok',

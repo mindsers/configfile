@@ -44,7 +44,8 @@ async function update(ctx: Context): Promise<void> {
   const result = await withCommandLock(ctx, () => {
     output.info(`Syncing ${folderPath}…`)
     return syncMirror(folderPath, configfilePaths(ctx.home).saved, {
-      onSaved: file => ctx.history.record({ kind: 'saved-patch', file }),
+      onSaved: (file, paths) =>
+        ctx.history.record({ kind: 'saved-patch', file, paths: [...paths] }),
     })
   })
   ctx.history.record({
@@ -57,9 +58,11 @@ async function update(ctx: Context): Promise<void> {
 
   if (result.saved != null) {
     output.warn(
-      `${folderPath} had local changes: they were saved to ${result.saved} and replaced by ` +
-        `${result.upstream}. Edit your dotfiles in your own working copy; to keep these changes, ` +
-        `apply them there with: git am ${result.saved}`,
+      `${folderPath} had changes that ${result.upstream} doesn't have, to ` +
+        `${listPaths(result.savedPaths)}: they were saved to ${result.saved} and replaced by ` +
+        `${result.upstream}. Edit your dotfiles in your own working copy; to keep these ` +
+        `changes, apply them there, then commit and push: ` +
+        `git -C <your working copy> apply --3way ${result.saved}`,
     )
   }
 
@@ -72,6 +75,15 @@ async function update(ctx: Context): Promise<void> {
     )
   }
   await warnAboutRemovedFiles(ctx)
+}
+
+/** `a, b and c`, or the first ones and how many more. */
+function listPaths(paths: readonly string[], shown = 10): string {
+  if (paths.length > shown) {
+    return `${paths.slice(0, shown).join(', ')} and ${paths.length - shown} more`
+  }
+  if (paths.length <= 1) return paths.join('')
+  return `${paths.slice(0, -1).join(', ')} and ${paths.at(-1)}`
 }
 
 /**

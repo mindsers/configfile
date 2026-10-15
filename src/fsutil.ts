@@ -85,7 +85,7 @@ export function siblingName(target: string, purpose: string): string {
  */
 export async function writeFileAtomic(
   file: string,
-  content: string,
+  content: string | Buffer,
   { mode }: { mode: number },
 ): Promise<void> {
   const temporary = siblingName(file, 'write')

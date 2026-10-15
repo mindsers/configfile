@@ -53,7 +53,8 @@ export type Change =
   | { kind: 'failed'; target: string; reason: string }
   | { kind: 'failed'; module: string; reason: string }
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
-  | { kind: 'saved-patch'; file: string }
+  /** `paths`: the files of the repository whose changes the patch holds (missing in older lines). */
+  | { kind: 'saved-patch'; file: string; paths?: string[] }
   /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
   | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
   /** A script a module names was not run, without this being a failure. */
@@ -517,6 +518,11 @@ function isChange(value: unknown): value is Change {
         (value.from === null || typeof value.from === 'string')
       )
     case 'saved-patch':
+      return (
+        typeof value.file === 'string' &&
+        (value.paths === undefined ||
+          (Array.isArray(value.paths) && value.paths.every(item => typeof item === 'string')))
+      )
     case 'configured':
       return typeof value.file === 'string'
     case 'script':
