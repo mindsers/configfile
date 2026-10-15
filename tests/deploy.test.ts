@@ -1423,6 +1423,70 @@ describe('undeployFile (global copy)', () => {
     expect(await readFile(target, 'utf8')).toBe('changed after the copy')
   })
 
+  it('puts back what a conflict replaced inside a copied folder', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/nvim/nvim/init.lua', 'init')
+    await sandbox.write('home/dotfiles/files/nvim/nvim/keep', 'keep')
+    const context = await contextOf(sandbox)
+    const file: ModuleFile = {
+      source: path.join(sandbox.repo, 'files/nvim/nvim'),
+      target: path.join(sandbox.home, '.config/nvim'),
+      strategy: 'global',
+      method: 'copy',
+      repository: sandbox.repo,
+      module: path.join(sandbox.repo, 'files/nvim'),
+    }
+    await deployFile(file, context)
+    await writeFile(path.join(file.target, 'init.lua'), 'mine')
+    await writeFile(path.join(file.source, 'init.lua'), 'theirs')
+    await deployFile(file, { ...context, copies: 'conflicts' })
+
+    const result = await undeployFile(file, context)
+
+    // The repository's version goes, yours comes back from init.lua.old, and the folder stays.
+    expect(result).toMatchObject({ status: 'kept', state: { kind: 'changed', removed: 2 } })
+    expect(await readFile(path.join(file.target, 'init.lua'), 'utf8')).toBe('mine')
+    expect(existsSync(path.join(file.target, 'init.lua.old'))).toBe(false)
+    expect(existsSync(path.join(file.target, 'keep'))).toBe(false)
+  })
+
+  it('forgets a file deleted both here and in the repository, and leaves a blocked one', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/nvim/nvim/gone', 'gone')
+    await sandbox.write('home/dotfiles/files/nvim/nvim/sub/x', 'x')
+    await sandbox.write('home/dotfiles/files/nvim/nvim/y', 'y')
+    const context = await contextOf(sandbox)
+    const file: ModuleFile = {
+      source: path.join(sandbox.repo, 'files/nvim/nvim'),
+      target: path.join(sandbox.home, '.config/nvim'),
+      strategy: 'global',
+      method: 'copy',
+      repository: sandbox.repo,
+      module: path.join(sandbox.repo, 'files/nvim'),
+    }
+    await deployFile(file, context)
+    await rm(path.join(file.source, 'gone'))
+    await rm(path.join(file.target, 'gone'))
+    // A file where the copied folder `sub` was.
+    await rm(path.join(file.target, 'sub'), { recursive: true })
+    await writeFile(path.join(file.target, 'sub'), 'a file now')
+    await writeFile(path.join(file.source, 'sub/x'), 'x2')
+
+    const result = await deployFile(file, { ...context, force: true })
+
+    expect(result).toMatchObject({
+      status: 'updated',
+      outcome: {
+        files: [
+          { path: 'sub/x', result: 'conflict', reason: expect.stringContaining('link or a file') },
+        ],
+      },
+    })
+    const copy = (await context.record.find(file.target))?.deployed?.copy
+    expect(copy?.kind === 'folder' && Object.keys(copy.files).sort()).toEqual(['sub/x', 'y'])
+    expect(await readFile(path.join(file.target, 'sub'), 'utf8')).toBe('a file now')
+  })
+
   it('removes the files of a folder nothing changed, and keeps the others', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/nvim/nvim/init.lua', 'init')

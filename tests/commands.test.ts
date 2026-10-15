@@ -485,6 +485,149 @@ describe('modules status, dry run and undeploy', () => {
     expect(result.stdout).toContain('makes a loop')
   })
 
+  it('describes every outcome of a copied folder, in dry runs and real runs', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    for (const name of ['a', 'b', 'c', 'd', 'e']) {
+      await sandbox.write(`home/dotfiles/files/vim/vim/${name}`, name)
+    }
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    const vim = path.join(sandbox.home, '.vim')
+    await sandbox.write('home/.vim/a', 'mine') // changed here
+    await sandbox.write('home/dotfiles/files/vim/vim/b', 'theirs') // changed in the repository
+    await rm(path.join(sandbox.repo, 'files/vim/vim/c')) // deleted by the repository
+    await sandbox.write('home/.vim/d', 'mine') // changed on both sides
+    await sandbox.write('home/dotfiles/files/vim/vim/d', 'theirs')
+    await rm(path.join(vim, 'e')) // deleted here
+    await sandbox.write('home/dotfiles/files/vim/vim/n', 'new') // added by the repository
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const asked = await runCli(sandbox, ['modules', 'deploy', '-n', 'vim'])
+    const forced = await runCli(sandbox, ['modules', 'deploy', '-n', '--force', 'vim'])
+    const plannedUndeploy = await runCli(sandbox, ['modules', 'undeploy', '-n', 'vim'])
+    const yes = await runCli(sandbox, ['modules', 'deploy', 'vim'], [true])
+
+    expect(status.stdout).toContain(
+      `  ${vim} (copied)\n` +
+        '    a (changed on this machine)\n' +
+        '    b (the repository has a newer version)\n' +
+        '    c (the repository no longer has it)\n' +
+        '    d (changed here and in the repository)\n' +
+        '    e (changed on this machine)\n' +
+        '    n (the repository has a newer version)\n',
+    )
+    expect(asked.stdout).toContain(
+      `${vim} (b, n: would be updated from the repository; c: would be deleted: the repository ` +
+        'no longer has it; a, e: changed on this machine, would be kept; d changed here and in ' +
+        'the repository: you would be asked whether to replace it)',
+    )
+    expect(forced.stdout).toContain(
+      `${vim} (a, b, d, e, n: would be updated from the repository; c: would be deleted: the ` +
+        `repository no longer has it; yours would be moved to ${vim}/a.old, ${vim}/d.old)`,
+    )
+    expect(plannedUndeploy.stdout).toContain(
+      `${vim} (would be kept: a, d changed on this machine; the other 2 files would be removed)`,
+    )
+    expect(yes.stdout).toContain(
+      `${vim} (b, d, n: updated from the repository; c: deleted: the repository no longer has ` +
+        `it; yours moved to ${vim}/d.old; a, e: kept: changed on this machine)`,
+    )
+    expect(yes.code).toBe(0)
+    expect((await readHistory(sandbox)).at(-1)?.changes).toEqual([
+      { kind: 'kept', target: path.join(vim, 'a'), reason: 'changed' },
+      {
+        kind: 'deployed',
+        how: 'copy',
+        source: path.join(sandbox.repo, 'files/vim/vim/b'),
+        target: path.join(vim, 'b'),
+        replaced: 'copy',
+      },
+      { kind: 'removed', target: path.join(vim, 'c') },
+      {
+        kind: 'deployed',
+        how: 'copy',
+        source: path.join(sandbox.repo, 'files/vim/vim/d'),
+        target: path.join(vim, 'd'),
+        backup: path.join(vim, 'd.old'),
+      },
+      { kind: 'kept', target: path.join(vim, 'e'), reason: 'changed' },
+      {
+        kind: 'deployed',
+        how: 'copy',
+        source: path.join(sandbox.repo, 'files/vim/vim/n'),
+        target: path.join(vim, 'n'),
+      },
+    ])
+  })
+
+  it('turns a copy into a link, unless it changed on this machine', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    await withModule(sandbox, { method: 'link' })
+
+    const planned = await runCli(sandbox, ['modules', 'deploy', '-n', 'zsh'])
+    const linked = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(planned.stdout).toContain(`${zshrc} (would be linked in place of configfile's copy)`)
+    expect(linked.stdout).toContain(`${zshrc} (linked in place of configfile's copy)`)
+    expect((await readHistory(sandbox)).at(-1)?.changes).toMatchObject([
+      { kind: 'deployed', how: 'link', target: zshrc, replaced: 'copy' },
+    ])
+
+    await rm(zshrc)
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await writeFile(zshrc, 'mine')
+    await withModule(sandbox, { method: 'link' })
+    const status = await runCli(sandbox, ['modules', 'status', 'zsh'])
+    expect(status.stdout).toContain(
+      `${zshrc} (copied, changed on this machine: deploy it again with --force to link it)`,
+    )
+  })
+
+  it('says when a copied file has a newer version in the repository', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'newer')
+
+    const status = await runCli(sandbox, ['modules', 'status', 'zsh'])
+
+    expect(status.stdout).toContain(
+      `${sandbox.home}/.zshrc (copied, the repository has a newer version: deploy it again)`,
+    )
+  })
+
+  it('fails when files of a copy cannot be updated, even with --force', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/vim/vim/lua/x', 'x')
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    const elsewhere = await sandbox.write('home/elsewhere/x', "not configfile's")
+    await rm(path.join(sandbox.home, '.vim/lua'), { recursive: true })
+    await symlink(path.dirname(elsewhere), path.join(sandbox.home, '.vim/lua'))
+    await sandbox.write('home/dotfiles/files/vim/vim/lua/x', 'theirs')
+
+    const result = await runCli(sandbox, ['modules', 'deploy', '--force', 'vim'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toContain('lua/x: left as it is: reached through a link or a file')
+    expect(result.stderr).toContain(
+      '1 copy still has files configfile could not update: see why above.',
+    )
+    expect(await readFile(elsewhere, 'utf8')).toBe("not configfile's")
+  })
+
   it('previews, with --force, the files of a copy the real run recreates', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
@@ -2954,6 +3097,58 @@ describe('update', () => {
     expect(result.code, result.stdout + result.stderr).toBe(0)
     expect(result.stderr).toBe('')
     expect(await readFile(path.join(nvim, 'init.lua'), 'utf8')).toBe('init v2')
+  })
+
+  it('reports conflicts and files it could not update in a copied folder', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    const nvim = path.join(sandbox.home, '.config/nvim')
+    await writeFile(path.join(nvim, 'init.lua'), 'mine')
+    await commitInRemote('files/nvim/nvim/init.lua', 'theirs')
+    const elsewhere = await sandbox.write('home/elsewhere/opts.lua', "not configfile's")
+    await rm(path.join(nvim, 'lua'), { recursive: true })
+    await symlink(path.dirname(elsewhere), path.join(nvim, 'lua'))
+    await commitInRemote('files/nvim/nvim/lua/opts.lua', 'opts v2')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      `In ${nvim}, init.lua changed both on this machine and in the repository, and was left as ` +
+        'it is: run "configfile modules deploy nvim" to choose.',
+    )
+    expect(result.stderr).toContain(
+      `${nvim} could not be fully updated: lua/opts.lua: reached through a link or a file`,
+    )
+    expect(await readFile(elsewhere, 'utf8')).toBe("not configfile's")
+  })
+
+  it('says which copies need a deployment, or a fixed module, to follow the repository', async () => {
+    const sandbox = await createSandbox()
+    const { remote, commitInRemote } = await withCopies(sandbox)
+    // The repository made a folder of the copied file zshrc.
+    await rm(path.join(remote, 'files/zsh/zshrc'))
+    await commitInRemote('files/zsh/zshrc/part', 'in a folder')
+    // And the entry of the copied nvim folder became invalid.
+    await commitInRemote(
+      'files/nvim/settings.json',
+      JSON.stringify({
+        files: [
+          { source_path: 'nvim', target_path: '~/.config/nvim', deploy: 'global', method: 'x' },
+        ],
+      }),
+    )
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      `${sandbox.home}/.zshrc was not updated: deploy it again: run "configfile modules deploy zsh".`,
+    )
+    expect(result.stderr).toContain(
+      `${sandbox.home}/.config/nvim was not updated: module "nvim" has invalid entries.`,
+    )
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('zshrc')
   })
 
   it('never runs the scripts of a module when it updates its copies', async () => {
