@@ -5,6 +5,7 @@ import { inspect } from 'node:util'
 import type { Command } from 'commander'
 
 import type { Context } from '../context.ts'
+import { type CopiedFile, previewCopy } from '../copy.ts'
 import {
   type BackupCheck,
   type DeployContext,
@@ -12,7 +13,9 @@ import {
   type DeployResult,
   deployFile,
   Guard,
+  type InspectedFile,
   inspectFile,
+  isGlobalCopy,
   type KeptState,
   planDeploy,
   planUndeploy,
@@ -29,9 +32,10 @@ import {
   changesUnder,
   type MirrorChange,
   type MirrorChanges,
+  RepositoryView,
   readMirrorChanges,
 } from '../mirror.ts'
-import { plural } from '../output.ts'
+import { escapeControls, plural } from '../output.ts'
 import { runScript } from '../process.ts'
 import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
 import {
@@ -112,9 +116,15 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
     .alias('d')
     .argument('[modules...]', 'modules to deploy (use --all, or answer a question, when omitted)')
     .description('deploy the files of one or more modules')
-    .option('-l, --local', 'copy the local files of the modules instead of linking global files')
+    .option(
+      '-l, --local',
+      'copy the local files of the modules into the current folder, instead of the global files',
+    )
     .option('-a, --all', 'deploy every module without asking')
-    .option('-f, --force', 'replace existing local files without asking (they are moved to .old)')
+    .option(
+      '-f, --force',
+      'replace existing local files, and copies changed on this machine, without asking (they are moved to .old)',
+    )
     .option('-n, --dry-run', 'show what would be done, without changing anything')
     .option('--no-hooks', 'do not run the pre_deploy and post_deploy scripts of the modules')
     .option(
@@ -128,7 +138,7 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
     .alias('u')
     .argument('[modules...]', 'modules to undeploy (use --all, or answer a question, when omitted)')
     .description('remove the deployed files of one or more modules and restore their backups')
-    .option('-l, --local', 'remove the local copies of the modules instead of global links')
+    .option('-l, --local', 'remove the local copies of the modules instead of the global files')
     .option(
       '-a, --all',
       'undeploy every module without asking, and the files the repository no longer deploys',
@@ -225,16 +235,37 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
   }
 
-  const inspectTarget = async (file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>) => {
+  const view = new RepositoryView(repo.repository)
+  let unchecked = 0
+  const inspectTarget = async (file: InspectedFile) => {
     try {
-      return await inspectFile(file, record)
+      return await inspectFile(file, record, view)
     } catch (error) {
+      unchecked++
+      if (!(error instanceof CliError) && process.env.DEBUG != null) {
+        output.stderr.write(`${(error as Error).stack}\n`)
+      }
       return `cannot be checked: ${messageOf(error)}`
     }
   }
-  const describeTarget = async (file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>) => {
+  const describeTarget = async (file: InspectedFile) => {
     const state = await inspectTarget(file)
-    return typeof state === 'string' ? state : describeState(state)
+    return typeof state === 'string' ? state : describeState(state, file)
+  }
+  let changedHere = false
+  /** The files of a copied folder that differ, under its line. */
+  const printCopiedFiles = (state: TargetState | string) => {
+    if (typeof state === 'string' || state.kind !== 'copied') return
+    if (state.changed.length + state.conflicts.length > 0) changedHere = true
+    const inside = [
+      ...state.outdated.map(file => [file, 'the repository has a newer version'] as const),
+      ...state.deleted.map(file => [file, 'the repository no longer has it'] as const),
+      ...state.changed.map(file => [file, 'changed on this machine'] as const),
+      ...state.conflicts.map(file => [file, 'changed here and in the repository'] as const),
+    ]
+      .filter(([file]) => file !== '')
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    for (const [file, what] of inside) output.print(`    ${file} (${what})`)
   }
 
   // Tools write into the mirror through global links: read once, when a link is there.
@@ -244,7 +275,9 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
   const printChangesThroughLink = async (file: ModuleFile, state: TargetState | string) => {
     const linked =
       typeof state !== 'string' &&
-      (state.kind === 'deployed' || (state.kind === 'source-missing' && state.ours))
+      (state.kind === 'deployed' ||
+        state.kind === 'linked' ||
+        (state.kind === 'source-missing' && state.ours && !isGlobalCopy(file)))
     if (file.strategy !== 'global' || !linked) return
 
     mirror ??= readMirrorChanges(repo.repository)
@@ -277,7 +310,10 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     const files = module.files.filter(file => file.strategy === options.strategy)
     for (const file of files) {
       const state = await inspectTarget(file)
-      output.print(`  ${file.target} (${typeof state === 'string' ? state : describeState(state)})`)
+      output.print(
+        `  ${file.target} (${typeof state === 'string' ? state : describeState(state, file)})`,
+      )
+      printCopiedFiles(state)
       await printChangesThroughLink(file, state)
     }
     for (const source of module.undecided) {
@@ -314,6 +350,13 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
   }
 
+  if (changedHere) {
+    output.info(
+      'Files changed on this machine are kept, and are not in the repository: to have a change ' +
+        'on every machine, make it in your working copy, then commit and push. ' +
+        '"diff -u <file in the repository> <file>" shows it.',
+    )
+  }
   if (changedThroughLinks) {
     output.info(
       'Changes made through links are not in the repository: the next "configfile update" ' +
@@ -324,6 +367,9 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
   }
   if (linkChecksUnavailable != null) {
     output.warn(`Changes made through links cannot be checked: ${linkChecksUnavailable}`)
+  }
+  if (unchecked > 0) {
+    throw new CliError(`${plural(unchecked, 'file')} could not be checked: see why above.`)
   }
 }
 
@@ -418,7 +464,8 @@ async function loadHookScripts(
 
 async function deploy(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output, prompts } = ctx
-  const run = await prepare('deploy', await loadRepository(ctx), names, options, ctx)
+  const repo = await loadRepository(ctx)
+  const run = await prepare('deploy', repo, names, options, ctx)
   if (run == null) return
 
   const units = unitsOf(run.modules, options.strategy)
@@ -433,9 +480,11 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
   let failures = run.failures
 
   if (options.dryRun) {
-    const context = await deployContext(ctx)
+    const context = await deployContext(ctx, repo.repository)
     const failed = new FailedHooks('deploy')
     let wouldSkip = 0
+    let wouldSkipCopies = 0
+    let wouldLeave = 0
     for (const { module, files } of units) {
       // Without its pre_deploy script, the files of a module would not be deployed.
       if (!planHook(module, 'pre_deploy', scripts, ctx)) {
@@ -448,7 +497,21 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
         try {
           const decision = await planDeploy(file, { ...context, force: options.force })
           if (decision.action === 'conflict' && !prompts.interactive) {
-            wouldSkip++
+            if (decision.paths == null) wouldSkip++
+            else wouldSkipCopies++
+            complete = false
+          }
+          // Files a copy could not update, whatever the answer.
+          const plan =
+            decision.action === 'update' || decision.action === 'conflict'
+              ? decision.plan
+              : undefined
+          const replace = decision.action === 'update' ? decision.replace : 'none'
+          if (
+            plan != null &&
+            previewCopy(file, plan, replace).some(copied => copied.reason != null)
+          ) {
+            wouldLeave++
             complete = false
           }
           output.print(
@@ -464,22 +527,42 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
         failed.add('post_deploy', module)
       }
     }
-    const problems = [...skippedProblems(wouldSkip, prompts.interactive), ...failed.problems(true)]
+    const problems = [
+      ...skippedProblems(wouldSkip, prompts.interactive),
+      ...skippedCopyProblems(wouldSkipCopies, prompts.interactive),
+      ...unresolvedCopyProblems(wouldLeave),
+      ...failed.problems(true),
+    ]
     finish(failures, problems, 'Dry run finished.', ctx)
     return
   }
 
   let skipped = 0
+  let skippedCopies = 0
+  let unresolvedCopies = 0
   const outcome = await eachModule('deploy', units, scripts, options, ctx, async unit => {
     const result = await withCommandLock(ctx, async () =>
-      deployFiles(unit.files, options, await deployContext(ctx), ctx),
+      deployFiles(unit.files, options, await deployContext(ctx, repo.repository), ctx),
     )
     failures += result.failures
     skipped += result.skipped
-    return result.failures === 0 && result.skipped === 0 && unit.module.invalidEntries.length === 0
+    skippedCopies += result.skippedCopies
+    unresolvedCopies += result.unresolvedCopies
+    return (
+      result.failures === 0 &&
+      result.skipped === 0 &&
+      result.skippedCopies === 0 &&
+      result.unresolvedCopies === 0 &&
+      unit.module.invalidEntries.length === 0
+    )
   })
 
-  const problems = [...skippedProblems(skipped, prompts.interactive), ...outcome.problems]
+  const problems = [
+    ...skippedProblems(skipped, prompts.interactive),
+    ...skippedCopyProblems(skippedCopies, prompts.interactive),
+    ...unresolvedCopyProblems(unresolvedCopies),
+    ...outcome.problems,
+  ]
   finish(failures, problems, 'Deployment finished.', ctx, outcome.exitCode)
 }
 
@@ -489,59 +572,96 @@ async function deployFiles(
   options: Options,
   context: DeployContext,
   ctx: Context,
-): Promise<{ failures: number; skipped: number }> {
+): Promise<DeployCounts> {
   const { output, prompts } = ctx
-  let failures = 0
-  const reportError = (file: ModuleFile, error: unknown) => {
-    failures++
+  const counts: DeployCounts = { failures: 0, skipped: 0, skippedCopies: 0, unresolvedCopies: 0 }
+  const reportError = (file: { target: string }, error: unknown) => {
+    counts.failures++
     reportFileError(file, error, ctx)
   }
 
-  const conflicts: ModuleFile[] = []
+  /** Prints and records a result; counts what a copy could not do. */
+  const report = (file: ModuleFile, result: Exclude<DeployResult, { status: 'conflict' }>) => {
+    output.print(`- ${file.target} ${describeDeploy(file, result)}`)
+    recordDeploy(file, result, ctx)
+    if (result.status !== 'updated') return
+    const { files: copied } = result.outcome
+    for (const failed of copied.filter(item => item.result === 'failed')) {
+      counts.failures++
+      const target =
+        failed.path === '' ? file.target : path.join(file.target, ...failed.path.split('/'))
+      ctx.output.error(`${target}: ${failed.reason ?? 'failed'}`)
+    }
+    if (copied.some(item => item.result === 'conflict' && item.reason != null)) {
+      counts.unresolvedCopies++
+    }
+  }
+
+  const conflicts: { file: ModuleFile; paths: readonly string[] | null }[] = []
   for (const file of files) {
     try {
       const result = await deployFile(file, { ...context, force: options.force })
-      if (result.status === 'conflict') {
-        conflicts.push(file)
-      } else {
-        output.print(`- ${file.target} ${describeDeploy(result)}`)
-        recordDeploy(file, result, ctx)
-      }
+      if (result.status === 'conflict') conflicts.push({ file, paths: result.paths ?? null })
+      else report(file, result)
     } catch (error) {
       reportError(file, error)
     }
   }
 
   // Asked once the other files of the module are deployed, so an answer never blocks them.
-  let skipped = 0
-  for (const file of conflicts) {
+  for (const { file, paths } of conflicts) {
+    const one = paths?.length === 1
+    const message =
+      paths == null
+        ? `${file.target} already exists. Replace it (the current one is moved to .old)?`
+        : `${conflictSubject(file, paths)} changed here and in the repository. Replace ` +
+          `${one ? 'it' : 'them'} with the repository's version (yours ${one ? 'is' : 'are'} ` +
+          'moved to .old)?'
     const replace =
       prompts.interactive &&
-      (await prompts.confirm({
-        message: `${file.target} already exists. Replace it (the current one is moved to .old)?`,
-        default: false,
-      }))
+      (await prompts.confirm({ message: escapeControls(message), default: false }))
 
-    if (!replace) {
-      skipped++
+    if (paths == null && !replace) {
+      counts.skipped++
       output.print(`- ${file.target} (already exists, skipped)`)
       ctx.history.record({ kind: 'skipped', target: file.target, reason: 'exists' })
       continue
     }
-
     try {
-      const result = await deployFile(file, { ...context, force: true })
+      // A copy follows the repository for the rest either way.
+      const choice =
+        paths == null
+          ? { force: true }
+          : { copies: replace ? ('conflicts' as const) : ('skip' as const) }
+      const result = await deployFile(file, { ...context, ...choice })
       if (result.status === 'conflict') {
-        throw new CliError('the target still exists after being moved aside.')
+        throw new CliError('the target changed while configfile was deploying it. Try again.')
       }
-      output.print(`- ${file.target} ${describeDeploy(result)}`)
-      recordDeploy(file, result, ctx)
+      report(file, result)
+      if (paths != null && !replace) counts.skippedCopies++
     } catch (error) {
       reportError(file, error)
     }
   }
 
-  return { failures, skipped }
+  return counts
+}
+
+/** What a deployment of a module's files could not do. */
+interface DeployCounts {
+  failures: number
+  /** Local files that already existed, left as they are. */
+  skipped: number
+  /** Copies whose files changed on both sides were left as they are, as asked (or without a terminal). */
+  skippedCopies: number
+  /** Copies with files configfile could not update (behind a link, written meanwhile…). */
+  unresolvedCopies: number
+}
+
+/** The copied file, or the files of a copied folder, changed on both sides. */
+function conflictSubject(file: ModuleFile, paths: readonly string[]): string {
+  if (paths.length === 1 && paths[0] === '') return file.target
+  return `In ${file.target}, ${describePaths(paths)}`
 }
 
 /**
@@ -944,7 +1064,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
 
   let count = units.reduce((sum, unit) => sum + unit.files.length, 0)
   if (options.dryRun) {
-    const context = await deployContext(ctx)
+    const context = await deployContext(ctx, repo.repository)
     const failed = new FailedHooks('undeploy')
     for (const { module, files } of units) {
       // Without its pre_undeploy script, the files of a module would stay deployed.
@@ -966,7 +1086,9 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   }
 
   const outcome = await eachModule('undeploy', units, scripts, options, ctx, unit =>
-    withCommandLock(ctx, async () => undeployFiles(unit.files, await deployContext(ctx))),
+    withCommandLock(ctx, async () =>
+      undeployFiles(unit.files, await deployContext(ctx, repo.repository)),
+    ),
   )
   const problems = outcome.problems
   if (withRemoved) {
@@ -974,7 +1096,9 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
       problems.push('The files the repository no longer deploys were not checked.')
     } else {
       try {
-        count += await withCommandLock(ctx, async () => undeployRemoved(await deployContext(ctx)))
+        count += await withCommandLock(ctx, async () =>
+          undeployRemoved(await deployContext(ctx, repo.repository)),
+        )
       } catch (error) {
         // After the modules: what they did, and what failed, is still reported.
         if (!(error instanceof CliError) || (units.length === 0 && failures === 0)) throw error
@@ -989,10 +1113,11 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
 }
 
 /** Loads the record: call it after taking the lock when files are changed. */
-async function deployContext(ctx: Context): Promise<DeployContext> {
+async function deployContext(ctx: Context, repository: string): Promise<DeployContext> {
   return {
     record: await DeploymentRecord.load(ctx.home),
     guard: new Guard({ home: ctx.home, cwd: ctx.cwd }),
+    view: new RepositoryView(repository),
   }
 }
 
@@ -1163,6 +1288,25 @@ function skippedProblems(skipped: number, interactive: boolean): string[] {
     : []
 }
 
+/** Without a terminal, conflicts in copies fail the command; answering no to them does not. */
+function skippedCopyProblems(skipped: number, interactive: boolean): string[] {
+  if (interactive || skipped === 0) return []
+  const one = skipped === 1
+  return [
+    `${plural(skipped, 'copy', 'copies')} changed both on this machine and in the repository ` +
+      `${one ? 'was' : 'were'} left as ${one ? 'it is' : 'they are'}. Use --force to replace ` +
+      `${one ? 'it' : 'them'} with the repository's version.`,
+  ]
+}
+
+function unresolvedCopyProblems(count: number): string[] {
+  if (count === 0) return []
+  return [
+    `${plural(count, 'copy', 'copies')} still ${count === 1 ? 'has' : 'have'} files configfile ` +
+      'could not update: see why above.',
+  ]
+}
+
 function finish(
   failures: number,
   problems: string[],
@@ -1198,23 +1342,117 @@ function describePlannedDeploy(
   decision: DeployDecision,
   interactive: boolean,
 ): string {
+  const how = howOf(file)
   switch (decision.action) {
     case 'create':
-      return `would be ${file.strategy === 'global' ? 'linked' : 'copied'}`
+      return `would be ${how}`
     case 'up-to-date':
       return 'already up to date'
     case 'replace':
       return decision.what === 'copy'
         ? `would be replaced, the existing one moved to ${decision.backup}`
-        : `would be ${file.strategy === 'global' ? 'linked' : 'copied'}, the existing ` +
-            `${decision.what} moved to ${decision.backup}`
+        : `would be ${how}, the existing ${decision.what} moved to ${decision.backup}`
     case 'refresh':
-      return 'would be linked again (it pointed to an old location of the repository)'
-    case 'conflict':
-      return interactive
-        ? 'already exists: you would be asked whether to replace it'
-        : 'already exists: would be skipped (use --force to replace it)'
+      if (decision.was !== 'copy') {
+        return 'would be linked again (it pointed to an old location of the repository)'
+      }
+      return how === 'linked'
+        ? "would be linked in place of configfile's copy"
+        : 'would be copied again (the repository made a folder of the file, or the reverse)'
+    case 'convert':
+      return "would be copied in place of configfile's link"
+    case 'update':
+      return describeCopied(previewCopy(file, decision.plan, decision.replace), 'would')
+    case 'conflict': {
+      // The rest of a copy follows the repository whatever the answer.
+      const rest =
+        decision.plan == null
+          ? []
+          : previewCopy(file, decision.plan, 'none').filter(
+              copied => copied.result !== 'conflict' || copied.reason != null,
+            )
+      const what =
+        decision.paths == null
+          ? 'already exists'
+          : `${describePaths(decision.paths)} changed here and in the repository`
+      const answer = interactive
+        ? `${what}: you would be asked whether to replace ${decision.paths?.length === 1 || decision.paths == null ? 'it' : 'them'}`
+        : `${what}: would be skipped (use --force to replace ${decision.paths != null && decision.paths.length > 1 ? 'them' : 'it'})`
+      return rest.length === 0 ? answer : `${describeCopied(rest, 'would')}; ${answer}`
+    }
   }
+}
+
+/**
+ * What happened (or `would` happen, in a dry run) to the files of a copy:
+ * `updated from the repository`, `a, b: kept: changed on this machine`…
+ */
+function describeCopied(files: readonly CopiedFile[], tense: 'did' | 'would'): string {
+  const paths = (keep: (copied: CopiedFile) => boolean) =>
+    files.filter(keep).map(copied => copied.path)
+  const would = tense === 'would'
+  const reasons = [
+    ...new Set(
+      files.flatMap(copied =>
+        copied.result === 'conflict' && copied.reason != null ? [copied.reason] : [],
+      ),
+    ),
+  ]
+  const backups = files.flatMap(copied => (copied.backup == null ? [] : [copied.backup]))
+  const parts = [
+    listed(
+      paths(copied => copied.result === 'created' || copied.result === 'updated'),
+      would ? 'would be updated from the repository' : 'updated from the repository',
+    ),
+    listed(
+      paths(copied => copied.result === 'deleted'),
+      would
+        ? 'would be deleted: the repository no longer has it'
+        : 'deleted: the repository no longer has it',
+    ),
+    backups.length === 0
+      ? null
+      : `yours ${would ? 'would be' : ''}${would ? ' ' : ''}moved to ${backups.join(', ')}`,
+    listed(
+      paths(copied => copied.result === 'kept'),
+      would ? 'changed on this machine, would be kept' : 'kept: changed on this machine',
+    ),
+    listed(
+      paths(copied => copied.result === 'conflict' && copied.reason == null),
+      would
+        ? 'changed here and in the repository, would be skipped'
+        : 'skipped: changed here and in the repository',
+    ),
+    ...reasons.map(reason =>
+      listed(
+        paths(copied => copied.result === 'conflict' && copied.reason === reason),
+        `${would ? 'would be left' : 'left'} as it is: ${reason}`,
+      ),
+    ),
+    listed(
+      paths(copied => copied.result === 'failed'),
+      'failed (see below)',
+    ),
+  ].filter(part => part != null)
+  return parts.length === 0 ? 'already up to date' : parts.join('; ')
+}
+
+/** `text` for a copied file, or `a, b: text` for files of a copied folder; `null` for none. */
+function listed(paths: readonly string[], text: string): string | null {
+  if (paths.length === 0) return null
+  return paths.length === 1 && paths[0] === '' ? text : `${describePaths(paths)}: ${text}`
+}
+
+/** `it` for a copied file, or the first files of a copied folder. */
+function describePaths(paths: readonly string[], shown = 5): string {
+  if (paths.length === 1 && paths[0] === '') return 'it'
+  const named = paths.slice(0, shown).join(', ')
+  return paths.length > shown ? `${named} and ${paths.length - shown} more` : named
+}
+
+/** How a file is deployed, in messages: `linked` or `copied`. */
+function howOf(file: Pick<ModuleFile, 'strategy' | 'method'>): 'linked' | 'copied' {
+  return file.strategy === 'global' && file.method === 'link' ? 'linked' : 'copied'
 }
 
 function describePlannedUndeploy(decision: UndeployDecision): string {
@@ -1222,18 +1460,41 @@ function describePlannedUndeploy(decision: UndeployDecision): string {
     case 'not-deployed':
       return 'not deployed'
     case 'keep':
-      return `would be kept: ${describeKept(decision.state)}`
+      return `would be kept: ${describeKept(decision.state, 'would be')}`
     case 'remove':
       return `would be removed${describeBackup(decision.backup, 'would be')}`
   }
 }
 
-function describeState(state: TargetState): string {
+function describeState(state: TargetState, file: Pick<ModuleFile, 'strategy'>): string {
   switch (state.kind) {
     case 'missing':
       return 'not deployed'
     case 'deployed':
-      return 'deployed'
+      return file.strategy === 'global' ? 'linked' : 'deployed'
+    case 'copied': {
+      if (
+        [...state.changed, ...state.conflicts, ...state.outdated, ...state.deleted].some(
+          path => path !== '',
+        )
+      ) {
+        return 'copied'
+      }
+      if (state.conflicts.length > 0) {
+        return 'copied, changed here and in the repository: deploy it again to choose'
+      }
+      if (state.changed.length > 0) return 'copied, changed on this machine'
+      if (state.outdated.length > 0) {
+        return 'copied, the repository has a newer version: deploy it again'
+      }
+      return 'copied'
+    }
+    case 'linked':
+      return 'linked: deploy it again to copy it'
+    case 'copied-not-linked':
+      return state.changed
+        ? 'copied, changed on this machine: deploy it again with --force to link it'
+        : 'copied: deploy it again to link it'
     case 'modified':
       return 'modified since it was copied'
     case 'identical':
@@ -1249,7 +1510,7 @@ function describeState(state: TargetState): string {
   }
 }
 
-function describeKept(state: KeptState): string {
+function describeKept(state: KeptState, tense: 'would be' | 'was' = 'was'): string {
   switch (state.kind) {
     case 'foreign':
       return `the ${state.what} there was not deployed by configfile`
@@ -1259,10 +1520,25 @@ function describeKept(state: KeptState): string {
       return 'it was modified since it was copied'
     case 'source-missing':
       return 'its source is missing from the repository, so it cannot be compared'
+    case 'changed': {
+      if (state.paths.length === 1 && state.paths[0] === '') return 'it was changed on this machine'
+      const parts = [
+        state.paths.length === 0 ? null : `${describePaths(state.paths)} changed on this machine`,
+        state.others.length === 0
+          ? null
+          : `${plural(state.others.length, 'file')} configfile did not copy ` +
+            `(${describePaths(state.others)})`,
+        state.removed === 0
+          ? null
+          : `the other ${plural(state.removed, 'file')} ${
+              tense === 'was' ? (state.removed === 1 ? 'was' : 'were') : 'would be'
+            } removed`,
+      ]
+      return parts.filter(part => part != null).join('; ')
+    }
   }
 }
 
-/** `, <backup> restored` and its variants, for undeploy results and dry runs. */
 function describeBackup(backup: BackupCheck | null, tense: 'would be' | 'was'): string {
   if (backup == null) return ''
   switch (backup.status) {
@@ -1275,14 +1551,24 @@ function describeBackup(backup: BackupCheck | null, tense: 'would be' | 'was'): 
   }
 }
 
-function describeDeploy(result: Exclude<DeployResult, { status: 'conflict' }>): string {
+export function describeDeploy(
+  file: ModuleFile,
+  result: Exclude<DeployResult, { status: 'conflict' }>,
+): string {
+  const how = howOf(file)
   switch (result.status) {
     case 'deployed':
-      return '(deployed)'
+      return `(${how})`
     case 'up-to-date':
       return '(already up to date)'
     case 'backed-up':
-      return `(deployed, previous file moved to ${result.backup})`
+      return `(${how}, previous file moved to ${result.backup})`
+    case 'converted':
+      return how === 'copied'
+        ? "(copied in place of configfile's link)"
+        : "(linked in place of configfile's copy)"
+    case 'updated':
+      return `(${describeCopied(result.outcome.files, 'did')})`
   }
 }
 
@@ -1301,22 +1587,70 @@ function describeUndeploy(result: UndeployResult): string {
 }
 
 /** Records a deployment in the history (files already in place are only counted). */
-function recordDeploy(
+export function recordDeploy(
   file: ModuleFile,
   result: Exclude<DeployResult, { status: 'conflict' }>,
   ctx: Context,
 ): void {
-  if (result.status === 'up-to-date') {
-    ctx.history.unchanged()
-    return
+  const how = file.strategy === 'global' && file.method === 'link' ? 'link' : 'copy'
+  switch (result.status) {
+    case 'up-to-date':
+      ctx.history.unchanged()
+      return
+    case 'deployed':
+    case 'backed-up':
+    case 'converted':
+      ctx.history.record({
+        kind: 'deployed',
+        how,
+        source: file.source,
+        target: file.target,
+        ...(result.status === 'backed-up' && { backup: result.backup }),
+        ...(result.status === 'converted' && { replaced: how === 'link' ? 'copy' : 'link' }),
+      })
+      return
+    case 'updated':
+      for (const copied of result.outcome.files) recordCopied(file, copied, ctx)
+      return
   }
-  ctx.history.record({
-    kind: 'deployed',
-    how: file.strategy === 'global' ? 'link' : 'copy',
-    source: file.source,
-    target: file.target,
-    ...(result.status === 'backed-up' && { backup: result.backup }),
-  })
+}
+
+/** One file of a copy in the history, at its own path. */
+function recordCopied(file: ModuleFile, copied: CopiedFile, ctx: Context): void {
+  const inside = (root: string) =>
+    copied.path === '' ? root : path.join(root, ...copied.path.split('/'))
+  const target = inside(file.target)
+  const backup = copied.backup == null ? {} : { backup: copied.backup }
+  switch (copied.result) {
+    case 'created':
+    case 'updated':
+      ctx.history.record({
+        kind: 'deployed',
+        how: 'copy',
+        source: inside(file.source),
+        target,
+        ...(copied.backup == null
+          ? copied.result === 'updated' && { replaced: 'copy' as const }
+          : backup),
+      })
+      return
+    case 'deleted':
+      ctx.history.record({
+        kind: 'removed',
+        target,
+        ...(copied.backup != null && { movedTo: copied.backup }),
+      })
+      return
+    case 'kept':
+      ctx.history.record({ kind: 'kept', target, reason: 'changed' })
+      return
+    case 'conflict':
+      ctx.history.record({ kind: 'skipped', target, reason: 'conflict' })
+      return
+    case 'failed':
+      ctx.history.record({ kind: 'failed', target, reason: copied.reason ?? 'failed' })
+      return
+  }
 }
 
 /** Records an undeployment in the history (files that were not deployed are only counted). */

@@ -2,7 +2,7 @@
 title: Upgrading from 0.3
 description: What changes for users of configfile 0.3.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 - With Homebrew or npm, Node.js 24.11 or later is required, on macOS or Linux; the standalone binary needs none. Install again as described in [Installation](/getting-started/installation/). To switch to Homebrew or the install script, remove the npm version first (`npm uninstall --global configfile`).

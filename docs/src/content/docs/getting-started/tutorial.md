@@ -39,7 +39,7 @@ Then tell *configfile* where this file goes, in the module's `settings.json`:
 }
 ```
 
-`"deploy": "global"` means the file is linked into your home folder. The [modules reference](/reference/modules/) lists every option.
+`"deploy": "global"` means the file is copied into your home folder, and kept up to date with the repository. The [modules reference](/reference/modules/) lists every option.
 
 ## 3. Add a setup script
 
@@ -107,7 +107,7 @@ configfile modules deploy zsh --dry-run
 
 ```txt
  Info  Dry run, nothing is changed. Deploying zsh would do:
-- ~/.zshrc (would be linked, the existing file moved to ~/.zshrc.old)
+- ~/.zshrc (would be copied, the existing file moved to ~/.zshrc.old)
  Done  Dry run finished.
 ```
 
@@ -119,16 +119,11 @@ configfile modules deploy zsh
 
 ```txt
  Info  Deploying zsh…
-- ~/.zshrc (deployed, previous file moved to ~/.zshrc.old)
+- ~/.zshrc (copied, previous file moved to ~/.zshrc.old)
  Done  Deployment finished.
 ```
 
-`~/.zshrc` is now a link to the file in the repository:
-
-```sh
-ls -l ~/.zshrc
-# ~/.zshrc -> ~/.configfile/dotfiles/files/zsh/zshrc
-```
+`~/.zshrc` is now a copy of the file in the repository, which *configfile* keeps up to date. If something changes it on this machine (you, or a tool that writes its own configuration), *configfile* keeps that change: `configfile modules status` shows it.
 
 ## 6. Run the setup script
 
@@ -161,10 +156,11 @@ configfile update
 
 ```txt
  Info  Syncing ~/.configfile/dotfiles…
- Done  Synced with origin/main (117f764). Global files are links, so they are up to date; run "configfile modules deploy --all" for new files.
+- ~/.zshrc (updated from the repository)
+ Done  Synced with origin/main (117f764). Run "configfile modules deploy --all" for new files.
 ```
 
-Because `~/.zshrc` is a link, the new alias is there right away. On your other machines, `configfile update` does the same.
+`update` updated your copy of `~/.zshrc`, so the new alias is there. On your other machines, `configfile update` does the same.
 
 :::tip
 To set up a new machine, install *configfile*, then run `configfile init`, `configfile modules deploy --all` and your setup script.
@@ -180,13 +176,14 @@ configfile history
 
 ```txt
 2026-10-08 11:29  modules deploy zsh  ok
-  linked    ~/.zshrc  (previous file moved to ~/.zshrc.old)
+  copied    ~/.zshrc  (previous file moved to ~/.zshrc.old)
 
 2026-10-08 11:29  update  ok
   synced    ~/.configfile/dotfiles  with origin/main (f9a3f1e → 117f764)
+  updated   ~/.zshrc
 ```
 
-And every deployment can be reverted. `undeploy` removes the link and puts your previous file back:
+And every deployment can be reverted. `undeploy` removes the copy and puts your previous file back (a copy changed on this machine is kept, and so is your previous file, as `.old`):
 
 ```sh
 configfile modules undeploy zsh

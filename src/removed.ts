@@ -14,6 +14,10 @@ export interface RecordedFile {
   readonly source: string
   readonly target: string
   readonly strategy: ModuleFile['strategy']
+  /** How configfile deployed it, as recorded. */
+  readonly method: ModuleFile['method']
+  /** The entry it was deployed for, when recorded. */
+  readonly entry?: Entry
   /** The current repository, which undeploy must never touch. */
   readonly repository: string
   /** The module folder it came from, or `null` when that folder is gone. */
@@ -98,6 +102,8 @@ export async function findRemovedFiles(
       source: deployed.source,
       target,
       strategy,
+      method: strategy === 'global' && deployed.copy == null ? 'link' : 'copy',
+      ...(deployed.entry != null && { entry: deployed.entry }),
       repository,
       module: module?.path ?? null,
       ...(strategy === 'local' && deployed.entry != null && { folder: deployed.entry.folder }),

@@ -73,7 +73,8 @@ const gitHasReferenceHook = (() => {
   return major > 2 || (major === 2 && minor >= 28)
 })()
 
-async function withModule(sandbox: Sandbox) {
+/** A `zsh` module: `zshrc` global (copied, or linked with `method`), `a` and `b` local. */
+async function withModule(sandbox: Sandbox, { method }: { method?: 'link' | 'copy' } = {}) {
   await sandbox.configure()
   await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
   await sandbox.write('home/dotfiles/files/zsh/a', 'repo a')
@@ -84,7 +85,12 @@ async function withModule(sandbox: Sandbox) {
     'home/dotfiles/files/zsh/settings.json',
     JSON.stringify({
       files: [
-        { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+        {
+          source_path: 'zshrc',
+          target_path: '~/.zshrc',
+          deploy: 'global',
+          ...(method != null && { method }),
+        },
         { source_path: 'a', target_path: 'a', deploy: 'local' },
         { source_path: 'b', target_path: 'b', deploy: 'local' },
         { source_path: 'parked', target_path: '~/.parked', deploy: 'none' },
@@ -128,17 +134,31 @@ describe('modules', () => {
     }
   })
 
-  it('links global files', async () => {
+  it('copies global files', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
 
     const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
 
     expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`${sandbox.home}/.zshrc (copied)`)
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    expect((await lstat(zshrc)).isSymbolicLink()).toBe(false)
+    expect(await readFile(zshrc, 'utf8')).toBe('zshrc')
+    expect(existsSync(path.join(sandbox.cwd, 'a'))).toBe(false)
+  })
+
+  it('links global files with "method": "link"', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox, { method: 'link' })
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`${sandbox.home}/.zshrc (linked)`)
     expect(await readlink(path.join(sandbox.home, '.zshrc'))).toBe(
       path.join(sandbox.repo, 'files/zsh/zshrc'),
     )
-    expect(existsSync(path.join(sandbox.cwd, 'a'))).toBe(false)
   })
 
   it('never deploys "deploy": "none" files, and warns about files without a strategy', async () => {
@@ -176,8 +196,8 @@ describe('modules', () => {
       `${path.join(sandbox.cwd, 'a')} already exists. Replace it (the current one is moved to .old)?`,
     ])
     // The question comes after the other files are deployed.
-    expect(result.stdout.indexOf('/b (deployed)')).toBeGreaterThan(-1)
-    expect(result.stdout.indexOf('/b (deployed)')).toBeLessThan(
+    expect(result.stdout.indexOf('/b (copied)')).toBeGreaterThan(-1)
+    expect(result.stdout.indexOf('/b (copied)')).toBeLessThan(
       result.stdout.indexOf('/a (already exists, skipped)'),
     )
     expect(await readFile(path.join(sandbox.cwd, 'a'), 'utf8')).toBe('mine')
@@ -255,7 +275,7 @@ describe('modules', () => {
 
     const first = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
     expect(first.code).toBe(0)
-    expect(first.stdout).toContain(`(deployed, previous file moved to ${sandbox.home}/.zshrc.old)`)
+    expect(first.stdout).toContain(`(copied, previous file moved to ${sandbox.home}/.zshrc.old)`)
     expect(await readFile(path.join(sandbox.home, '.zshrc.old'), 'utf8')).toBe('mine')
 
     const second = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
@@ -368,12 +388,123 @@ describe('modules status, dry run and undeploy', () => {
 
     await runCli(sandbox, ['modules', 'deploy', 'zsh'])
     const after = await runCli(sandbox, ['m', 'st', 'zsh'])
-    expect(after.stdout).toContain(`${sandbox.home}/.zshrc (deployed)`)
+    expect(after.stdout).toContain(`${sandbox.home}/.zshrc (copied)`)
 
     await sandbox.write('cwd/a', 'edited')
     const local = await runCli(sandbox, ['modules', 'status', '--local'])
     expect(local.stdout).toContain(`${sandbox.cwd}/a (not deployed: a file is in the way)`)
     expect(local.stdout).toContain(`${sandbox.cwd}/b (not deployed)`)
+  })
+
+  it('shows the files of a copy that changed here, in the repository, or both', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    for (const name of ['a', 'b', 'c'])
+      await sandbox.write(`home/dotfiles/files/vim/vim/${name}`, name)
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    await sandbox.write('home/.vim/a', 'mine')
+    await sandbox.write('home/dotfiles/files/vim/vim/b', 'theirs')
+    await sandbox.write('home/.vim/c', 'mine')
+    await sandbox.write('home/dotfiles/files/vim/vim/c', 'theirs')
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const planned = await runCli(sandbox, ['modules', 'deploy', '--dry-run', 'vim'], [], {
+      interactive: false,
+    })
+
+    expect(status.stdout).toBe(
+      'vim:\n' +
+        `  ${sandbox.home}/.vim (copied)\n` +
+        '    a (changed on this machine)\n' +
+        '    b (the repository has a newer version)\n' +
+        '    c (changed here and in the repository)\n' +
+        ' Info  Files changed on this machine are kept, and are not in the repository: to have ' +
+        'a change on every machine, make it in your working copy, then commit and push. ' +
+        '"diff -u <file in the repository> <file>" shows it.\n',
+    )
+    const vim = `${sandbox.home}/.vim`
+    expect(planned.stdout).toContain(
+      `${vim} (b: would be updated from the repository; a: changed on this machine, would be ` +
+        'kept; c changed here and in the repository: would be skipped (use --force to replace it))',
+    )
+    expect(planned.code).toBe(1)
+
+    // The real run does what the dry run said.
+    const real = await runCli(sandbox, ['modules', 'deploy', 'vim'], [], { interactive: false })
+    expect(real.stdout).toContain(
+      `${vim} (b: updated from the repository; a: kept: changed on this machine; c: skipped: ` +
+        'changed here and in the repository)',
+    )
+    expect(real.code).toBe(1)
+    expect(real.stderr).toContain(
+      "1 copy changed both on this machine and in the repository was left as it is. Use --force to replace it with the repository's version.",
+    )
+    expect(await readFile(path.join(sandbox.home, '.vim/b'), 'utf8')).toBe('theirs')
+    expect(await readFile(path.join(sandbox.home, '.vim/c'), 'utf8')).toBe('mine')
+  })
+
+  it('shows the control characters of file names it asks about as escapes', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    const name = 'x\u001b]0;HIJACK\u0007'
+    await sandbox.write(`home/dotfiles/files/vim/vim/${name}`, 'repo')
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    await sandbox.write(`home/.vim/${name}`, 'mine')
+    await sandbox.write(`home/dotfiles/files/vim/vim/${name}`, 'theirs')
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'vim'], [false])
+
+    expect(result.asked).toEqual([
+      `In ${sandbox.home}/.vim, x\\x1b]0;HIJACK\\x07 changed here and in the repository. ` +
+        "Replace it with the repository's version (yours is moved to .old)?",
+    ])
+  })
+
+  it('shows the status of a copied folder whose source links to a folder containing it', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/vim/vim/a', 'a')
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    await symlink('.', path.join(sandbox.repo, 'files/vim/vim/loop'))
+
+    const result = await runCli(sandbox, ['modules', 'status'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toContain('makes a loop')
+  })
+
+  it('previews, with --force, the files of a copy the real run recreates', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    for (const name of ['a', 'b']) await sandbox.write(`home/dotfiles/files/vim/vim/${name}`, name)
+    await sandbox.write(
+      'home/dotfiles/files/vim/settings.json',
+      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+    )
+    await runCli(sandbox, ['modules', 'deploy', 'vim'])
+    await rm(path.join(sandbox.home, '.vim/a'))
+    await rm(path.join(sandbox.home, '.vim/b'))
+    await sandbox.write('home/dotfiles/files/vim/vim/a', 'theirs')
+
+    const planned = await runCli(sandbox, ['modules', 'deploy', '-n', '--force', 'vim'])
+    const real = await runCli(sandbox, ['modules', 'deploy', '--force', 'vim'])
+
+    expect(planned.stdout).toContain(
+      `${sandbox.home}/.vim (a, b: would be updated from the repository)`,
+    )
+    expect(real.stdout).toContain(`${sandbox.home}/.vim (a, b: updated from the repository)`)
   })
 
   it('shows what a deployment would do without changing anything', async () => {
@@ -385,7 +516,7 @@ describe('modules status, dry run and undeploy', () => {
 
     expect(result.code).toBe(0)
     expect(result.stdout).toContain(
-      `${sandbox.home}/.zshrc (would be linked, the existing file moved to ${sandbox.home}/.zshrc.old)`,
+      `${sandbox.home}/.zshrc (would be copied, the existing file moved to ${sandbox.home}/.zshrc.old)`,
     )
     expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('mine')
 
@@ -400,7 +531,7 @@ describe('modules status, dry run and undeploy', () => {
 
   it('undeploys: removes links, restores backups and keeps what it did not deploy', async () => {
     const sandbox = await createSandbox()
-    await withModule(sandbox)
+    await withModule(sandbox, { method: 'link' })
     await sandbox.write('home/.zshrc', 'mine')
     await runCli(sandbox, ['modules', 'deploy', 'zsh'])
 
@@ -473,6 +604,7 @@ describe('modules status, dry run and undeploy', () => {
               target: '~/.zshrc',
               folder: sandbox.home,
             },
+            copy: { kind: 'file', sha256: expect.stringMatching(/^[0-9a-f]{64}$/), size: 5 },
           },
           backups: [
             {
@@ -578,9 +710,11 @@ describe('modules status, dry run and undeploy', () => {
       try {
         const result = await runCli(sandbox, ['modules', 'status'])
 
-        expect(result.code).toBe(0)
+        // Every file is shown; the command then fails, so that a script notices.
+        expect(result.code).toBe(1)
         expect(result.stdout).toContain(`${sandbox.home}/locked/f (cannot be checked:`)
         expect(result.stdout).toContain(`b:\n  ${sandbox.home}/.g (not deployed)`)
+        expect(result.stderr).toContain('1 file could not be checked: see why above.')
       } finally {
         await chmod(path.join(sandbox.home, 'locked'), 0o755)
       }
@@ -600,9 +734,7 @@ describe('modules status, dry run and undeploy', () => {
 
     expect(result.code).toBe(0)
     expect(result.stderr).toContain('settings.json is a list (configfile 0.3 format)')
-    expect(await readlink(path.join(sandbox.home, '.zshrc'))).toBe(
-      path.join(sandbox.repo, 'files/zsh/zshrc'),
-    )
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('zshrc')
   })
 
   it('never lets a source outside the module be deployed or undeployed', async () => {
@@ -651,6 +783,88 @@ describe('modules status, dry run and undeploy', () => {
     expect(await readFile(path.join(sandbox.home, '.ssh/id_rsa'), 'utf8')).toBe('PRIVATE KEY')
   })
 
+  it.each([
+    ['a path out of the copy', { '../.ssh/id_rsa': 'hash' }],
+    ['an absolute path', { '/etc/hosts': 'hash' }],
+    ['an empty segment', { 'a//b': 'hash' }],
+    ['a dot segment', { './a': 'hash' }],
+    ['an empty path', { '': 'hash' }],
+    ['a NUL in a path', { 'a\u0000b': 'hash' }],
+    ['a hash that is not SHA-256', { a: 'short' }],
+  ])('refuses a copy record with %s before changing anything', async (_, files) => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    const key = await sandbox.write('home/.ssh/id_rsa', 'PRIVATE KEY')
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    const sha256 = (await import('node:crypto'))
+      .createHash('sha256')
+      .update('PRIVATE KEY')
+      .digest('hex')
+    const manifest = Object.fromEntries(
+      Object.entries(files).map(([name, hash]) => [
+        name,
+        { sha256: hash === 'hash' ? sha256 : hash, size: 11 },
+      ]),
+    )
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({
+        version: 2,
+        targets: {
+          [zshrc]: {
+            target: zshrc,
+            deployed: {
+              strategy: 'global',
+              source: path.join(sandbox.repo, 'files/zsh/zshrc'),
+              identity: { dev: 1, ino: 1 },
+              copy: { kind: 'folder', files: manifest },
+            },
+            backups: [],
+          },
+        },
+      }),
+    )
+
+    for (const args of [
+      ['modules', 'undeploy', 'zsh'],
+      ['modules', 'deploy', 'zsh'],
+    ]) {
+      const result = await runCli(sandbox, args)
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain('is not a valid configfile state file')
+    }
+    expect(await readFile(key, 'utf8')).toBe('PRIVATE KEY')
+  })
+
+  it('refuses a copy record on a local file', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox)
+    const a = path.join(sandbox.cwd, 'a')
+    await sandbox.write(
+      'home/.configfile/state.json',
+      JSON.stringify({
+        version: 2,
+        targets: {
+          [a]: {
+            target: a,
+            deployed: {
+              strategy: 'local',
+              source: path.join(sandbox.repo, 'files/zsh/a'),
+              identity: { dev: 1, ino: 1 },
+              copy: { kind: 'file', sha256: '0'.repeat(64), size: 1 },
+            },
+            backups: [],
+          },
+        },
+      }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'status', '--local'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('is not a valid configfile state file')
+  })
+
   it('refuses a state file whose deployed record is malformed', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
@@ -692,31 +906,39 @@ describe('modules status, dry run and undeploy', () => {
     expect(result.stdout).toContain('x\\x1b]0;HIJACK\\x07\\rfake (no deployment strategy)')
   })
 
-  it('stacks two modules deployed to the same target, and unwinds them', async () => {
-    const sandbox = await createSandbox()
-    await sandbox.configure()
-    for (const name of ['a', 'b']) {
-      await sandbox.write(`home/dotfiles/files/${name}/x`, name)
-      await sandbox.write(
-        `home/dotfiles/files/${name}/settings.json`,
-        JSON.stringify({ files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global' }] }),
+  it.each([
+    ['copy', 'copied', 'file'],
+    ['link', 'linked', 'link'],
+  ] as const)(
+    'stacks two modules deployed to the same target, and unwinds them (%s)',
+    async (method, how, what) => {
+      const sandbox = await createSandbox()
+      await sandbox.configure()
+      for (const name of ['a', 'b']) {
+        await sandbox.write(`home/dotfiles/files/${name}/x`, name)
+        await sandbox.write(
+          `home/dotfiles/files/${name}/settings.json`,
+          JSON.stringify({
+            files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global', method }],
+          }),
+        )
+      }
+      await sandbox.write('home/.x', 'original')
+      const target = path.join(sandbox.home, '.x')
+
+      await runCli(sandbox, ['modules', 'deploy', 'a'])
+      const deployB = await runCli(sandbox, ['modules', 'deploy', 'b'])
+      expect(deployB.stdout).toContain(`(${how}, previous file moved to ${target}.old.1)`)
+      expect((await runCli(sandbox, ['modules', 'status', 'a'])).stdout).toContain(
+        `(not deployed: a ${what} is in the way)`,
       )
-    }
-    await sandbox.write('home/.x', 'original')
-    const target = path.join(sandbox.home, '.x')
 
-    await runCli(sandbox, ['modules', 'deploy', 'a'])
-    const deployB = await runCli(sandbox, ['modules', 'deploy', 'b'])
-    expect(deployB.stdout).toContain(`(deployed, previous file moved to ${target}.old.1)`)
-    expect((await runCli(sandbox, ['modules', 'status', 'a'])).stdout).toContain(
-      '(not deployed: a link is in the way)',
-    )
-
-    await runCli(sandbox, ['modules', 'undeploy', 'b'])
-    expect(await readlink(target)).toBe(path.join(sandbox.repo, 'files/a/x'))
-    await runCli(sandbox, ['modules', 'undeploy', 'a'])
-    expect(await readFile(target, 'utf8')).toBe('original')
-  })
+      await runCli(sandbox, ['modules', 'undeploy', 'b'])
+      expect(await readFile(target, 'utf8')).toBe('a')
+      await runCli(sandbox, ['modules', 'undeploy', 'a'])
+      expect(await readFile(target, 'utf8')).toBe('original')
+    },
+  )
 
   it('refuses to copy a folder containing a link loop', async () => {
     const sandbox = await createSandbox()
@@ -790,7 +1012,9 @@ describe('changes made through links', () => {
     await commitInRemote(
       'files/zsh/settings.json',
       JSON.stringify({
-        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+        ],
       }),
     )
     await commitInRemote('files/nvim/nvim/init.lua', 'init')
@@ -799,7 +1023,9 @@ describe('changes made through links', () => {
     await commitInRemote(
       'files/nvim/settings.json',
       JSON.stringify({
-        files: [{ source_path: 'nvim', target_path: '~/.config/nvim', deploy: 'global' }],
+        files: [
+          { source_path: 'nvim', target_path: '~/.config/nvim', deploy: 'global', method: 'link' },
+        ],
       }),
     )
     await runCli(sandbox, ['update'])
@@ -818,11 +1044,11 @@ describe('changes made through links', () => {
     expect(result.code).toBe(0)
     expect(result.stdout).toContain(
       'nvim:\n' +
-        `  ${sandbox.home}/.config/nvim (deployed)\n` +
+        `  ${sandbox.home}/.config/nvim (linked)\n` +
         '    lazy-lock.json (new, not in the repository)\n' +
         '    old.lua (deleted through the link)\n' +
         'zsh:\n' +
-        `  ${sandbox.home}/.zshrc (deployed)\n` +
+        `  ${sandbox.home}/.zshrc (linked)\n` +
         '    changed through the link\n',
     )
     expect(result.stdout).toContain(
@@ -841,8 +1067,8 @@ describe('changes made through links', () => {
     const result = await runCli(sandbox, ['modules', 'status'])
 
     expect(result.stdout).toBe(
-      `nvim:\n  ${sandbox.home}/.config/nvim (deployed)\n` +
-        `zsh:\n  ${sandbox.home}/.zshrc (deployed)\n`,
+      `nvim:\n  ${sandbox.home}/.config/nvim (linked)\n` +
+        `zsh:\n  ${sandbox.home}/.zshrc (linked)\n`,
     )
   })
 
@@ -855,7 +1081,7 @@ describe('changes made through links', () => {
       const result = await runCli(sandbox, ['modules', 'status'])
 
       expect(result.code).toBe(0)
-      expect(result.stdout).toContain(`${sandbox.home}/.zshrc (deployed)\n`)
+      expect(result.stdout).toContain(`${sandbox.home}/.zshrc (linked)\n`)
       expect(result.stderr).toContain(
         'Changes made through links cannot be checked: git is not installed.',
       )
@@ -890,14 +1116,14 @@ describe('changes made through links', () => {
     const result = await runCli(sandbox, ['modules', 'status', 'nvim'])
 
     expect(result.stdout).toContain(
-      `nvim:\n  ${sandbox.home}/.config/nvim (deployed)\n` +
+      `nvim:\n  ${sandbox.home}/.config/nvim (linked)\n` +
         '    pack/plugin/ (new, not in the repository)\n Info',
     )
   })
 
   it('says nothing when no link is deployed, or the folder is not a git repository', async () => {
     const sandbox = await createSandbox()
-    await withModule(sandbox)
+    await withModule(sandbox, { method: 'link' })
     vi.stubEnv('PATH', '/nonexistent')
 
     try {
@@ -906,7 +1132,7 @@ describe('changes made through links', () => {
       const after = await runCli(sandbox, ['modules', 'status'])
 
       expect(before.stdout).not.toContain('Changes made through links')
-      expect(after.stdout).toContain(`${sandbox.home}/.zshrc (deployed)`)
+      expect(after.stdout).toContain(`${sandbox.home}/.zshrc (linked)`)
       expect(after.stdout).not.toContain('Changes made through links')
     } finally {
       vi.unstubAllEnvs()
@@ -921,8 +1147,8 @@ describe('files the repository no longer deploys', () => {
     await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
     await sandbox.write('home/dotfiles/files/zsh/aliases', 'aliases')
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
-      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global', method: 'link' },
     ])
     await sandbox.write('home/.aliases', 'mine')
     expect((await runCli(sandbox, ['modules', 'deploy', 'zsh'])).code).toBe(0)
@@ -939,7 +1165,7 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases, zshrc } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
     ])
     await rm(path.join(sandbox.repo, 'files/zsh/aliases'))
 
@@ -978,7 +1204,7 @@ describe('files the repository no longer deploys', () => {
     const { aliases, zshrc } = await withDeployedModule(sandbox)
     await sandbox.write('home/dotfiles/files/git/gitconfig', 'git')
     await writeSettings(sandbox, 'git', [
-      { source_path: 'gitconfig', target_path: '~/.gitconfig', deploy: 'global' },
+      { source_path: 'gitconfig', target_path: '~/.gitconfig', deploy: 'global', method: 'link' },
     ])
     await rm(path.join(sandbox.repo, 'files/zsh'), { recursive: true })
 
@@ -995,7 +1221,7 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
     ])
 
     const result = await runCli(sandbox, ['modules', 'undeploy'], [true])
@@ -1008,14 +1234,14 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
       { source_path: 'aliases', target_path: '~/.aliases', deploy: 'none' },
     ])
 
     const status = await runCli(sandbox, ['modules', 'status'])
     await runCli(sandbox, ['modules', 'undeploy', '--removed'])
 
-    expect(status.stdout).toContain(`  ${aliases} (deployed)\n`)
+    expect(status.stdout).toContain(`  ${aliases} (linked)\n`)
     expect(await readFile(aliases, 'utf8')).toBe('mine')
   })
 
@@ -1023,8 +1249,8 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
-      { source_path: 'aliases', target_path: '~/.zsh_aliases', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+      { source_path: 'aliases', target_path: '~/.zsh_aliases', deploy: 'global', method: 'link' },
     ])
 
     await runCli(sandbox, ['modules', 'undeploy', '--removed'])
@@ -1038,8 +1264,8 @@ describe('files the repository no longer deploys', () => {
       'with an invalid entry',
       JSON.stringify({
         files: [
-          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
-          { source_path: 'aliases', deploy: 'global' },
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+          { source_path: 'aliases', deploy: 'global', method: 'link' },
         ],
       }),
     ],
@@ -1047,7 +1273,7 @@ describe('files the repository no longer deploys', () => {
       'with an entry without strategy',
       JSON.stringify({
         files: [
-          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
           { source_path: 'aliases', target_path: '~/.aliases' },
         ],
       }),
@@ -1077,13 +1303,13 @@ describe('files the repository no longer deploys', () => {
     await sandbox.configure()
     await sandbox.write('home/dotfiles/files/zsh!/aliases', 'aliases')
     await writeSettings(sandbox, 'zsh!', [
-      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global', method: 'link' },
     ])
     await runCli(sandbox, ['modules', 'deploy', 'zsh'])
     // Same module name: "zsh!" is now ignored, with a warning.
     await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
     ])
 
     const status = await runCli(sandbox, ['modules', 'status'])
@@ -1170,7 +1396,7 @@ describe('files the repository no longer deploys', () => {
     await sandbox.configure()
     await sandbox.write('home/dotfiles/files/app/apprc', 'app')
     await writeSettings(sandbox, 'app', [
-      { source_path: 'apprc', target_path: '~/.cfg/apprc', deploy: 'global' },
+      { source_path: 'apprc', target_path: '~/.cfg/apprc', deploy: 'global', method: 'link' },
     ])
     await mkdir(path.join(sandbox.home, 'real-a'))
     await symlink(path.join(sandbox.home, 'real-a'), path.join(sandbox.home, '.cfg'))
@@ -1197,11 +1423,11 @@ describe('files the repository no longer deploys', () => {
     await sandbox.configure()
     await sandbox.write('home/dotfiles/files/app/apprc', 'app')
     await writeSettings(sandbox, 'app', [
-      { source_path: 'apprc', target_path: '~/.apprc', deploy: 'global' },
+      { source_path: 'apprc', target_path: '~/.apprc', deploy: 'global', method: 'link' },
     ])
     await runCli(sandbox, ['modules', 'deploy', 'app'])
     await writeSettings(sandbox, 'app', [
-      { source_path: 'apprc', target_path: '~/.AppRc', deploy: 'global' },
+      { source_path: 'apprc', target_path: '~/.AppRc', deploy: 'global', method: 'link' },
     ])
 
     const status = await runCli(sandbox, ['modules', 'status'])
@@ -1217,7 +1443,9 @@ describe('files the repository no longer deploys', () => {
     await sandbox.write(
       'external-work/settings.json',
       JSON.stringify({
-        files: [{ source_path: 'workrc', target_path: '~/.workrc', deploy: 'global' }],
+        files: [
+          { source_path: 'workrc', target_path: '~/.workrc', deploy: 'global', method: 'link' },
+        ],
       }),
     )
     await mkdir(path.join(sandbox.repo, 'files'), { recursive: true })
@@ -1260,7 +1488,7 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
     ])
     await rm(aliases)
     await sandbox.write('home/.aliases', 'my own')
@@ -1293,7 +1521,7 @@ describe('files the repository no longer deploys', () => {
     const sandbox = await createSandbox()
     const { aliases } = await withDeployedModule(sandbox)
     await writeSettings(sandbox, 'zsh', [
-      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
     ])
     await rm(aliases)
 
@@ -1382,6 +1610,44 @@ describe('files the repository no longer deploys', () => {
     expect(fromProject.stdout).toContain(
       'No longer deployed by the repository (run "configfile modules undeploy --removed --local"):',
     )
+  })
+
+  it('undeploys a removed copy unless it changed, and follows an entry that changed method', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write('home/dotfiles/files/zsh/aliases', 'aliases')
+    await sandbox.write('home/dotfiles/files/zsh/env', 'env')
+    const entries = [
+      { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
+      { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global' },
+      { source_path: 'env', target_path: '~/.env', deploy: 'global' },
+    ]
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', JSON.stringify({ files: entries }))
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await sandbox.write('home/.env', 'changed on this machine')
+    // The first entry now asks for a link; the second one is removed.
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      JSON.stringify({ files: [{ ...entries[0], method: 'link' }] }),
+    )
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const result = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    const aliases = path.join(sandbox.home, '.aliases')
+    expect(status.stdout).toContain(`${zshrc} (copied: deploy it again to link it)`)
+    expect(status.stdout).toContain(
+      `No longer deployed by the repository (run "configfile modules undeploy --removed"):\n  ${aliases} (`,
+    )
+    expect(result.stdout).toContain(`- ${aliases} (removed)`)
+    expect(result.stdout).toContain(
+      `- ${path.join(sandbox.home, '.env')} (kept: it was changed on this machine; configfile no longer tracks it)`,
+    )
+    expect(existsSync(aliases)).toBe(false)
+    expect(await readFile(path.join(sandbox.home, '.env'), 'utf8')).toBe('changed on this machine')
+    expect(await readFile(zshrc, 'utf8')).toBe('zshrc')
   })
 
   it('refuses --removed with --all', async () => {
@@ -2341,7 +2607,9 @@ describe('update', () => {
     await commitInRemote(
       'files/zsh/settings.json',
       JSON.stringify({
-        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+        ],
       }),
     )
     await runCli(sandbox, ['update'])
@@ -2364,7 +2632,9 @@ describe('update', () => {
     await mirror.commitInRemote(
       'files/zsh/settings.json',
       JSON.stringify({
-        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+        files: [
+          { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+        ],
       }),
     )
     await runCli(sandbox, ['update'])
@@ -2479,7 +2749,9 @@ describe('update', () => {
     await commitInRemote('files/vim/vim/old.vim', 'vim')
     await commitInRemote(
       'files/vim/settings.json',
-      JSON.stringify({ files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global' }] }),
+      JSON.stringify({
+        files: [{ source_path: 'vim', target_path: '~/.vim', deploy: 'global', method: 'link' }],
+      }),
     )
     await runCli(sandbox, ['update'])
     await runCli(sandbox, ['modules', 'deploy', 'vim'])
@@ -2523,6 +2795,217 @@ describe('update', () => {
     expect(await readFile(path.join(workingCopy, 'files/zsh/zshrc'), 'utf8')).toBe(
       'from remote\nadded by a tool\n',
     )
+  })
+
+  /** A mirror with `~/.zshrc` and the `~/.config/nvim` folder deployed as copies. */
+  async function withCopies(sandbox: Sandbox, { hooks = {} }: { hooks?: object } = {}) {
+    const mirror = await createMirror(sandbox)
+    await mirror.commitInRemote('files/zsh/zshrc', 'zshrc')
+    await mirror.commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+        ...hooks,
+      }),
+    )
+    await mirror.commitInRemote('files/nvim/nvim/init.lua', 'init')
+    await mirror.commitInRemote('files/nvim/nvim/lua/opts.lua', 'opts')
+    await mirror.commitInRemote(
+      'files/nvim/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'nvim', target_path: '~/.config/nvim', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', '--all'])
+    return mirror
+  }
+
+  it("keeps a tool's changes to a copy, and the files it creates in a copied folder", async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'set by a tool')
+    await sandbox.write('home/.config/nvim/lazy-lock.json', '{}')
+    await commitInRemote('files/nvim/nvim/lua/opts.lua', 'opts v2')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(await savedPatches(sandbox)).toEqual([])
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('set by a tool')
+    expect(await readFile(path.join(sandbox.home, '.config/nvim/lazy-lock.json'), 'utf8')).toBe(
+      '{}',
+    )
+    expect(await readFile(path.join(sandbox.home, '.config/nvim/lua/opts.lua'), 'utf8')).toBe(
+      'opts v2',
+    )
+    expect(result.stdout).toContain(
+      `- ${sandbox.home}/.config/nvim (lua/opts.lua: updated from the repository)`,
+    )
+    expect(result.stdout).toContain(
+      `Kept what changed on this machine in ${sandbox.home}/.zshrc ("configfile modules status" shows it).`,
+    )
+    expect((await readHistory(sandbox)).at(-1)?.changes).toEqual([
+      expect.objectContaining({ kind: 'synced' }),
+      {
+        kind: 'deployed',
+        how: 'copy',
+        source: path.join(sandbox.repo, 'files/nvim/nvim/lua/opts.lua'),
+        target: path.join(sandbox.home, '.config/nvim/lua/opts.lua'),
+        replaced: 'copy',
+      },
+      { kind: 'kept', target: path.join(sandbox.home, '.zshrc'), reason: 'changed' },
+    ])
+  })
+
+  it('leaves a copy changed here and in the repository, and says how to choose', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'mine')
+    await commitInRemote('files/zsh/zshrc', 'theirs')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('mine')
+    expect(result.stderr).toContain(
+      `${sandbox.home}/.zshrc changed both on this machine and in the repository, and was left ` +
+        'as it is: run "configfile modules deploy zsh" to choose.',
+    )
+    const status = await runCli(sandbox, ['modules', 'status', 'zsh'])
+    expect(status.stdout).toContain(
+      `${sandbox.home}/.zshrc (copied, changed here and in the repository: deploy it again to choose)`,
+    )
+    const deploy = await runCli(sandbox, ['modules', 'deploy', 'zsh'], [true])
+    expect(deploy.asked).toEqual([
+      `${sandbox.home}/.zshrc changed here and in the repository. Replace it with the ` +
+        "repository's version (yours is moved to .old)?",
+    ])
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('theirs')
+    expect(await readFile(path.join(sandbox.home, '.zshrc.old'), 'utf8')).toBe('mine')
+  })
+
+  it('keeps a copy changed on both sides when the answer is no, and succeeds', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    await writeFile(path.join(sandbox.home, '.zshrc'), 'mine')
+    await commitInRemote('files/zsh/zshrc', 'theirs')
+    await runCli(sandbox, ['update'])
+
+    const declined = await runCli(sandbox, ['modules', 'deploy', 'zsh'], [false])
+    const forced = await runCli(sandbox, ['modules', 'deploy', '--force', 'zsh'])
+
+    expect(declined.code).toBe(0)
+    expect(declined.stdout).toContain(
+      `${sandbox.home}/.zshrc (skipped: changed here and in the repository)`,
+    )
+    expect(forced).toMatchObject({ code: 0, asked: [] })
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('theirs')
+    expect(await readFile(path.join(sandbox.home, '.zshrc.old'), 'utf8')).toBe('mine')
+  })
+
+  it('never touches a file configfile did not copy', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await runCli(sandbox, ['update'])
+    await sandbox.write('home/.zshrc', 'zshrc')
+    await commitInRemote('files/zsh/zshrc', 'newer')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).not.toContain('.zshrc (')
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('zshrc')
+  })
+
+  it('says which copies it did not update because their module cannot be used', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    await commitInRemote('files/zsh/settings.json', '{')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      `${sandbox.home}/.zshrc was not updated: module "zsh" cannot be used: settings.json is not valid JSON`,
+    )
+  })
+
+  it('updates a copied folder from inside it', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await withCopies(sandbox)
+    await commitInRemote('files/nvim/nvim/init.lua', 'init v2')
+    const nvim = path.join(sandbox.home, '.config/nvim')
+
+    const result = await runCli(sandbox, ['update'], [], { cwd: nvim })
+
+    expect(result.code, result.stdout + result.stderr).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(await readFile(path.join(nvim, 'init.lua'), 'utf8')).toBe('init v2')
+  })
+
+  it('never runs the scripts of a module when it updates its copies', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('remote/scripts/after.sh', `touch "${sandbox.root}/ran"\n`)
+    const { commitInRemote } = await withCopies(sandbox, { hooks: { post_deploy: 'after' } })
+    await rm(path.join(sandbox.root, 'ran'), { force: true })
+    await commitInRemote('files/zsh/zshrc', 'newer')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('newer')
+    expect(existsSync(path.join(sandbox.root, 'ran'))).toBe(false)
+  })
+
+  it('says which global files are still links, and turns them into copies on deploy', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    const entry = { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }
+    await commitInRemote(
+      'files/zsh/settings.json',
+      JSON.stringify({ files: [{ ...entry, method: 'link' }] }),
+    )
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    await commitInRemote('files/zsh/settings.json', JSON.stringify({ files: [entry] }))
+
+    const result = await runCli(sandbox, ['update'])
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const deploy = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    expect(result.stdout).toContain(
+      `1 global file is still linked to configfile's copy of the repository (${zshrc}): run ` +
+        '"configfile modules deploy --all" to copy it.',
+    )
+    expect(status.stdout).toContain(`${zshrc} (linked: deploy it again to copy it)`)
+    expect(deploy.stdout).toContain(`${zshrc} (copied in place of configfile's link)`)
+    expect((await lstat(zshrc)).isSymbolicLink()).toBe(false)
+  })
+
+  it('still succeeds when a copy cannot be updated', async () => {
+    const sandbox = await createSandbox()
+    const { remote } = await withCopies(sandbox)
+    await sandbox.write('home/.ssh/key', 'secret')
+    await rm(path.join(remote, 'files/zsh/zshrc'))
+    await symlink(path.join(sandbox.home, '.ssh/key'), path.join(remote, 'files/zsh/zshrc'))
+    git(remote, 'add', '-A')
+    git(remote, 'commit', '--quiet', '-m', 'a link out of the module')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(`Cannot update ${sandbox.home}/.zshrc:`)
+    expect(await readFile(path.join(sandbox.home, '.zshrc'), 'utf8')).toBe('zshrc')
   })
 
   it('follows the remote default branch when the mirror has no upstream', async () => {
@@ -2659,7 +3142,7 @@ describe('history', () => {
       changes: [
         {
           kind: 'deployed',
-          how: 'link',
+          how: 'copy',
           source: path.join(sandbox.repo, 'files/zsh/zshrc'),
           target: zshrc,
           backup: `${zshrc}.old`,
@@ -2986,7 +3469,7 @@ describe('history', () => {
 
     expect(readable.code).toBe(0)
     expect(readable.stdout).toMatch(
-      /^\d{4}-\d\d-\d\d \d\d:\d\d {2}modules deploy zsh {2}ok\n {2}linked {4}~\/\.zshrc {2}\(previous file moved to ~\/\.zshrc\.old\)\n/,
+      /^\d{4}-\d\d-\d\d \d\d:\d\d {2}modules deploy zsh {2}ok\n {2}copied {4}~\/\.zshrc {2}\(previous file moved to ~\/\.zshrc\.old\)\n/,
     )
     expect(last.stdout).toMatch(/^\S+ \S+ {2}modules deploy zsh {2}ok\n {2}1 unchanged\n$/)
     const lines = json.stdout
@@ -3095,6 +3578,12 @@ describe('history', () => {
               from: 'abc',
               to: 'abc',
             },
+            { kind: 'deployed', how: 'copy', source: '/s', target: home('.u'), replaced: 'copy' },
+            { kind: 'deployed', how: 'copy', source: '/s', target: home('.v'), replaced: 'link' },
+            { kind: 'deployed', how: 'link', source: '/s', target: home('.w'), replaced: 'copy' },
+            { kind: 'removed', target: home('.cfg/a'), movedTo: home('.cfg/a.old') },
+            { kind: 'kept', target: home('.cfg/b'), reason: 'changed' },
+            { kind: 'skipped', target: home('.cfg/c'), reason: 'conflict' },
           ],
         }),
         line({
@@ -3157,6 +3646,12 @@ describe('history', () => {
         '',
         'TIME  update  ok',
         '  synced    ~/.configfile/dotfiles  (already up to date with origin/main)',
+        '  updated   ~/.u',
+        '  copied    ~/.v  (was a link)',
+        '  linked    ~/.w  (was a copy)',
+        '  removed   ~/.cfg/a  (yours moved to ~/.cfg/a.old)',
+        '  kept      ~/.cfg/b  (changed on this machine)',
+        '  skipped   ~/.cfg/c  (changed here and in the repository)',
         '',
         'TIME  scripts run setup (2 arguments)  exit 3',
         '  script    setup  exit 3',
@@ -3254,10 +3749,10 @@ describe('scripts run when a module is deployed or undeployed', () => {
   it('runs the script of a module once its files are deployed, on every deploy', async () => {
     const sandbox = await createSandbox()
     await withHooks(sandbox, { a: 'plugins' })
-    // The link is there, and the lock is released: the script may run configfile.
+    // The file is there, and the lock is released: the script may run configfile.
     await sandbox.write(
       'home/dotfiles/scripts/plugins.sh',
-      `test -L "$HOME_DIR/.arc" && test ! -e "$HOME_DIR/.configfile/lock" || exit 9\n${logging(
+      `test -f "$HOME_DIR/.arc" && test ! -e "$HOME_DIR/.configfile/lock" || exit 9\n${logging(
         sandbox,
         '$CONFIGFILE_SCRIPT $CONFIGFILE_MODULE $CONFIGFILE_DEPLOY $CONFIGFILE_OS',
       )}`,
@@ -3286,7 +3781,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     const lock = path.join(sandbox.home, '.configfile/lock')
     await sandbox.write(
       'home/dotfiles/scripts/step.sh',
-      `test -e "${lock}" && exit 9\nif test -L "${link}"; then files=deployed; else files=missing; fi\n` +
+      `test -e "${lock}" && exit 9\nif test -f "${link}"; then files=deployed; else files=missing; fi\n` +
         logging(sandbox, '$CONFIGFILE_HOOK $CONFIGFILE_MODULE $CONFIGFILE_DEPLOY $files'),
     )
 
@@ -3294,7 +3789,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     const result = await runCli(sandbox, ['modules', 'deploy', 'a'])
 
     expect(planned.stdout).toMatch(
-      /- script "step" \(pre_deploy of a: would run\)\n- .*\.arc \(would be linked\)\n- script "step" \(post_deploy of a: would run\)/,
+      /- script "step" \(pre_deploy of a: would run\)\n- .*\.arc \(would be copied\)\n- script "step" \(post_deploy of a: would run\)/,
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout).toContain('Running "step", the pre_deploy script of a…')
@@ -3465,7 +3960,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     expect(planned.stderr).toContain('a: pre_deploy script "missing" not found.')
     expect(planned.stderr).toContain('The pre_deploy script of a would fail.')
     expect(planned.stdout).not.toContain('.arc')
-    expect(planned.stdout).toContain('.brc (would be linked)')
+    expect(planned.stdout).toContain('.brc (would be copied)')
     expect(planned.stdout).toContain('- script "fine" (post_deploy of b: would run)')
     expect(result.code).toBe(1)
     expect(result.stderr).toContain(
@@ -3676,7 +4171,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     expect(result.stderr).toContain(
       'a: "post_deploy" is ignored: it must be the name of a script of the repository.',
     )
-    expect(result.stdout).toContain(`${path.join(sandbox.home, '.arc')} (deployed)`)
+    expect(result.stdout).toContain(`${path.join(sandbox.home, '.arc')} (copied)`)
     expect(listed.stderr).toContain('"post_deploy" is ignored')
     // Undeploying does not need it.
     expect(undeployed.code).toBe(0)
@@ -3689,7 +4184,7 @@ describe('scripts run when a module is deployed or undeployed', () => {
     const lock = path.join(sandbox.home, '.configfile/lock')
     await sandbox.write(
       'home/dotfiles/scripts/step.sh',
-      `test -e "${lock}" && exit 9\nif test -L "${link}"; then files=deployed; else files=removed; fi\n` +
+      `test -e "${lock}" && exit 9\nif test -f "${link}"; then files=deployed; else files=removed; fi\n` +
         logging(sandbox, '$CONFIGFILE_HOOK $CONFIGFILE_MODULE $CONFIGFILE_DEPLOY $files'),
     )
     await runCli(sandbox, ['modules', 'deploy', '--all'])

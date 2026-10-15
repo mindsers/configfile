@@ -22,6 +22,7 @@ $ configfile modules deploy < /dev/null
 | `configfile init` | whether to replace an existing configuration | `--force` |
 | `configfile modules deploy` and `undeploy` | whether to use every module | module names, or `--all` |
 | `configfile modules deploy --local` | whether to replace an existing file that differs | `--force` (without it, the file is skipped and the command fails) |
+| `configfile modules deploy` | whether to replace a copy changed both on this machine and in the repository, or a changed copy with a link | `--force` (without it, the file is kept and the command fails) |
 
 Two more options matter in a script, although no question stands behind them: `--keep-going` deploys (or undeploys) the remaining modules when a [script named by a module](/guides/module-scripts/) fails, and `--no-hooks` runs none of these scripts.
 

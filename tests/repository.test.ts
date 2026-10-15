@@ -108,6 +108,7 @@ describe('listModules', () => {
         source: path.join(sandbox.repo, 'files/zsh/zshrc'),
         target: path.join(sandbox.home, '.zshrc'),
         strategy: 'global',
+        method: 'copy',
         repository,
         module,
         entry: { module: 'files/zsh', source: 'zshrc', target: '~/.zshrc', folder: sandbox.home },
@@ -116,6 +117,7 @@ describe('listModules', () => {
         source: path.join(sandbox.repo, 'files/zsh/local.env'),
         target: path.join(sandbox.cwd, '.env'),
         strategy: 'local',
+        method: 'copy',
         repository,
         module,
         entry: { module: 'files/zsh', source: 'local.env', target: '.env', folder: sandbox.cwd },
@@ -124,6 +126,7 @@ describe('listModules', () => {
         source: path.join(sandbox.repo, 'files/zsh/aliases'),
         target: path.join(sandbox.home, '.aliases'),
         strategy: 'global',
+        method: 'copy',
         repository,
         module,
         entry: {
@@ -137,6 +140,7 @@ describe('listModules', () => {
         source: path.join(sandbox.repo, 'files/zsh/editorconfig'),
         target: path.join(sandbox.cwd, '.editorconfig'),
         strategy: 'local',
+        method: 'copy',
         repository,
         module,
         entry: {
@@ -154,6 +158,32 @@ describe('listModules', () => {
         'Use "deploy": "global" | "local" instead',
     ])
     expect(warnings).toEqual([])
+  })
+
+  it('copies global files unless they ask for a link, and refuses links for local files', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zsh/settings.json',
+      settings([
+        { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
+        { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global', method: 'copy' },
+        { source_path: 'env', target_path: '.env', deploy: 'local', method: 'copy' },
+        { source_path: 'rc', target_path: '.rc', deploy: 'local', method: 'link' },
+        { source_path: 'other', target_path: '~/.other', deploy: 'global', method: 'symlink' },
+      ]),
+    )
+
+    const zsh = usable((await modulesOf(sandbox)).modules[0])
+
+    expect(zsh.files.map(file => [file.entry?.source, file.method])).toEqual([
+      ['zshrc', 'link'],
+      ['aliases', 'copy'],
+      ['env', 'copy'],
+    ])
+    expect(zsh.invalidEntries).toEqual([
+      'entry #4 is ignored: "method": "link" only applies to global files (local files are always copied)',
+      'entry #5 is ignored: use "method": "link" or "copy"',
+    ])
   })
 
   it('resolves relative global targets against the home folder, local ones against the current folder', async () => {

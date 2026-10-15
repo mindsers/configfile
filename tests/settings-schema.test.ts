@@ -33,6 +33,13 @@ const zshrc = { source_path: 'zshrc', target_path: '~/.zshrc' }
 
 const accepted: [string, unknown][] = [
   ['a global file', { files: [{ ...zshrc, deploy: 'global' }] }],
+  ['a global file linked', { files: [{ ...zshrc, deploy: 'global', method: 'link' }] }],
+  ['a global file copied', { files: [{ ...zshrc, deploy: 'global', method: 'copy' }] }],
+  [
+    'a local file copied',
+    { files: [{ source_path: 'zshrc', target_path: '.zshrc', deploy: 'local', method: 'copy' }] },
+  ],
+  ['a file linked with "global": true', { files: [{ ...zshrc, global: true, method: 'link' }] }],
   ['a local file', { files: [{ source_path: 'zshrc', target_path: '.zshrc', deploy: 'local' }] }],
   ['a file never deployed, without target', { files: [{ source_path: 'zshrc', deploy: 'none' }] }],
   ['a file never deployed, without source', { files: [{ deploy: 'none' }] }],
@@ -51,6 +58,12 @@ const refused: [string, unknown][] = [
   ['"files" that is not a list', { files: {} }],
   ['an entry that is not an object', { files: ['zshrc'] }],
   ['an unknown strategy', { files: [{ ...zshrc, deploy: 'linked' }] }],
+  ['an unknown method', { files: [{ ...zshrc, deploy: 'global', method: 'symlink' }] }],
+  [
+    'a local file linked',
+    { files: [{ source_path: 'zshrc', target_path: '.zshrc', deploy: 'local', method: 'link' }] },
+  ],
+  ['a file linked with "global": false', { files: [{ ...zshrc, global: false, method: 'link' }] }],
   ['both "deploy" and "global"', { files: [{ ...zshrc, deploy: 'global', global: true }] }],
   ['a "global" that is not a boolean', { files: [{ ...zshrc, global: 'yes' }] }],
   ['a deployed file without source', { files: [{ target_path: '~/.zshrc', deploy: 'global' }] }],

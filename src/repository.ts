@@ -13,8 +13,10 @@ export interface ModuleFile {
   readonly source: string
   /** Absolute path where the file is deployed. Never inside the repository. */
   readonly target: string
-  /** `global`: symlinked by a regular deploy. `local`: copied by `deploy --local`. */
+  /** `global`: deployed into the home folder by a regular deploy. `local`: copied by `deploy --local`. */
   readonly strategy: 'global' | 'local'
+  /** How it is deployed: global files are copied unless `"method": "link"`; local files are always copied. */
+  readonly method: 'link' | 'copy'
   /** Absolute path of the dotfiles repository the file comes from. */
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
@@ -168,6 +170,28 @@ export async function listModules(folderPath: string, env: Environment): Promise
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const
 type DeployStrategy = (typeof DEPLOY_STRATEGIES)[number]
 
+const METHODS = ['link', 'copy'] as const
+
+/**
+ * Reads `"method": "link" | "copy"`: global files are copied unless they ask
+ * for a link, local files are always copied. Returns why it cannot be used.
+ */
+function readMethod(
+  entry: Record<string, unknown>,
+  strategy: 'global' | 'local',
+): 'link' | 'copy' | { invalid: string } {
+  const { method } = entry
+  if (method === undefined) return 'copy'
+  const known = METHODS.find(value => value === method)
+  if (known == null) return { invalid: 'use "method": "link" or "copy"' }
+  if (known === 'link' && strategy === 'local') {
+    return {
+      invalid: '"method": "link" only applies to global files (local files are always copied)',
+    }
+  }
+  return known
+}
+
 /**
  * Reads `"deploy": "global" | "local" | "none"`, or its older spelling
  * `"global": true | false`.
@@ -253,6 +277,11 @@ async function readModuleFiles(
       invalid('"target_path" is missing')
       continue
     }
+    const method = readMethod(fields, strategy)
+    if (typeof method !== 'string') {
+      invalid(method.invalid)
+      continue
+    }
 
     // Global files belong to the user's home; local files to the current folder.
     const resolvedTarget = resolveUserPath(target.trim(), {
@@ -260,7 +289,15 @@ async function readModuleFiles(
       cwd: strategy === 'global' ? env.home : env.cwd,
     })
 
-    const problem = unsafeTarget(resolvedTarget, { ...env, repository, module: modulePath })
+    // A copy is kept up to date in place, so it may hold the current folder:
+    // replacing or removing it whole is checked when it happens (see `Guard`).
+    const copied = strategy === 'global' && method === 'copy'
+    const problem = unsafeTarget(resolvedTarget, {
+      ...env,
+      cwd: copied ? null : env.cwd,
+      repository,
+      module: modulePath,
+    })
     if (problem != null) {
       invalid(`"target_path" (${target}) ${problem}`)
       continue
@@ -270,6 +307,7 @@ async function readModuleFiles(
       source: resolvedSource,
       target: resolvedTarget,
       strategy,
+      method,
       repository,
       module: modulePath,
       entry: {
@@ -324,13 +362,13 @@ export function unsafeTarget(
     cwd,
     repository,
     module,
-  }: { home: string; cwd: string; repository: string; module: string },
+  }: { home: string; cwd: string | null; repository: string; module: string },
 ): string | null {
   const own = configfilePaths(home)
 
   for (const [folder, label] of [
     [home, 'the home folder'],
-    [cwd, 'the current folder'],
+    ...(cwd == null ? [] : [[cwd, 'the current folder'] as const]),
     [repository, 'the dotfiles repository'],
     [module, 'the module folder'],
     [own.rc, "configfile's configuration"],

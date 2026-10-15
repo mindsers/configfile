@@ -40,13 +40,27 @@ export type KeptReason = KeptState['kind']
 
 /** One thing configfile did (or failed to do) during a run. */
 export type Change =
-  | { kind: 'deployed'; how: 'link' | 'copy'; source: string; target: string; backup?: string }
-  | { kind: 'skipped'; target: string; reason: 'exists' }
+  /**
+   * `replaced`: configfile's own link (replaced by a copy) or copy (replaced
+   * by a link, or updated from the repository); nothing was backed up.
+   */
+  | {
+      kind: 'deployed'
+      how: 'link' | 'copy'
+      source: string
+      target: string
+      backup?: string
+      replaced?: 'link' | 'copy'
+    }
+  /** `conflict`: a copy changed both on this machine and in the repository. */
+  | { kind: 'skipped'; target: string; reason: 'exists' | 'conflict' }
+  /** `movedTo`: a file of a copy the repository deleted, changed here, moved there first. */
   | {
       kind: 'removed'
       target: string
       backup?: { path: string; status: 'restored' | 'missing' | 'changed' }
       leftover?: string
+      movedTo?: string
     }
   /** `forgotten`: configfile stopped tracking it (its entry left the repository). */
   | { kind: 'kept'; target: string; reason: KeptReason; forgotten?: true }
@@ -70,8 +84,8 @@ export interface Invocation {
 }
 
 /**
- * One line of `history.jsonl`. Version 1: later 1.x releases may add change
- * kinds and optional fields (readers skip what they do not know); any other
+ * One line of `history.jsonl`. Version 1: later releases may add change kinds,
+ * values and optional fields (readers skip what they do not know); any other
  * change gets a new `v`.
  */
 export interface HistoryLine {
@@ -474,6 +488,7 @@ export function parseHistoryLine(raw: string): HistoryEntry | null {
 }
 
 const KEPT_REASONS: Record<KeptReason, true> = {
+  changed: true,
   foreign: true,
   modified: true,
   identical: true,
@@ -488,10 +503,14 @@ function isChange(value: unknown): value is Change {
       return (
         (value.how === 'link' || value.how === 'copy') &&
         areStrings(value.source, value.target) &&
-        (backup === undefined || typeof backup === 'string')
+        (backup === undefined || typeof backup === 'string') &&
+        (value.replaced === undefined || value.replaced === 'link' || value.replaced === 'copy')
       )
     case 'skipped':
-      return typeof value.target === 'string' && value.reason === 'exists'
+      return (
+        typeof value.target === 'string' &&
+        (value.reason === 'exists' || value.reason === 'conflict')
+      )
     case 'removed':
       return (
         typeof value.target === 'string' &&
@@ -499,7 +518,8 @@ function isChange(value: unknown): value is Change {
           (isObject(backup) &&
             typeof backup.path === 'string' &&
             ['restored', 'missing', 'changed'].includes(backup.status as string))) &&
-        (value.leftover === undefined || typeof value.leftover === 'string')
+        (value.leftover === undefined || typeof value.leftover === 'string') &&
+        (value.movedTo === undefined || typeof value.movedTo === 'string')
       )
     case 'kept':
       return (

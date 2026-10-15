@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-Linking a configuration file is often half of the job: tmux needs its plugins installed, `mise` needs to install the tools its configuration lists, a font cache needs rebuilding. A module can name scripts for these steps, and *configfile* runs them when it deploys or undeploys the module. This guide sets one up for tmux; the [modules reference](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) has every rule.
+Deploying a configuration file is often half of the job: tmux needs its plugins installed, `mise` needs to install the tools its configuration lists, a font cache needs rebuilding. A module can name scripts for these steps, and *configfile* runs them when it deploys or undeploys the module. This guide sets one up for tmux; the [modules reference](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) has every rule.
 
 ## 1. Write the script
 
@@ -53,9 +53,9 @@ A dry run shows when the script would run, without running it:
 ```txt
 $ configfile modules deploy --all --dry-run
  Info  Dry run, nothing is changed. Deploying tmux, zsh would do:
-- ~/.tmux.conf (would be linked)
+- ~/.tmux.conf (would be copied)
 - script "tmux-plugins" (post_deploy of tmux: would run)
-- ~/.zshrc (would be linked)
+- ~/.zshrc (would be copied)
  Done  Dry run finished.
 ```
 
@@ -87,7 +87,7 @@ A name that matches no script is caught earlier: *configfile* checks the names b
 
 ## Clean up when the module is undeployed
 
-`configfile modules undeploy tmux` removes the link, not what the script installed. Name a second script for that:
+`configfile modules undeploy tmux` removes the copy of `~/.tmux.conf`, not what the script installed. Name a second script for that:
 
 ```sh title="scripts/tmux-plugins-remove.sh"
 #!/bin/sh

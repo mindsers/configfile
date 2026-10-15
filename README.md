@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/mindsers/configfile?style=flat-square)](https://github.com/mindsers/configfile/blob/develop/LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/mindsers?logo=githubsponsors&style=flat-square)](https://github.com/sponsors/mindsers)
 
-*configfile* manages your configuration files (dotfiles) and setup scripts from a git repository you own. It links each file where your tools expect it, runs your setup scripts, and keeps every machine in sync with the repository, on macOS and Linux.
+*configfile* manages your configuration files (dotfiles) and setup scripts from a git repository you own. It copies each file where your tools expect it, runs your setup scripts, and keeps every machine in sync with the repository while keeping the changes your tools make on each machine, on macOS and Linux.
 
 **Documentation: [docs.configfile.sh](https://docs.configfile.sh)**
 
@@ -34,7 +34,7 @@ On each machine:
 
 ```sh
 configfile init --repo git@github.com:me/dotfiles.git   # once
-configfile modules deploy --all                         # links ~/.zshrc, keeping the old one as ~/.zshrc.old
+configfile modules deploy --all                         # copies ~/.zshrc, keeping the old one as ~/.zshrc.old
 configfile scripts run setup                            # runs scripts/setup.sh
 configfile update                                       # later: brings the changes you pushed
 ```
@@ -65,7 +65,7 @@ npm install --global https://github.com/mindsers/configfile/releases/download/1.
 
 - [Your first dotfiles repository](https://docs.configfile.sh/getting-started/tutorial/): a ten-minute tutorial.
 - [How it works](https://docs.configfile.sh/concepts/how-it-works/) and [Safety and trust](https://docs.configfile.sh/concepts/safety/): what *configfile* does with your files, and what it refuses to touch.
-- Guides: [set up a new machine](https://docs.configfile.sh/guides/new-machine/), [use configfile in scripts and CI](https://docs.configfile.sh/guides/scripts-and-ci/), [run scripts when a module is deployed](https://docs.configfile.sh/guides/module-scripts/), [upgrade from 0.3](https://docs.configfile.sh/guides/upgrading-from-0-3/).
+- Guides: [set up a new machine](https://docs.configfile.sh/guides/new-machine/), [use configfile in scripts and CI](https://docs.configfile.sh/guides/scripts-and-ci/), [run scripts when a module is deployed](https://docs.configfile.sh/guides/module-scripts/), [upgrade from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/), [upgrade from 0.3](https://docs.configfile.sh/guides/upgrading-from-0-3/).
 - Reference: [commands](https://docs.configfile.sh/reference/commands/), [modules and `settings.json`](https://docs.configfile.sh/reference/modules/), [scripts](https://docs.configfile.sh/reference/scripts/), [configuration](https://docs.configfile.sh/reference/configuration/), [history](https://docs.configfile.sh/reference/history/).
 - [Changelog](https://github.com/mindsers/configfile/blob/develop/CHANGELOG.md).
 
