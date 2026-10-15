@@ -1,5 +1,6 @@
-// The install script (docs/public/install.sh, served at
-// https://docs.configfile.sh/install.sh), run against a fake release on disk.
+// The install script (docs/public/install.sh, published with the docs at
+// https://docs.configfile.sh/install.sh, where https://configfile.sh/install.sh
+// redirects), run against a fake release on disk.
 // Fake `uname`, `sysctl` and `ldd` commands, first in PATH, play the system.
 
 import { execFileSync, spawnSync } from 'node:child_process'

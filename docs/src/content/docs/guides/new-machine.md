@@ -12,7 +12,7 @@ This guide takes a machine from nothing to your configuration, using a dotfiles 
 On a new machine, install the standalone binary, which needs neither a package manager nor Node.js:
 
 ```sh
-curl -fsSL https://docs.configfile.sh/install.sh | sh
+curl -fsSL https://configfile.sh/install.sh | sh
 ```
 
 It installs `~/.local/bin/configfile`, and says how to add that folder to your `PATH` when it is not there. *configfile* also needs git: on macOS, `xcode-select --install` installs it. [Installation](/getting-started/installation/) lists the other ways, such as Homebrew.
@@ -78,7 +78,7 @@ To set up machines regularly, put the steps in a script. Without a terminal to a
 set -e
 
 # Downloaded first: in "curl ... | sh", set -e would not see a failed download.
-curl -fsSL https://docs.configfile.sh/install.sh -o /tmp/install-configfile.sh
+curl -fsSL https://configfile.sh/install.sh -o /tmp/install-configfile.sh
 sh /tmp/install-configfile.sh
 export PATH="$HOME/.local/bin:$PATH"
 configfile init --repo git@github.com:me/dotfiles.git

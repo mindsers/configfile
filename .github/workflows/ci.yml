@@ -28,7 +28,8 @@ jobs:
           actionlint
           zizmor --persona regular .github/workflows
       - name: Check the install script
-        # Served at https://docs.configfile.sh/install.sh, run by any POSIX shell.
+        # Served at https://configfile.sh/install.sh (a redirect to the docs site,
+        # which publishes it), run by any POSIX shell.
         run: shellcheck --shell=sh docs/public/install.sh
 
   test:

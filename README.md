@@ -44,7 +44,7 @@ configfile update                                       # later: brings the chan
 With one command, on macOS or Linux (no package manager or Node.js needed):
 
 ```bash
-curl -fsSL https://docs.configfile.sh/install.sh | sh
+curl -fsSL https://configfile.sh/install.sh | sh
 ```
 
 With [Homebrew](https://brew.sh), on macOS or Linux (Node.js and git come with it):
