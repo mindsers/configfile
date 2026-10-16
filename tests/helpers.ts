@@ -195,6 +195,22 @@ export async function createRemote(sandbox: Sandbox): Promise<string> {
   return remote
 }
 
+/**
+ * A remote, configfile's mirror of it (`sandbox.repo`, configured), and a
+ * function to commit a file in the remote.
+ */
+export async function createMirror(sandbox: Sandbox) {
+  const remote = await createRemote(sandbox)
+  git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+  await sandbox.configure()
+  const commitInRemote = async (file: string, content: string) => {
+    await sandbox.write(`remote/${file}`, content)
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', `change ${file}`)
+  }
+  return { remote, commitInRemote }
+}
+
 /** Every line of the history files (rotated file first); fails on an unreadable line. */
 export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
   const { entries, invalid, problems } = await new History(sandbox.home).read()

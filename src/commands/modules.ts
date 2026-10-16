@@ -1,4 +1,5 @@
 import { constants as osConstants } from 'node:os'
+import path from 'node:path'
 import { inspect } from 'node:util'
 
 import type { Command } from 'commander'
@@ -24,6 +25,12 @@ import {
 import { CliError, isPromptExit } from '../errors.ts'
 import { messageOf } from '../fsutil.ts'
 import { withCommandLock } from '../lock.ts'
+import {
+  changesUnder,
+  type MirrorChange,
+  type MirrorChanges,
+  readMirrorChanges,
+} from '../mirror.ts'
 import { plural } from '../output.ts'
 import { runScript } from '../process.ts'
 import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
@@ -218,11 +225,43 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
   }
 
-  const describeTarget = async (file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>) => {
+  const inspectTarget = async (file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>) => {
     try {
-      return describeState(await inspectFile(file, record))
+      return await inspectFile(file, record)
     } catch (error) {
       return `cannot be checked: ${messageOf(error)}`
+    }
+  }
+  const describeTarget = async (file: Pick<ModuleFile, 'source' | 'target' | 'strategy'>) => {
+    const state = await inspectTarget(file)
+    return typeof state === 'string' ? state : describeState(state)
+  }
+
+  // Tools write into the mirror through global links: read once, when a link is there.
+  let mirror: Promise<MirrorChanges> | null = null
+  let changedThroughLinks = false
+  let linkChecksUnavailable: string | null = null
+  const printChangesThroughLink = async (file: ModuleFile, state: TargetState | string) => {
+    const linked =
+      typeof state !== 'string' &&
+      (state.kind === 'deployed' || (state.kind === 'source-missing' && state.ours))
+    if (file.strategy !== 'global' || !linked) return
+
+    mirror ??= readMirrorChanges(repo.repository)
+    const changes = await mirror
+    if (changes.status === 'unavailable') linkChecksUnavailable = changes.reason
+    if (changes.status !== 'read') return
+
+    const source = path.relative(repo.repository, file.source)
+    for (const change of changesUnder(changes.changes, source)) {
+      changedThroughLinks = true
+      const relative = path.posix.relative(source.split(path.sep).join('/'), change.path)
+      // An untracked folder: shown with its `/`, or as the source itself when it contains it.
+      const inside = relative.startsWith('..')
+        ? ''
+        : `${relative}${change.path.endsWith('/') && relative !== '' ? '/' : ''}`
+      const what = describeChange(change)
+      output.print(inside === '' ? `    ${what}` : `    ${inside} (${what})`)
     }
   }
 
@@ -237,7 +276,9 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
 
     const files = module.files.filter(file => file.strategy === options.strategy)
     for (const file of files) {
-      output.print(`  ${file.target} (${await describeTarget(file)})`)
+      const state = await inspectTarget(file)
+      output.print(`  ${file.target} (${typeof state === 'string' ? state : describeState(state)})`)
+      await printChangesThroughLink(file, state)
     }
     for (const source of module.undecided) {
       output.print(`  ${source} (no deployment strategy)`)
@@ -271,6 +312,30 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     for (const { target, reason } of heldBack) {
       output.print(`  ${target} (${reason})`)
     }
+  }
+
+  if (changedThroughLinks) {
+    output.info(
+      'Changes made through links are not in the repository: the next "configfile update" ' +
+        "saves them in a patch, then puts the repository's version back and removes new files " +
+        "(except those the repository's .gitignore lists). To keep them, make them in your " +
+        `working copy, then commit and push. "git -C ${repo.repository} diff" shows the changes to its files.`,
+    )
+  }
+  if (linkChecksUnavailable != null) {
+    output.warn(`Changes made through links cannot be checked: ${linkChecksUnavailable}`)
+  }
+}
+
+/** What happened to a file of a linked source, seen from the mirror. */
+function describeChange(change: MirrorChange): string {
+  switch (change.kind) {
+    case 'modified':
+      return 'changed through the link'
+    case 'deleted':
+      return 'deleted through the link'
+    case 'new':
+      return 'new, not in the repository'
   }
 }
 

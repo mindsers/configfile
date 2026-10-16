@@ -158,8 +158,10 @@ function describeChange(change: Change): string {
           ? `${change.folder}  (already up to date with ${change.upstream})`
           : `${change.folder}  with ${change.upstream} (${short(change.from)} → ${short(change.to)})`,
       )
-    case 'saved-patch':
-      return line('saved', `local changes to ${change.file}`)
+    case 'saved-patch': {
+      const paths = change.paths == null ? '' : `  (${change.paths.join(', ')})`
+      return line('saved', `local changes to ${change.file}${paths}`)
+    }
     case 'script':
       return line(
         'script',

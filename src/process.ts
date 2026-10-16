@@ -294,6 +294,9 @@ function capture(
       resolve({ ...end, stdout, stderr })
     }
 
+    // Decoded as a stream, so that a character split between two chunks stays whole.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     child.stdout.on('data', chunk => {
       stdout += chunk
     })
@@ -330,7 +333,42 @@ export async function gitOutput(
 
   if (result.code === 0) return result.stdout
   if (allowFailure) return null
-  throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || describeEnd(result)}`)
+  throw new CliError(
+    `git ${subcommandOf(args)} failed: ${result.stderr.trim() || describeEnd(result)}`,
+  )
+}
+
+/** The git command run (`status`), after options such as `--no-optional-locks`. */
+function subcommandOf(args: readonly string[]): string {
+  return args.find(arg => !arg.startsWith('-')) ?? 'command'
+}
+
+/**
+ * Runs git and returns its output as bytes, for content that may not be
+ * text (a patch). Fails with git's own message when git exits with an error.
+ */
+export async function gitBuffer(args: string[], { cwd }: { cwd: string }): Promise<Buffer> {
+  const run = new Promise<{ code: number | null; stdout: Buffer; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+      const chunks: Buffer[] = []
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+      child.stderr.setEncoding('utf8')
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk
+      })
+      child.once('error', reject)
+      child.once('close', code => resolve({ code, stdout: Buffer.concat(chunks), stderr }))
+    },
+  )
+  const result = await run.catch(async error => {
+    throw await startFailure(error, cwd)
+  })
+  if (result.code === 0) return result.stdout
+  throw new CliError(
+    `git ${subcommandOf(args)} failed: ${result.stderr.trim() || `exit code ${result.code ?? 'unknown'}`}`,
+  )
 }
 
 /** Time allowed to `git --version`: it answers at once unless something is wrong. */

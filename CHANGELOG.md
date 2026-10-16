@@ -6,10 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- `update` only saves the local changes that the remote doesn't have: a change already pushed
+  from a working copy no longer leaves a patch and a warning. The warning names the files the
+  patch changes, and suggests `git -C <your working copy> apply --3way <patch>`, which lets you
+  review the changes before committing them, instead of `git am`. The patch is now written byte
+  for byte, so files that are not UTF-8 text are saved as they are
+  ([#297](https://github.com/mindsers/configfile/issues/297)).
 - The install script is at `https://configfile.sh/install.sh`:
   `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
   `https://docs.configfile.sh/install.sh`, keeps working.
 ### Added
+- `modules status` lists, under each deployed link, the changes made through it in configfile's
+  copy of the repository: files changed or deleted through the link, and new files a tool
+  created in a linked folder. The next `update` saves them in a patch, then puts the
+  repository's version back and removes the new files
+  ([#297](https://github.com/mindsers/configfile/issues/297)).
 - Standalone binaries for macOS (13.5 or later) and Linux (GNU C library 2.28 or later), on x64
   and arm64, with each release, and an install script:
   `curl -fsSL https://docs.configfile.sh/install.sh | sh` installs configfile on a new machine
