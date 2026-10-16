@@ -39,14 +39,11 @@ const accepted: [string, unknown][] = [
     'a local file copied',
     { files: [{ source_path: 'zshrc', target_path: '.zshrc', deploy: 'local', method: 'copy' }] },
   ],
-  ['a file linked with "global": true', { files: [{ ...zshrc, global: true, method: 'link' }] }],
+
   ['a local file', { files: [{ source_path: 'zshrc', target_path: '.zshrc', deploy: 'local' }] }],
   ['a file never deployed, without target', { files: [{ source_path: 'zshrc', deploy: 'none' }] }],
   ['a file never deployed, without source', { files: [{ deploy: 'none' }] }],
   ['a file without strategy (deployed nowhere, with a warning)', { files: [zshrc] }],
-  ['the deprecated "global": true', { files: [{ ...zshrc, global: true }] }],
-  ['the deprecated "global": false', { files: [{ ...zshrc, global: false }] }],
-  ['the deprecated 0.3 list format', [{ ...zshrc, deploy: 'global' }]],
   ['no files', { files: [] }],
   ['scripts to run when deployed', { files: [], pre_deploy: 'check', post_deploy: 'setup' }],
   ['scripts to run when undeployed', { files: [], pre_undeploy: 'stop', post_undeploy: 'clean' }],
@@ -58,6 +55,8 @@ const refused: [string, unknown][] = [
   ['"files" that is not a list', { files: {} }],
   ['an entry that is not an object', { files: ['zshrc'] }],
   ['an unknown strategy', { files: [{ ...zshrc, deploy: 'linked' }] }],
+  ['the "global" key of 1.x', { files: [{ ...zshrc, global: true }] }],
+  ['the configfile 0.3 list format', [{ ...zshrc, deploy: 'global' }]],
   ['an unknown method', { files: [{ ...zshrc, deploy: 'global', method: 'symlink' }] }],
   [
     'a local file linked',
@@ -109,7 +108,7 @@ describe('settings.json schema', () => {
     const documented = [...page.matchAll(/^\| `(\w+)` \|/gm)].map(match => match[1])
 
     // The keys of an entry, and those of the file itself next to "files".
-    const { $schema, files, ...settings } = schema.oneOf[0].properties
+    const { $schema, files, ...settings } = schema.properties
     const described = [...Object.keys(schema.$defs.entry.properties), ...Object.keys(settings)]
 
     expect(described.sort()).toEqual(documented.sort())

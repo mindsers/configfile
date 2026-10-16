@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The install script is at `https://configfile.sh/install.sh`:
   `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
   `https://docs.configfile.sh/install.sh`, keeps working.
+### Removed
+- **Breaking:** the `"global": true | false` key of an entry, deprecated since 1.0: use
+  `"deploy": "global" | "local"`. An entry that still has it is invalid.
+- **Breaking:** the configfile 0.3 format of `settings.json`, a plain list, deprecated since 1.0:
+  put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
+  no longer accepts either.
 ### Added
 - The `"method"` setting of an entry: `"copy"` (the default for global files) or `"link"`.
   `modules status` lists the files of a copy that changed on this machine, in the repository, or

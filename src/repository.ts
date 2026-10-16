@@ -55,8 +55,6 @@ export type Module = ModuleBase &
         readonly undecided: readonly string[]
         /** Why some entries of settings.json are ignored. */
         readonly invalidEntries: readonly string[]
-        /** Deprecated settings used by the module. */
-        readonly deprecations: readonly string[]
         /** The names of the scripts run before and after the module is deployed or undeployed. */
         readonly hooks: Readonly<Partial<Record<Hook, string>>>
         /** Why some of these settings cannot be used (not a string, or empty). */
@@ -192,20 +190,11 @@ function readMethod(
   return known
 }
 
-/**
- * Reads `"deploy": "global" | "local" | "none"`, or its older spelling
- * `"global": true | false`.
- */
+/** Reads `"deploy": "global" | "local" | "none"`. */
 function readStrategy(entry: Record<string, unknown>): DeployStrategy | 'unset' | 'invalid' {
-  const { deploy, global } = entry
-
-  if (deploy !== undefined) {
-    if (global !== undefined) return 'invalid'
-    return DEPLOY_STRATEGIES.find(strategy => strategy === deploy) ?? 'invalid'
-  }
-  if (global === undefined) return 'unset'
-  if (typeof global !== 'boolean') return 'invalid'
-  return global ? 'global' : 'local'
+  const { deploy } = entry
+  if (deploy === undefined) return 'unset'
+  return DEPLOY_STRATEGIES.find(strategy => strategy === deploy) ?? 'invalid'
 }
 
 type ModuleContent = Exclude<Module, { error: string }>
@@ -223,9 +212,15 @@ async function readModuleFiles(
     return { error: `settings.json is not valid JSON (${describeJsonError(error)})` }
   }
 
-  // configfile 0.3.1 wrote the list of files at the top level of settings.json.
-  const legacyList = Array.isArray(settings)
-  const entries: unknown = legacyList ? settings : (settings as { files?: unknown } | null)?.files
+  // configfile 0.3 wrote the list of files at the top level of settings.json.
+  if (Array.isArray(settings)) {
+    return {
+      error:
+        'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+        'Put the list in a "files" key: { "files": [ ... ] }',
+    }
+  }
+  const entries: unknown = (settings as { files?: unknown } | null)?.files
   if (!Array.isArray(entries)) {
     return { error: 'settings.json has no "files" list' }
   }
@@ -233,7 +228,6 @@ async function readModuleFiles(
   const files: ModuleFile[] = []
   const undecided: string[] = []
   const invalidEntries: string[] = []
-  let usesLegacyKey = false
 
   for (const [index, entry] of (entries as unknown[]).entries()) {
     const invalid = (reason: string) =>
@@ -246,8 +240,12 @@ async function readModuleFiles(
 
     const fields = entry as Record<string, unknown>
     const { source_path: source, target_path: target } = fields
+    // Its older spelling, gone in 2.0: never guessed, so the entry is never deployed by mistake.
+    if (fields.global !== undefined) {
+      invalid('"global" is no longer read (configfile 2.0): use "deploy": "global" or "local"')
+      continue
+    }
     const strategy = readStrategy(fields)
-    if (typeof fields.global === 'boolean' && fields.deploy === undefined) usesLegacyKey = true
 
     if (strategy === 'none') continue
     if (typeof source !== 'string' || source.trim() === '') {
@@ -266,7 +264,7 @@ async function readModuleFiles(
 
     switch (strategy) {
       case 'invalid':
-        invalid('use "deploy": "global", "local" or "none" (or "global": true or false, not both)')
+        invalid('use "deploy": "global", "local" or "none"')
         continue
       case 'unset':
         undecided.push(source)
@@ -319,24 +317,9 @@ async function readModuleFiles(
     })
   }
 
-  const deprecations: string[] = []
-  if (legacyList) {
-    deprecations.push(
-      'settings.json is a list (configfile 0.3 format), which is deprecated and will stop ' +
-        'working in 2.0. Put the list in a "files" key: { "files": [ ... ] }',
-    )
-  }
-  if (usesLegacyKey) {
-    deprecations.push(
-      '"global": true | false is deprecated and will stop working in 2.0. ' +
-        'Use "deploy": "global" | "local" instead',
-    )
-  }
-
-  // The 0.3 list format has no place for it.
   const hooks: Partial<Record<Hook, string>> = {}
   const hookProblems: Partial<Record<Hook, string>> = {}
-  for (const hook of legacyList ? [] : HOOKS) {
+  for (const hook of HOOKS) {
     const name = (settings as Record<string, unknown>)[hook]
     if (name === undefined) continue
     if (typeof name === 'string' && name.trim() !== '') hooks[hook] = name.trim()
@@ -344,7 +327,7 @@ async function readModuleFiles(
       hookProblems[hook] = `"${hook}" is ignored: it must be the name of a script of the repository`
   }
 
-  return { error: null, files, undecided, invalidEntries, deprecations, hooks, hookProblems }
+  return { error: null, files, undecided, invalidEntries, hooks, hookProblems }
 }
 
 /**
