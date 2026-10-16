@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Breaking:** global files are copied into the home folder instead of linked, unless their
+  entry sets `"method": "link"`. configfile records the repository's version each copy holds:
+  `update` and `modules deploy` update a copy when the repository changed it and nothing
+  changed it on this machine, keep the files changed on this machine (by you, or by a tool
+  that writes its own configuration), and report the files changed on both sides. For those,
+  `modules deploy` asks whether to replace them (yours moved to `.old`); without a terminal it
+  keeps them and fails, and `--force` replaces them. In a copied folder, the files a tool
+  creates are never touched. `update` never moves a file aside, asks a question or runs a
+  module's scripts. Comparing copies needs git: when it fails, nothing is changed and the
+  command says why. `modules deploy` turns the links made by 1.x into copies of what they
+  showed; see
+  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/)
+  ([#297](https://github.com/mindsers/configfile/issues/297)).
+- **Breaking:** `modules status` says `copied` or `linked` for global files instead of
+  `deployed`, and `modules deploy` says `(copied)` or `(linked)`. `--force` on `modules deploy`
+  also replaces the global copies changed on this machine.
+- **Breaking:** `modules status` exits with 1, after showing every file, when some of them
+  cannot be checked.
 - `update` only saves the local changes that the remote doesn't have: a change already pushed
   from a working copy no longer leaves a patch and a warning. The warning names the files the
   patch changes, and suggests `git -C <your working copy> apply --3way <patch>`, which lets you
@@ -16,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
   `https://docs.configfile.sh/install.sh`, keeps working.
 ### Added
+- The `"method"` setting of an entry: `"copy"` (the default for global files) or `"link"`.
+  `modules status` lists the files of a copy that changed on this machine, in the repository, or
+  on both sides ([#297](https://github.com/mindsers/configfile/issues/297)).
 - `modules status` lists, under each deployed link, the changes made through it in configfile's
   copy of the repository: files changed or deleted through the link, and new files a tool
   created in a linked folder. The next `update` saves them in a patch, then puts the

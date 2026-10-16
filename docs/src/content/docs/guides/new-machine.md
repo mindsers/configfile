@@ -62,7 +62,7 @@ With a version per system (`setup.macos.sh`, `setup.linux.sh`), *configfile* pic
 
 ## 6. Copy local files into your projects
 
-Local files, such as an `.editorconfig`, are copied into the current folder rather than linked. In each project that needs them:
+Local files, such as an `.editorconfig`, are copied into the current folder rather than your home folder. In each project that needs them:
 
 ```sh
 cd ~/projects/my-project
@@ -96,4 +96,4 @@ When you push changes to your repository, bring them to the machine with:
 configfile update
 ```
 
-Linked files are up to date right away. Run `configfile modules deploy --all` again when you add files or modules, as `update` reminds you, and `configfile modules undeploy --removed` to remove what the repository no longer deploys, which `update` warns about.
+It updates the global files the repository changed, and keeps those changed on this machine. Run `configfile modules deploy --all` again when you add files or modules, as `update` reminds you, and `configfile modules undeploy --removed` to remove what the repository no longer deploys, which `update` warns about.

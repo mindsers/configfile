@@ -37,7 +37,9 @@ Short form: `configfile m l`.
 
 ## `configfile modules status`
 
-Shows whether each global file of the modules (all modules by default) is deployed, not deployed, or blocked by another file, and the scripts each module runs when it is deployed or undeployed. Without module names, it also lists the deployed files the repository no longer deploys.
+Shows whether each global file of the modules (all modules by default) is copied, linked, not deployed, or blocked by another file, and the scripts each module runs when it is deployed or undeployed. Without module names, it also lists the deployed files the repository no longer deploys.
+
+For a copy, it says when it changed on this machine, when the repository has a newer version (or no longer has a file), and when both changed; for a copied folder, it lists the files concerned under it. When some files cannot be checked, it shows the others, then fails with exit code 1.
 
 Under a deployed link, it lists the changes made through it in *configfile*'s copy of the repository, by you or by a tool that writes its own configuration: files changed or deleted through the link, and new files a tool created in a linked folder. The next `update` saves them in a patch and puts the repository's version back, so bring the ones you want to keep into your working copy first ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). This needs git; without it, `status` says that these changes cannot be checked.
 
@@ -56,7 +58,9 @@ Short form: `configfile m st`.
 
 ## `configfile modules deploy`
 
-Deploys the global files of the given modules, one module at a time, and runs the [`pre_deploy` and `post_deploy` scripts](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) of the modules that have them. Without module names, asks to deploy all modules.
+Deploys the global files of the given modules (copies, or links with `"method": "link"`), one module at a time, and runs the [`pre_deploy` and `post_deploy` scripts](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) of the modules that have them. Without module names, asks to deploy all modules.
+
+A copy already deployed follows the repository where nothing changed it on this machine ([Global files](/reference/modules/#global-files)). For a file changed both on this machine and in the repository, it asks whether to replace it with the repository's version, once the other files of the module are deployed; answering no keeps yours, and the command still succeeds. Without a terminal, it keeps yours and fails; `--force` replaces it, and also the files changed on this machine, moving each one to `.old`. Files it could not update (reached through a link inside the copy, or written while it ran) make the command fail, with the reason.
 
 <!-- generated: configfile modules deploy -->
 ```sh
@@ -68,9 +72,9 @@ Short form: `configfile m d`.
 | Argument or option | Description |
 | --- | --- |
 | `modules` | modules to deploy (use --all, or answer a question, when omitted) |
-| `-l, --local` | copy the local files of the modules instead of linking global files |
+| `-l, --local` | copy the local files of the modules into the current folder, instead of the global files |
 | `-a, --all` | deploy every module without asking |
-| `-f, --force` | replace existing local files without asking (they are moved to .old) |
+| `-f, --force` | replace existing local files, and copies changed on this machine, without asking (they are moved to .old) |
 | `-n, --dry-run` | show what would be done, without changing anything |
 | `--no-hooks` | do not run the pre_deploy and post_deploy scripts of the modules |
 | `--keep-going` | deploy the remaining modules when a pre_deploy or post_deploy script fails |
@@ -90,7 +94,7 @@ Short form: `configfile m u`.
 | Argument or option | Description |
 | --- | --- |
 | `modules` | modules to undeploy (use --all, or answer a question, when omitted) |
-| `-l, --local` | remove the local copies of the modules instead of global links |
+| `-l, --local` | remove the local copies of the modules instead of the global files |
 | `-a, --all` | undeploy every module without asking, and the files the repository no longer deploys |
 | `--removed` | only undeploy the files the repository no longer deploys |
 | `-n, --dry-run` | show what would be done, without changing anything |
@@ -129,7 +133,7 @@ Short form: `configfile s r`.
 
 ## `configfile update`
 
-Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) that the remote doesn't have are first saved as a patch in `~/.configfile/saved/`, and `update` names the files they change; to keep them, apply the patch in your own working copy with `git -C <your working copy> apply --3way <patch>` (or `git am <patch>`), then commit and push. Changes the remote already has, because you pushed them from your working copy, are not saved. Global files are symbolic links, so they are up to date right away; run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it, up to 10 seconds: a slow fetch can make them fail.
+Syncs *configfile*'s copy of your dotfiles repository with the remote: it fetches the remote and makes the copy identical to it, whatever happened to the copy. Local changes found in the copy (uncommitted edits, new files or unpushed commits, for example edits made through a deployed link) that the remote doesn't have are first saved as a patch in `~/.configfile/saved/`, and `update` names the files they change; to keep them, apply the patch in your own working copy with `git -C <your working copy> apply --3way <patch>` (or `git am <patch>`), then commit and push. Changes the remote already has, because you pushed them from your working copy, are not saved. Then it updates the global files copied from the repository, where the repository changed them and this machine did not: files changed on this machine are kept, and files changed on both sides are left as they are, with a warning that says to run `modules deploy` ([Global files](/reference/modules/#global-files)). It never moves a file aside, asks a question or runs a module's scripts, and a file it cannot update only gets a warning. Global files deployed as links are up to date as soon as the copy of the repository is; `update` names the global files the repository copies that are still links from an older deployment. Run `modules deploy --all` for new files, and `modules deploy --local` to refresh local copies. It warns about deployed files the repository no longer deploys. It waits for a deployment or `init` in progress, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, and deployments started during the sync wait for it, up to 10 seconds: a slow fetch can make them fail.
 
 <!-- generated: configfile update -->
 ```sh

@@ -120,10 +120,17 @@ function describeChange(change: Change): string {
   switch (change.kind) {
     case 'deployed': {
       const moved = change.backup == null ? '' : `  (previous file moved to ${change.backup})`
-      return line(change.how === 'link' ? 'linked' : 'copied', `${change.target}${moved}`)
+      if (change.replaced === 'copy' && change.how === 'copy') {
+        return line('updated', `${change.target}${moved}`)
+      }
+      const was = change.replaced == null ? '' : `  (was a ${change.replaced})`
+      return line(change.how === 'link' ? 'linked' : 'copied', `${change.target}${moved}${was}`)
     }
-    case 'skipped':
-      return line('skipped', `${change.target}  (it already existed)`)
+    case 'skipped': {
+      const reason =
+        change.reason === 'conflict' ? 'changed here and in the repository' : 'it already existed'
+      return line('skipped', `${change.target}  (${reason})`)
+    }
     case 'removed': {
       const backup =
         change.backup == null
@@ -134,10 +141,12 @@ function describeChange(change: Change): string {
               changed: `  (its backup ${change.backup.path} had changed, not restored)`,
             }[change.backup.status]
       const leftover = change.leftover == null ? '' : `  (left at ${change.leftover})`
-      return line('removed', `${change.target}${backup}${leftover}`)
+      const moved = change.movedTo == null ? '' : `  (yours moved to ${change.movedTo})`
+      return line('removed', `${change.target}${backup}${leftover}${moved}`)
     }
     case 'kept': {
       const reason: Record<KeptReason, string> = {
+        changed: 'changed on this machine',
         foreign: 'not deployed by configfile',
         modified: 'modified since it was copied',
         identical: 'not copied by configfile',

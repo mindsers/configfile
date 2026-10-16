@@ -371,6 +371,39 @@ export async function gitBuffer(args: string[], { cwd }: { cwd: string }): Promi
   )
 }
 
+/**
+ * Runs git with `input` on its standard input, and returns its exit code and
+ * output, for commands whose exit code means something (`git check-ignore`).
+ * Git that cannot be started fails.
+ */
+export async function gitResult(
+  args: string[],
+  { cwd, input }: { cwd: string; input: string },
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  type Result = { code: number | null; stdout: string; stderr: string }
+  const run = new Promise<Result>((resolve, reject) => {
+    const child = spawn('git', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, stdout, stderr }))
+    // git may exit before reading everything (EPIPE): its exit code says why.
+    child.stdin.on('error', () => {})
+    child.stdin.end(input)
+  })
+  return run.catch(async error => {
+    throw await startFailure(error, cwd)
+  })
+}
+
 /** Time allowed to `git --version`: it answers at once unless something is wrong. */
 const VERSION_TIMEOUT_MS = 10_000
 

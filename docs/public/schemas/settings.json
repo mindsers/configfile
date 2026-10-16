@@ -60,8 +60,12 @@
           "description": "Where the file is deployed. ~ is your home folder. A relative path is relative to the home folder for global files, and to the current folder for local files."
         },
         "deploy": {
-          "description": "How the file is deployed: \"global\" links it (configfile modules deploy), \"local\" copies it into the current folder (configfile modules deploy --local), \"none\" keeps it in the repository without deploying it.",
+          "description": "Where the file is deployed: \"global\" into your home folder (configfile modules deploy), \"local\" into the current folder (configfile modules deploy --local), \"none\" keeps it in the repository without deploying it.",
           "enum": ["global", "local", "none"]
+        },
+        "method": {
+          "description": "How a global file is deployed: \"copy\" (the default) copies it, and configfile updates the copy when the repository changes, keeping changes made on this machine; \"link\" makes a symbolic link to configfile's copy of the repository. Local files are always copied.",
+          "enum": ["copy", "link"]
         },
         "global": {
           "description": "Deprecated: the older spelling of \"deploy\" (true is \"global\", false is \"local\"). It will stop working in 2.0.",
@@ -79,6 +83,16 @@
           "description": "Every entry names its file, except those that are never deployed.",
           "if": { "properties": { "deploy": { "const": "none" } }, "required": ["deploy"] },
           "else": { "required": ["source_path"] }
+        },
+        {
+          "description": "Local files are always copied.",
+          "if": {
+            "anyOf": [
+              { "properties": { "deploy": { "const": "local" } }, "required": ["deploy"] },
+              { "properties": { "global": { "const": false } }, "required": ["global"] }
+            ]
+          },
+          "then": { "properties": { "method": { "const": "copy" } } }
         },
         {
           "description": "Deployed files need a target.",

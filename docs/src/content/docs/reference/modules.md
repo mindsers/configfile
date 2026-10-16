@@ -11,6 +11,7 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 {
   "files": [
     { "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" },
+    { "source_path": "bin", "target_path": "~/.local/bin/mine", "deploy": "global", "method": "link" },
     { "source_path": "editorconfig", "target_path": ".editorconfig", "deploy": "local" },
     { "source_path": "old-aliases", "target_path": "~/.aliases", "deploy": "none" }
   ]
@@ -21,18 +22,44 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 | --- | --- |
 | `source_path` | Path of the file (or folder), relative to the module folder. It must stay inside the module folder, symbolic links included. |
 | `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. Targets can be anywhere you can write, except: your home folder, the current folder, the dotfiles repository, the module folder, *configfile*'s own files (`~/.configfilerc`, `~/.configfile/`), one of their parents, or anything inside the repository. These are recognised whatever the path used to reach them (letter case, symbolic links). |
-| `deploy` | `"global"`: the file is **symlinked** by `configfile modules deploy`. `"local"`: the file is **copied** by `configfile modules deploy --local`, typically into a project folder (symbolic links in the source are followed, so the copy never points into the repository). `"none"`: the file is **never deployed**, which keeps it in the repository for later. |
+| `deploy` | Where the file goes. `"global"`: usually into your home folder (a relative `target_path` starts there), with `configfile modules deploy`. `"local"`: into the current folder, typically a project, with `configfile modules deploy --local`. `"none"`: **never deployed**, which keeps it in the repository for later. |
+| `method` | How a global file is deployed. `"copy"` (the default): the file is **copied**, and *configfile* keeps the copy up to date with the repository while keeping the changes made on this machine (see [Global files](#global-files)). `"link"`: the file is a **symbolic link** to *configfile*'s copy of the repository, so whatever writes to it writes there ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). Local files are always copied: `"link"` is an error for them. Copies follow the symbolic links of the source, so they never point into the repository. |
 | `global` | **Deprecated**, removed in 2.0: older spelling of `deploy`. `true` is `"global"`, `false` is `"local"`. It still works in 1.x, with a warning. Use one or the other, not both. |
 
 An entry without `deploy` or `global` is not deployed, and `modules deploy` warns about it.
 
-When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A link that already points to the right file is left as is, so deploying twice is safe.
+When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A copy or a link already in place is left as is, so deploying twice is safe.
+
+## Global files
+
+*configfile* records the repository's version it last brought each copy to (a hash of each file), and compares three versions of each file: that one, the file in your home folder, and the repository's current version. For a copied folder, it does so for each file of the folder. Comparing needs git when *configfile*'s copy of the repository is a git repository: when git fails, the copies are not changed, and the command says why.
+
+| The file in your home folder | The repository's version | `modules deploy` and `update` |
+| --- | --- | --- |
+| is what *configfile* copied | is the same | nothing to do |
+| is what *configfile* copied | changed | updated to the repository's version |
+| changed on this machine | is the same | **kept**: `modules status` says "changed on this machine" |
+| changed on this machine | changed | **conflict**: kept by `update`, which says so; `modules deploy` asks whether to replace it (yours is moved to `.old`): answering no keeps it, and the command still succeeds. Without a terminal, it is kept and the command fails; `--force` replaces it |
+| is already the repository's version | changed or not | recorded as up to date |
+
+A file that is already there when a global file is first deployed, even identical to the repository's, is moved to `.old` like any other: `modules undeploy` puts it back.
+
+- Files that only exist in your home folder, such as the lockfiles or caches a tool creates in a copied folder, are never touched. So are the files of a copied source folder that the repository doesn't track (untracked, or listed in its `.gitignore`): they are copied, but not recorded. If the repository later adds a file at the same place, it is a conflict.
+- A file that the repository deleted is deleted from your home folder if it is what *configfile* copied, and is a conflict otherwise. A file you deleted from a copied folder stays deleted, until the repository changes it: it is then a conflict. A whole copied file you deleted is copied again by `modules deploy`.
+- `--force` also replaces the files changed on this machine, moving each one to `.old`. In a copied folder, the `.old` file sits next to the one it replaces: a tool that loads every file of the folder (such as `Include config.d/*` in `~/.ssh/config`) loads it too, so delete it once you have checked it.
+- A copied file keeps its permissions when it is updated.
+- *configfile* compares with the version the repository has: if something changed *configfile*'s copy of the repository itself (an edit made through a link), that change counts as a change made on this machine, never as a change of the repository.
+- *configfile* never follows a symbolic link inside a copied folder: a path that leads through a link is left as it is, and the command says why.
+- A file written on this machine between the moment *configfile* reads it and the moment it replaces it is kept, as a conflict, even with `--force`. A file the repository's version cannot be written over is put back as it was.
+- A copied folder can be updated while it is your current folder; replacing or removing it whole cannot.
+
+Deploying a link entry over a copy *configfile* made, or a copy entry over a link it made, turns one into the other, keeping what the link showed: changes made through a link become changes made on this machine. A copy changed on this machine, or a copied folder holding files *configfile* did not copy (a tool's), is only replaced by a link with `--force`, or after you answer yes: it is moved to `.old` first.
 
 When a local file already exists and differs from the one in the repository, *configfile* asks whether to replace it, once the other files of its module are deployed. The existing file or folder is then moved to `<target>.old` (or `.old.1`, …) before the copy, so nothing is lost.
 
-*configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links that point to the repository's files and the local copies *configfile* made, as long as a copy is still the file it made and matches the repository's current version, and moves the most recent backup it made back in place, if that backup is unchanged. Anything else is left untouched: files it did not create (even when identical to the repository), apart from links to the repository's files, local copies that differ from the repository (changed by you, or because the repository changed since) or were saved again by an editor, and `.old` files you made yourself.
+*configfile* records what it deploys and the backups it makes in `~/.configfile/state.json`. `configfile modules undeploy` reverts a deployment: it removes the links that point to the repository's files, the global copies that did not change on this machine (in a copied folder, each file that did not change; the folder goes once it is empty), and the local copies *configfile* made, as long as a copy is still the file it made and matches the repository's current version, and moves the most recent backup it made back in place, if that backup is unchanged (after a `--force` replaced your changed copy, that is your changed copy). Anything else is left untouched: files it did not create (even when identical to the repository), apart from links to the repository's files, local copies that differ from the repository (changed by you, or because the repository changed since) or were saved again by an editor, and `.old` files you made yourself.
 
-When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a copy whose source is gone) is left where it is, and *configfile* stops tracking it.
+When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a local copy whose source is gone) is left where it is, and *configfile* stops tracking it.
 
 To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose `settings.json` cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
 
