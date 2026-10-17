@@ -6,7 +6,7 @@ import type { Command } from 'commander'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
-import { describeJsonError, lstatOrNull, messageOf } from '../fsutil.ts'
+import { describeJsonError, errnoCode, lstatOrNull, messageOf } from '../fsutil.ts'
 import { plural } from '../output.ts'
 import { contains, resolveUserPath, slugify } from '../paths.ts'
 import { ensureGit, git, gitOutput } from '../process.ts'
@@ -164,19 +164,8 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
   }
   output.info(committed)
 
-  const refreshed = await syncAndRefresh(ctx, config.folderPath, {
-    workingCopy: copy,
-    deployHint: false,
-  })
-  const missed = adoptions.filter(item => !refreshed.recorded.includes(item.target))
-  if (missed.length > 0) {
-    // Changed meanwhile, or the remote has another version: deploying chooses.
-    output.warn(
-      `${listPaths(missed.map(item => item.target))} ${missed.length === 1 ? 'is' : 'are'} not ` +
-        "the repository's version: run " +
-        `"configfile modules deploy ${options.module}" to choose what to keep.`,
-    )
-  }
+  // Says which files it could not keep as configfile's copies, and why.
+  await syncAndRefresh(ctx, config.folderPath, { workingCopy: copy, deployHint: false })
 }
 
 /** Fails, listing them, when the working copy has changes that are not committed. */
@@ -398,16 +387,55 @@ async function commit(
       'git commit',
     )
   } catch (error) {
-    await gitOutput(['reset', '--quiet', '--', module.relative], { cwd, allowFailure: true })
-    for (const file of written) await rm(file, { recursive: true, force: true })
-    if (module.settings == null) {
-      await rm(settingsPath, { force: true })
-      await rmdir(module.path).catch(() => {})
-    } else {
-      await writeFile(settingsPath, module.settings)
+    const left = await undo(copy, module, written)
+    const cause = messageOf(error)
+    if (left.length > 0) {
+      throw new CliError(
+        `Nothing was adopted: ${cause} These could not be undone: ${left.join('; ')}. Check ` +
+          `"git -C ${cwd} status".`,
+        { cause: error },
+      )
     }
-    throw new CliError(`Nothing was adopted: ${messageOf(error)}`, { cause: error })
+    throw new CliError(`Nothing was adopted: ${cause}`, { cause: error })
   }
+}
+
+/** Removes what `commit` wrote. Returns what it could not undo, and why. */
+async function undo(
+  copy: WorkingCopy,
+  module: ModuleFolder,
+  written: readonly string[],
+): Promise<string[]> {
+  const left: string[] = []
+  const attempt = async (what: string, step: () => Promise<unknown>) => {
+    try {
+      await step()
+    } catch (error) {
+      left.push(`${what} (${messageOf(error)})`)
+    }
+  }
+  const settingsPath = path.join(module.path, 'settings.json')
+  await attempt(`unstaging ${module.relative}`, () =>
+    gitOutput(['reset', '--quiet', '--', module.relative], { cwd: copy.folder }),
+  )
+  for (const file of written) {
+    await attempt(`removing ${file}`, () => rm(file, { recursive: true, force: true }))
+  }
+  if (module.settings == null) {
+    await attempt(`removing ${settingsPath}`, () => rm(settingsPath, { force: true }))
+    await attempt(`removing ${module.path}`, async () => {
+      try {
+        await rmdir(module.path)
+      } catch (error) {
+        // Already gone, or created before (git keeps no empty folder): nothing to undo.
+        if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(errnoCode(error) ?? '')) throw error
+      }
+    })
+  } else {
+    const original = module.settings
+    await attempt(`restoring ${settingsPath}`, () => writeFile(settingsPath, original))
+  }
+  return left
 }
 
 /**

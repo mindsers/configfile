@@ -47,8 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uncommitted changes, and brings one that is behind up to date. `--no-push` stops after the
   commit ([#296](https://github.com/mindsers/configfile/issues/296)).
 - With a working copy configured (`init --working-copy`, or the first `modules adopt`), `update`
-  pushes its commits before syncing, and keeps as configfile's copies the files that the
-  commits of its branch added and that are already the repository's version
+  pushes its commits before syncing. When the commit it syncs to is on the working copy's
+  branch, it keeps as configfile's copies the files the new commits added that are already the
+  repository's version
   ([#296](https://github.com/mindsers/configfile/issues/296)).
 - `modules status` says whether a file in the way of a global file is identical to the
   repository's version, and shows a link that a file replaced (a tool that saves by renaming a

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
-import { git, gitOutput } from './process.ts'
+import { git, gitOutput, gitResult } from './process.ts'
 import { upstreamOf } from './sync.ts'
 
 /**
@@ -188,16 +188,8 @@ export async function push(copy: WorkingCopy): Promise<Pushed | null> {
   if (from === to) return null
   if (from != null) {
     // Only behind (fetched, not pulled yet): nothing to push.
-    const behind = await gitOutput(['merge-base', '--is-ancestor', to, from], {
-      cwd,
-      allowFailure: true,
-    })
-    if (behind != null) return null
-    const ancestor = await gitOutput(['merge-base', '--is-ancestor', from, to], {
-      cwd,
-      allowFailure: true,
-    })
-    if (ancestor == null) {
+    if (await isAncestor(cwd, to, from)) return null
+    if (!(await isAncestor(cwd, from, to))) {
       throw new CliError(
         `${copy.branch} has diverged from ${copy.remote}/${copy.branch} in ${copy.folder}: ` +
           `pull or rebase (git -C ${copy.folder} pull), then push.`,
@@ -242,13 +234,27 @@ export async function addedCopyEntries(
   return added
 }
 
-/** Whether `commit` is on the working copy's followed branch: one of the user's commits. */
+/** Whether `commit` is on the working copy's followed branch (committed or pulled there). */
 export async function isOnBranch(copy: WorkingCopy, commit: string): Promise<boolean> {
-  const output = await gitOutput(
-    ['merge-base', '--is-ancestor', commit, `refs/heads/${copy.branch}`],
-    { cwd: copy.folder, allowFailure: true },
+  // A commit the working copy has not fetched is not on its branch.
+  if ((await revision(copy, commit)) == null) return false
+  return isAncestor(copy.folder, commit, `refs/heads/${copy.branch}`)
+}
+
+/**
+ * Whether `ancestor` is `commit` or one of its ancestors. Fails when git
+ * cannot tell (an unknown commit), instead of answering no.
+ */
+async function isAncestor(cwd: string, ancestor: string, commit: string): Promise<boolean> {
+  const result = await gitResult(['merge-base', '--is-ancestor', ancestor, commit], {
+    cwd,
+    input: '',
+  })
+  if (result.code === 0) return true
+  if (result.code === 1) return false
+  throw new CliError(
+    `git merge-base failed: ${result.stderr.trim() || `exit code ${result.code ?? 'unknown'}`}`,
   )
-  return output != null
 }
 
 /** The global entries of a settings.json that are copied, or none when it cannot be read. */

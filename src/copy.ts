@@ -194,7 +194,8 @@ export async function inspectCopy(
 /**
  * Records a target configfile did not deploy as its copy, when it already is
  * the repository's version: a file adopted into the repository (see
- * `modules adopt`). Nothing is written. Returns whether it was recorded.
+ * `modules adopt`). The target is left untouched: only the record changes.
+ * Returns whether it was recorded.
  */
 export async function recordIdentical(
   file: CopySubject,

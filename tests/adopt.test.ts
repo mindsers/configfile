@@ -380,6 +380,32 @@ describe('modules adopt', () => {
     expect(updated.stderr).toContain(`Cannot push your working copy (${work})`)
   })
 
+  it('restores the settings.json of an existing module when the commit fails', async () => {
+    const { sandbox, work } = await setUp()
+    const settings = '{\n\t"files": []\n}\n'
+    await sandbox.write('work/files/shell/settings.json', settings)
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'shell')
+    await sandbox.write('home/.config/starship/starship.toml', 'toml')
+    await sandbox.write('work/.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n', 0o755)
+
+    const result = await runCli(sandbox, [
+      'modules',
+      'adopt',
+      '~/.config/starship',
+      '-m',
+      'shell',
+      '--into',
+      work,
+    ])
+
+    expect(result.stderr).toContain('Nothing was adopted: git commit failed')
+    expect(result.stderr).not.toContain('could not be undone')
+    expect(await readFile(path.join(work, 'files/shell/settings.json'), 'utf8')).toBe(settings)
+    expect(existsSync(path.join(work, 'files/shell/starship'))).toBe(false)
+    expect(gitText(work, 'status', '--porcelain')).toBe('')
+  })
+
   it('removes what it wrote when the commit fails', async () => {
     const { sandbox, remote, work } = await setUp()
     await sandbox.write('home/.zshrc', 'zshrc')
@@ -534,7 +560,8 @@ echo edited > '${zshrc}'
 
     expect(result.code).toBe(0)
     expect(result.stderr).toContain(
-      `${zshrc} is not the repository's version: run "configfile modules deploy zsh" to choose what to keep.`,
+      `${zshrc} is not the repository's version, so configfile left it as it is: ` +
+        '"configfile modules deploy zsh" would move it to .old',
     )
     expect(await isRecordedCopy(sandbox, zshrc)).toBe(false)
   })
@@ -604,6 +631,22 @@ describe('modules adopt, after the review', () => {
     expect(result.stdout).toContain(`- ${zshrc} (configfile's copy now)`)
   })
 
+  it('says when a file adopted with --no-push changed before update', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    const zshrc = await sandbox.write('home/.zshrc', 'zshrc')
+    await runCli(sandbox, ['modules', 'adopt', '~/.zshrc', '-m', 'zsh', '--no-push'])
+    await sandbox.write('home/.zshrc', 'edited since')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      `${zshrc} is not the repository's version, so configfile left it as it is`,
+    )
+    expect(await readFile(zshrc, 'utf8')).toBe('edited since')
+  })
+
   it("keeps nothing from commits that are not on the working copy's branch", async () => {
     const { sandbox, work, commitInRemote } = await setUp()
     await sandbox.configure({ working_copy: work })
@@ -619,6 +662,7 @@ describe('modules adopt, after the review', () => {
     const result = await runCli(sandbox, ['update'])
 
     expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
     expect(await isRecordedCopy(sandbox, zshrc)).toBe(false)
   })
 
@@ -632,6 +676,32 @@ describe('modules adopt, after the review', () => {
 
     expect(result.stderr).toBe('')
     expect(result.stdout).not.toContain('Pushed')
+  })
+})
+
+describe('modules adopt, a folder with ignored files', () => {
+  it("keeps the folder as configfile's copy, and never touches the ignored files", async () => {
+    const { sandbox, remote, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    await sandbox.write('work/.gitignore', 'lazy-lock.json\n')
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'ignore')
+    git(work, 'push', '--quiet', 'origin', 'main')
+    const nvim = path.join(sandbox.home, '.config/nvim')
+    await sandbox.write('home/.config/nvim/init.lua', 'init')
+    await sandbox.write('home/.config/nvim/lazy-lock.json', 'lock')
+
+    const adopted = await runCli(sandbox, ['modules', 'adopt', '~/.config/nvim', '-m', 'nvim'])
+    const deployed = await runCli(sandbox, ['modules', 'deploy', 'nvim'])
+
+    expect(adopted.stderr).toBe('')
+    expect(adopted.stdout).toContain(`- ${nvim} (configfile's copy now)`)
+    expect(existsSync(path.join(remote, 'files/nvim/nvim/init.lua'))).toBe(true)
+    expect(existsSync(path.join(remote, 'files/nvim/nvim/lazy-lock.json'))).toBe(false)
+    expect(await isRecordedCopy(sandbox, nvim)).toBe(true)
+    expect(deployed.code).toBe(0)
+    expect(await readFile(path.join(nvim, 'lazy-lock.json'), 'utf8')).toBe('lock')
+    expect(existsSync(`${nvim}.old`)).toBe(false)
   })
 })
 

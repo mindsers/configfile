@@ -88,11 +88,14 @@ async function pushWorkingCopy(
 }
 
 /**
- * The copied entries the sync brought that come from the user's working
- * copy: an identical file at their target is the one the user adopted. On
- * another machine, or for someone else's commits, there are none.
+ * The copied entries the sync added, when the commit it synced to is on the
+ * working copy's branch: an identical file at their target is then one the
+ * user adopted, or one already in place for a commit the user pulled. None
+ * when the remote has commits the working copy lacks. Never fails: what it
+ * cannot read is reported, and those files are left to `modules deploy`.
  */
 async function adoptedEntries(
+  ctx: Context,
   folderPath: string,
   copy: WorkingCopy | null,
   { before, after }: { before: string | null; after: string },
@@ -101,7 +104,12 @@ async function adoptedEntries(
   try {
     if (!(await isOnBranch(copy, after))) return []
     return await addedCopyEntries(folderPath, { from: before, to: after })
-  } catch {
+  } catch (error) {
+    ctx.output.warn(
+      `Cannot tell which files the new commits of your working copy added (${messageOf(error)}): ` +
+        'files you adopted are not kept as configfile\'s copies. "configfile modules deploy" ' +
+        'deploys them, moving yours to .old.',
+    )
     return []
   }
 }
@@ -109,10 +117,10 @@ async function adoptedEntries(
 /**
  * Syncs the mirror with the remote, then updates the copies of global files.
  * With the working copy, it also records as configfile's copies the targets
- * of the copied entries the sync brought from it that already are the
- * repository's version (see `adoptedEntries`). Reports what it did;
- * `deployHint`: says to deploy the new files (not after `modules adopt`,
- * whose files are already in place).
+ * of the copied entries the sync added that already are the repository's
+ * version (see `adoptedEntries`). Reports what it did. `deployHint` says to
+ * deploy the new files (not after `modules adopt`, whose files are already
+ * in place).
  */
 export async function syncAndRefresh(
   ctx: Context,
@@ -134,7 +142,7 @@ export async function syncAndRefresh(
       from: result.before,
       to: result.after,
     })
-    const adopted = await adoptedEntries(folderPath, workingCopy, result)
+    const adopted = await adoptedEntries(ctx, folderPath, workingCopy, result)
     // Copies follow the repository too, before any deployment can start.
     return { result, refreshed: await refreshCopies(ctx, folderPath, adopted) }
   })
@@ -182,6 +190,8 @@ export interface Refresh {
   readonly waiting: { target: string; reason: string }[]
   /** Targets of adopted entries recorded as configfile's copies. */
   readonly recorded: string[]
+  /** Targets of adopted entries left as they are: not the repository's version. */
+  readonly differing: { target: string; module: string }[]
 }
 
 /**
@@ -205,6 +215,7 @@ async function refreshCopies(
     linked: [],
     waiting: [],
     recorded: [],
+    differing: [],
   }
   let modules: Module[]
   let record: DeploymentRecord
@@ -230,6 +241,8 @@ async function refreshCopies(
           if (await recordIdentical(file, record, view)) {
             refresh.recorded.push(file.target)
             ctx.history.record({ kind: 'recorded', target: file.target, source: file.source })
+          } else {
+            refresh.differing.push({ target: file.target, module: module.name })
           }
           continue
         }
@@ -325,6 +338,14 @@ function reportRefresh(refresh: Refresh, ctx: Context): void {
   const { output } = ctx
   for (const target of refresh.recorded) {
     output.print(`- ${target} (configfile's copy now)`)
+  }
+  for (const { target, module } of refresh.differing) {
+    // Changed since it was committed, or the repository changed it meanwhile.
+    output.warn(
+      `${target} is not the repository's version, so configfile left it as it is: ` +
+        `"configfile modules deploy ${module}" would move it to .old and copy the ` +
+        "repository's version.",
+    )
   }
   if (refresh.kept.length > 0) {
     output.info(
