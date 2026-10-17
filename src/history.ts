@@ -27,6 +27,7 @@ export const COMMANDS = {
   init: 'recorded',
   'modules deploy': 'recorded',
   'modules undeploy': 'recorded',
+  'modules adopt': 'recorded',
   update: 'recorded',
   'scripts run': 'recorded',
   'modules list': 'read-only',
@@ -75,6 +76,12 @@ export type Change =
   | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }
+  /** `modules adopt` committed the file into `source`, in the working copy. */
+  | { kind: 'adopted'; target: string; source: string; folder: string }
+  /** Commits of the working copy pushed to the remote (`from`: the remote's commit, as last fetched). */
+  | { kind: 'pushed'; folder: string; branch: string; from: string | null; to: string }
+  /** A target that already was the repository's version, recorded as configfile's copy. */
+  | { kind: 'recorded'; target: string; source: string }
 
 /** The command a run executed, with the options worth recording. */
 export interface Invocation {
@@ -147,7 +154,7 @@ export function describeInvocation(action: Command): Invocation {
 
   switch (command) {
     case 'init':
-      copy('force', 'folder')
+      copy('force', 'folder', 'workingCopy')
       if (typeof given.repo === 'string') options.repo = redactUrl(given.repo)
       break
     case 'modules deploy':
@@ -157,6 +164,11 @@ export function describeInvocation(action: Command): Invocation {
       copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing')
       // On unless turned off with --no-hooks.
       if (given.hooks === false) options.hooks = false
+      break
+    case 'modules adopt':
+      copy('module', 'dryRun')
+      options.paths = Array.isArray(args[0]) ? args[0].length : 0
+      if (given.push === false) options.push = false
       break
     case 'scripts run':
       options.script = args[0]
@@ -545,6 +557,15 @@ function isChange(value: unknown): value is Change {
       )
     case 'configured':
       return typeof value.file === 'string'
+    case 'adopted':
+      return areStrings(value.target, value.source, value.folder)
+    case 'pushed':
+      return (
+        areStrings(value.folder, value.branch, value.to) &&
+        (value.from === null || typeof value.from === 'string')
+      )
+    case 'recorded':
+      return areStrings(value.target, value.source)
     case 'script':
       return (
         areStrings(value.name, value.file) &&

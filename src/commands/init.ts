@@ -17,6 +17,7 @@ interface InitOptions {
   force?: boolean
   repo?: string
   folder?: string
+  workingCopy?: string
 }
 
 export function registerInitCommand(program: Command, ctx: Context): void {
@@ -27,6 +28,10 @@ export function registerInitCommand(program: Command, ctx: Context): void {
     .option('-f, --force', 'overwrite the existing configuration without asking')
     .option('--repo <url>', 'dotfiles repository URL (skips the question)')
     .option('--folder <path>', 'where to clone the repository (default: ~/.configfile/dotfiles)')
+    .option(
+      '--working-copy <path>',
+      'your own clone of the repository, where "modules adopt" commits and from which "update" pushes',
+    )
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -101,6 +106,9 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   await withCommandLock(ctx, () =>
     setUp({ folderPath, repoUrl, configured, force: options.force === true }, store, ctx),
   )
+  if (options.workingCopy != null) {
+    await store.setWorkingCopy(resolveUserPath(options.workingCopy.trim(), ctx))
+  }
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
 }
 

@@ -40,6 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
   no longer accepts either.
 ### Added
+- `configfile modules adopt <path…> --module <name>` adds files or folders of this machine to a
+  module: in your own working copy (given with `--into`, then remembered as `"working_copy"`),
+  it copies them into the module, adds their entries to its `settings.json`, commits, pushes,
+  syncs, and keeps the files in place as configfile's copies. It refuses a working copy with
+  uncommitted changes, and brings one that is behind up to date. `--no-push` stops after the
+  commit ([#296](https://github.com/mindsers/configfile/issues/296)).
+- With a working copy configured (`init --working-copy`, or the first `modules adopt`), `update`
+  pushes its commits before syncing, and keeps as configfile's copies the files that the
+  commits of its branch added and that are already the repository's version
+  ([#296](https://github.com/mindsers/configfile/issues/296)).
+- `modules status` says whether a file in the way of a global file is identical to the
+  repository's version, and shows a link that a file replaced (a tool that saves by renaming a
+  new file over it) as `linked, but a file replaced the link`. `modules deploy` asks before
+  putting the link back; without a terminal it keeps the file and fails, and `--force` puts the
+  link back, moving the file to `.old` ([#296](https://github.com/mindsers/configfile/issues/296)).
 - The `"method"` setting of an entry: `"copy"` (the default for global files) or `"link"`.
   `modules status` lists the files of a copy that changed on this machine, in the repository, or
   on both sides ([#297](https://github.com/mindsers/configfile/issues/297)).

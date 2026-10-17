@@ -16,6 +16,8 @@ export interface Config {
    * extension"), or `null` when every file of `scripts/` is a script.
    */
   readonly scriptExtensions: readonly string[] | null
+  /** Absolute path of the user's own clone of the repository (`working_copy`), or `null`. */
+  readonly workingCopy: string | null
 }
 
 /** On-disk shape of `~/.configfilerc`. Unknown keys are preserved on write. */
@@ -23,6 +25,7 @@ interface RawConfig {
   repo_url?: unknown
   folder_path?: unknown
   script_extensions?: unknown
+  working_copy?: unknown
   [key: string]: unknown
 }
 
@@ -65,6 +68,7 @@ export class ConfigStore {
       // Hand-edited values such as "~/dotfiles" must not depend on the current folder.
       folderPath: resolveUserPath(raw.folder_path.trim(), { home: this.#home, cwd: this.#home }),
       scriptExtensions: this.#readExtensions(raw.script_extensions),
+      workingCopy: this.#readWorkingCopy(raw.working_copy),
     }
   }
 
@@ -121,12 +125,17 @@ export class ConfigStore {
   /** Saves the configuration. Unknown keys of a valid existing file are kept. */
   async write(config: { repoUrl: string; folderPath: string }): Promise<void> {
     const previous = (await this.#readRaw().catch(ignoreInvalid)) ?? {}
-    const next: RawConfig = {
-      ...previous,
-      repo_url: config.repoUrl,
-      folder_path: config.folderPath,
-    }
+    await this.#save({ ...previous, repo_url: config.repoUrl, folder_path: config.folderPath })
+  }
 
+  /** Saves where the user's working copy is (`working_copy`), keeping the rest. */
+  async setWorkingCopy(folder: string): Promise<void> {
+    const previous = await this.#readRaw()
+    if (previous == null) throw new NotInitializedError(this.path)
+    await this.#save({ ...previous, working_copy: folder })
+  }
+
+  async #save(next: RawConfig): Promise<void> {
     try {
       // Readable by the user only: the repository URL may contain credentials.
       await writeFileAtomic(this.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
@@ -136,6 +145,16 @@ export class ConfigStore {
         { cause: error },
       )
     }
+  }
+
+  #readWorkingCopy(value: unknown): string | null {
+    if (value === undefined || value === null) return null
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new InvalidConfigError(
+        `Invalid configuration in ${this.path}: "working_copy" must be the path of a folder.`,
+      )
+    }
+    return resolveUserPath(value.trim(), { home: this.#home, cwd: this.#home })
   }
 
   #readExtensions(value: unknown): readonly string[] | null {

@@ -88,6 +88,16 @@ configfile scripts run setup
 
 `set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
 
+## Bring this machine's files into the repository
+
+A machine often has configuration files that aren't in your repository yet. Add them to a module with:
+
+```sh
+configfile modules adopt ~/.zshrc ~/.config/starship --module shell --into ~/src/dotfiles
+```
+
+`~/src/dotfiles` is your own working copy of the repository: *configfile* copies the files into `files/shell/`, adds them to its `settings.json`, commits and pushes, then keeps them in place as its copies. Your other machines get them with `update` and `modules deploy shell`. The working copy is remembered, so `--into` can be left out next time. Add `--dry-run` to see what it would do first.
+
 ## Keep the machine in sync
 
 When you push changes to your repository, bring them to the machine with:

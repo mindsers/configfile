@@ -12,8 +12,9 @@ description: The ~/.configfilerc file and the ~/.configfile/ folder.
   "repo_url": "git@github.com:me/dotfiles.git",
   "folder_path": "/Users/me/.configfile/dotfiles",
   "script_extensions": [".js", ".sh", ""],
-  "history_max_size": "1MB"
+  "history_max_size": "1MB",
+  "working_copy": "~/src/dotfiles"
 }
 ```
 
-`folder_path` may start with `~`; a relative path is relative to your home folder. `script_extensions` is optional: without it, every file of `scripts/` is a script. With it, only files with one of these extensions are; the dot may be omitted (`"py"`), and `""` means files without extension. `history_max_size` is optional: see [History](/reference/history/).
+`folder_path` may start with `~`; a relative path is relative to your home folder. `script_extensions` is optional: without it, every file of `scripts/` is a script. With it, only files with one of these extensions are; the dot may be omitted (`"py"`), and `""` means files without extension. `history_max_size` is optional: see [History](/reference/history/). `working_copy` is optional: it is your own clone of the repository, where [`modules adopt`](/reference/commands/#configfile-modules-adopt) commits, and from which [`update`](/reference/commands/#configfile-update) pushes the commits the remote doesn't have before syncing. `init --working-copy` and the first `modules adopt --into` save it; like `folder_path`, it may start with `~`.

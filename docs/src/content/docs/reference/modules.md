@@ -41,7 +41,9 @@ When a global file is deployed and something else already exists at its target (
 | changed on this machine | changed | **conflict**: kept by `update`, which says so; `modules deploy` asks whether to replace it (yours is moved to `.old`): answering no keeps it, and the command still succeeds. Without a terminal, it is kept and the command fails; `--force` replaces it |
 | is already the repository's version | changed or not | recorded as up to date |
 
-A file that is already there when a global file is first deployed, even identical to the repository's, is moved to `.old` like any other: `modules undeploy` puts it back.
+A file that is already there when a global file is first deployed, even identical to the repository's, is moved to `.old` like any other: `modules undeploy` puts it back. The exception is a file you add to the repository with [`modules adopt`](/reference/commands/#configfile-modules-adopt) (or commit from your working copy and push with `update`): it stays in place and becomes *configfile*'s copy, with nothing to put back.
+
+With `"method": "link"`, a link that a file replaced (a tool that saves by renaming a new file over it) no longer follows the repository: `modules status` shows it, and `modules deploy` asks before putting the link back, moving the file to `.old`.
 
 - Files that only exist in your home folder, such as the lockfiles or caches a tool creates in a copied folder, are never touched. So are the files of a copied source folder that the repository doesn't track (untracked, or listed in its `.gitignore`): they are copied, but not recorded. If the repository later adds a file at the same place, it is a conflict.
 - A file that the repository deleted is deleted from your home folder if it is what *configfile* copied, and is a conflict otherwise. A file you deleted from a copied folder stays deleted, until the repository changes it: it is then a conflict. A whole copied file you deleted is copied again by `modules deploy`.

@@ -82,7 +82,7 @@ export async function syncMirror(
 }
 
 /** The remote branch followed by the mirror: its upstream, or the remote's default branch. */
-async function upstreamOf(folder: string): Promise<string> {
+export async function upstreamOf(folder: string): Promise<string> {
   const cwd = folder
   const tracked = await gitOutput(
     ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
