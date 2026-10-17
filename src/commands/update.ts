@@ -21,9 +21,9 @@ import { syncMirror } from '../sync.ts'
 import {
   addedCopyEntries,
   type EntryKey,
-  isOnBranch,
   openWorkingCopy,
   push,
+  syncedFromBranch,
   type WorkingCopy,
 } from '../working-copy.ts'
 import { describeDeploy, recordDeploy } from './modules.ts'
@@ -88,11 +88,12 @@ async function pushWorkingCopy(
 }
 
 /**
- * The copied entries the sync added, when the commit it synced to is on the
- * working copy's branch: an identical file at their target is then one the
- * user adopted, or one already in place for a commit the user pulled. None
- * when the remote has commits the working copy lacks. Never fails: what it
- * cannot read is reported, and those files are left to `modules deploy`.
+ * The copied entries added by the commits of the working copy's branch that
+ * the sync brought (see `syncedFromBranch`): an identical file at their
+ * target is one the user adopted, or one already in place for a commit the
+ * user pulled there. Commits pushed from elsewhere do not count. Never
+ * fails: what it cannot read is reported, and those files are left to
+ * `modules deploy`.
  */
 async function adoptedEntries(
   ctx: Context,
@@ -102,8 +103,8 @@ async function adoptedEntries(
 ): Promise<EntryKey[]> {
   if (copy == null || before == null || before === after) return []
   try {
-    if (!(await isOnBranch(copy, after))) return []
-    return await addedCopyEntries(folderPath, { from: before, to: after })
+    const range = await syncedFromBranch(copy, folderPath, { before, after })
+    return range == null ? [] : await addedCopyEntries(folderPath, range)
   } catch (error) {
     ctx.output.warn(
       `Cannot tell which files the new commits of your working copy added (${messageOf(error)}): ` +
@@ -116,10 +117,11 @@ async function adoptedEntries(
 
 /**
  * Syncs the mirror with the remote, then updates the copies of global files.
- * With the working copy, it also records as configfile's copies the targets
- * of the copied entries the sync added that already are the repository's
- * version (see `adoptedEntries`). Reports what it did. `deployHint` says to
- * deploy the new files (not after `modules adopt`, whose files are already
+ * With the working copy, it also records as configfile's copies the
+ * unrecorded targets of the copied entries that its synced commits added,
+ * when they already are the repository's version, and warns about those
+ * that differ (see `adoptedEntries`). Reports what it did. `deployHint` says
+ * to deploy the new files (not after `modules adopt`, whose files are already
  * in place).
  */
 export async function syncAndRefresh(

@@ -160,10 +160,15 @@ export async function catchUp(copy: WorkingCopy): Promise<number> {
   return behind
 }
 
-/** Commits a ref names, or `null` when it does not exist. */
-async function revision(copy: WorkingCopy, name: string): Promise<string | null> {
+/** The commit a ref names in the working copy, or `null` when it does not exist. */
+function revision(copy: WorkingCopy, name: string): Promise<string | null> {
+  return commitIn(copy.folder, name)
+}
+
+/** The commit a ref names in the repository in `folder`, or `null` when it does not exist. */
+async function commitIn(folder: string, name: string): Promise<string | null> {
   const output = await gitOutput(['rev-parse', '--verify', '--quiet', `${name}^{commit}`], {
-    cwd: copy.folder,
+    cwd: folder,
     allowFailure: true,
   })
   return output == null || output.trim() === '' ? null : output.trim()
@@ -201,9 +206,10 @@ export async function push(copy: WorkingCopy): Promise<Pushed | null> {
 }
 
 /**
- * The global entries copied (not linked) that the commits `from..to` of the
- * repository in `folder` add to the settings.json of the modules: those
- * whose target an identical file may already hold (see `modules adopt`).
+ * The global entries copied (not linked) that the settings.json of the
+ * modules have at commit `to` and did not have at `from`, in the repository
+ * in `folder`: those whose target an identical file may already hold (see
+ * `modules adopt`).
  */
 export async function addedCopyEntries(
   folder: string,
@@ -234,18 +240,32 @@ export async function addedCopyEntries(
   return added
 }
 
-/** Whether `commit` is on the working copy's followed branch (committed or pulled there). */
-export async function isOnBranch(copy: WorkingCopy, commit: string): Promise<boolean> {
-  // A commit the working copy has not fetched is not on its branch.
-  if ((await revision(copy, commit)) == null) return false
-  return isAncestor(copy.folder, commit, `refs/heads/${copy.branch}`)
+/**
+ * The commits of the working copy's branch that the mirror got from
+ * `before` to `after` (a sync): from `before` to the branch's commit, when
+ * the sync brought it. `null` when it brought none of them, such as when the
+ * working copy has not pushed, or is behind. Commits pushed from elsewhere
+ * on top of them do not count.
+ */
+export async function syncedFromBranch(
+  copy: WorkingCopy,
+  mirror: string,
+  { before, after }: { before: string; after: string },
+): Promise<{ from: string; to: string } | null> {
+  const head = await revision(copy, `refs/heads/${copy.branch}`)
+  if (head == null || head === before) return null
+  // Only commits the mirror has can have been synced.
+  if ((await commitIn(mirror, head)) == null) return null
+  if (!(await isAncestor(mirror, head, after))) return null
+  if (!(await isAncestor(mirror, before, head))) return null
+  return { from: before, to: head }
 }
 
 /**
  * Whether `ancestor` is `commit` or one of its ancestors. Fails when git
  * cannot tell (an unknown commit), instead of answering no.
  */
-async function isAncestor(cwd: string, ancestor: string, commit: string): Promise<boolean> {
+export async function isAncestor(cwd: string, ancestor: string, commit: string): Promise<boolean> {
   const result = await gitResult(['merge-base', '--is-ancestor', ancestor, commit], {
     cwd,
     input: '',

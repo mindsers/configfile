@@ -650,6 +650,17 @@ describe('modules status, dry run and undeploy', () => {
     expect(real.stdout).toContain(`${sandbox.home}/.vim (a, b: updated from the repository)`)
   })
 
+  it('still shows a file in the way of a link that it cannot read', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox, { method: 'link' })
+    const zshrc = await sandbox.write('home/.zshrc', 'other', 0o000)
+
+    const result = await runCli(sandbox, ['modules', 'status', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`${zshrc} (not deployed: a file is in the way)\n`)
+  })
+
   it("says whether a file in the way of a link is the repository's version", async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox, { method: 'link' })

@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile, symlink } from 'node:fs/promises'
+import { chmod, readFile, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { repositoryKey } from '../src/working-copy.ts'
+import { isAncestor, repositoryKey } from '../src/working-copy.ts'
 
 import {
   createRemote,
@@ -486,6 +486,12 @@ describe('modules adopt, more refusals', () => {
     expect(await adopt('~/.zshrc', '-m', 'broken')).toContain(
       'Module "broken" cannot be used: settings.json is not valid JSON',
     )
+    // It may deploy the file already: nothing is adopted until it is fixed.
+    expect(await adopt('~/.zshrc', '-m', 'zsh')).toContain(
+      'Module "broken" cannot be used (settings.json is not valid JSON',
+    )
+    await sandbox.write('work/files/broken/settings.json', '{ "files": [] }')
+    git(work, 'commit', '--quiet', '-am', 'fix broken')
     expect(await adopt('~/.zshrc', '-m', 'plain')).toContain(
       'plain exists and is not a module (it has no settings.json).',
     )
@@ -836,5 +842,83 @@ describe('the working_copy setting', () => {
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('"working_copy" must be the path of a folder.')
+  })
+})
+
+describe('modules adopt and update, round 2', () => {
+  it('keeps a file adopted with --no-push even when another machine pushed on top', async () => {
+    const { sandbox, work, commitInRemote } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    const zshrc = await sandbox.write('home/.zshrc', 'zshrc')
+    await runCli(sandbox, ['modules', 'adopt', '~/.zshrc', '-m', 'zsh', '--no-push'])
+    git(work, 'push', '--quiet', 'origin', 'main')
+    await commitInRemote('README.md', 'from another machine')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain(`- ${zshrc} (configfile's copy now)`)
+  })
+
+  it('lists what it could not undo when the rollback fails', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.write('home/.zshrc', 'zshrc')
+    await sandbox.write(
+      'work/.git/hooks/pre-commit',
+      '#!/bin/sh\nchmod 555 files/zsh\nexit 1\n',
+      0o755,
+    )
+    try {
+      const result = await runCli(sandbox, [
+        'modules',
+        'adopt',
+        '~/.zshrc',
+        '-m',
+        'zsh',
+        '--into',
+        work,
+      ])
+
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain('Nothing was adopted: git commit failed')
+      expect(result.stderr).toContain(
+        `These could not be undone: removing ${path.join(work, 'files/zsh/zshrc')}`,
+      )
+      expect(result.stderr).toContain(`Check "git -C ${work} status".`)
+    } finally {
+      await chmod(path.join(work, 'files/zsh'), 0o755)
+    }
+  })
+
+  it('goes on when the working copy cannot be remembered', async () => {
+    const { sandbox, remote, work } = await setUp()
+    await sandbox.write('home/.zshrc', 'zshrc')
+    // ~/.configfilerc is replaced through a file written next to it.
+    await chmod(sandbox.home, 0o555)
+    try {
+      const result = await runCli(sandbox, [
+        'modules',
+        'adopt',
+        '~/.zshrc',
+        '-m',
+        'zsh',
+        '--into',
+        work,
+      ])
+
+      expect(result.stderr).toContain('Cannot remember your working copy:')
+      expect(gitText(remote, 'log', '-1', '--format=%s')).toBe('Adopt ~/.zshrc')
+    } finally {
+      await chmod(sandbox.home, 0o755)
+    }
+  })
+
+  it('fails when git cannot tell whether a commit is an ancestor', async () => {
+    const { remote } = await setUp()
+
+    await expect(isAncestor(remote, 'HEAD', 'HEAD')).resolves.toBe(true)
+    await expect(isAncestor(remote, '0'.repeat(40), 'HEAD')).rejects.toThrow(
+      'git merge-base failed',
+    )
   })
 })

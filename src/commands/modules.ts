@@ -1538,16 +1538,20 @@ function describeState(state: TargetState, file: Pick<ModuleFile, 'strategy'>): 
     case 'stale':
       return 'deployed, but linked to an old location of the repository: deploy it again'
     case 'foreign':
-      return state.identical == null
-        ? `not deployed: a ${state.what} is in the way`
-        : `not deployed: a ${state.what} is in the way (${state.identical ? 'identical to' : 'differs from'} the repository)`
+      return `not deployed: a ${state.what} is in the way${compared(state.identical)}`
     case 'replaced-link':
-      return `linked, but a file replaced the link (${state.identical ? 'identical to' : 'differs from'} the repository)`
+      return `linked, but a file replaced the link${compared(state.identical)}`
     case 'source-missing':
       return state.ours
         ? 'deployed, but its source is missing from the repository'
         : 'its source is missing from the repository'
   }
+}
+
+/** ` (identical to the repository)`, ` (differs from the repository)`, or nothing when unknown. */
+function compared(identical: boolean | undefined): string {
+  if (identical == null) return ''
+  return ` (${identical ? 'identical to' : 'differs from'} the repository)`
 }
 
 function describeKept(state: KeptState, tense: 'would be' | 'was' = 'was'): string {

@@ -108,7 +108,7 @@ export type TargetState =
    * link, as tools that save through a new file do. `identical`: whether it is
    * the repository's version.
    */
-  | { kind: 'replaced-link'; identical: boolean }
+  | { kind: 'replaced-link'; identical?: boolean }
   /** Something is there but the source is missing. `ours`: configfile put it there. */
   | { kind: 'source-missing'; ours: boolean }
 
@@ -255,11 +255,12 @@ export async function inspectFile(
       (await lstatOrNull(recorded.source)) == null
     if (recordedHere && existing.isSymbolicLink() && recordedSourceGone) return { kind: 'stale' }
     if (existing.isSymbolicLink()) return { kind: 'foreign', what: 'link' }
-    const identical = await sameContent(file.source, file.target)
+    // Only said in status: a file that cannot be read is still in the way.
+    const identical = await sameContent(file.source, file.target).catch(() => undefined)
     if (recorded != null && recorded.copy == null && isRecordFor(recorded, file)) {
-      return { kind: 'replaced-link', identical }
+      return { kind: 'replaced-link', ...(identical != null && { identical }) }
     }
-    return { kind: 'foreign', what: kindOf(existing), identical }
+    return { kind: 'foreign', what: kindOf(existing), ...(identical != null && { identical }) }
   }
 
   if (!sourceExists) return { kind: 'source-missing', ours: false }

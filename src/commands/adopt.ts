@@ -138,8 +138,13 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
     })
   }
   if (config.workingCopy == null) {
-    await store.setWorkingCopy(folder)
-    output.info(`Your working copy is remembered: next time, --into can be left out.`)
+    try {
+      await store.setWorkingCopy(folder)
+      output.info('Your working copy is remembered: next time, --into can be left out.')
+    } catch (error) {
+      // The commit is made: going on, so that it is pushed and kept.
+      output.warn(`Cannot remember your working copy: ${messageOf(error)} Give --into next time.`)
+    }
   }
 
   const committed = `Committed ${listPaths(adoptions.map(item => item.target))} into ${module.relative} in ${folder}.`
@@ -240,6 +245,7 @@ async function findModule(copy: WorkingCopy, name: string): Promise<ModuleFolder
   const modules = await listModules(copy.folder, {
     home: copy.folder,
     cwd: copy.folder,
+    // Shown once, when the targets are checked (see `nameAdoptions`).
     warn: () => {},
   })
   const found = modules.find(module => module.name === name)
@@ -284,7 +290,18 @@ async function nameAdoptions(
       typeof entry.source_path === 'string' ? [path.normalize(entry.source_path)] : [],
     ),
   )
-  const modules = await listModules(copy.folder, { home: ctx.home, cwd: ctx.cwd, warn: () => {} })
+  const modules = await listModules(copy.folder, {
+    home: ctx.home,
+    cwd: ctx.cwd,
+    warn: message => ctx.output.warn(message),
+  })
+  const broken = modules.find(other => other.error != null)
+  if (broken?.error != null) {
+    throw new CliError(
+      `Module "${broken.name}" cannot be used (${broken.error}), so configfile cannot check ` +
+        'that it does not deploy these files already: fix it first.',
+    )
+  }
   const deployed = new Map(
     modules.flatMap(other =>
       other.error == null ? other.files.map(file => [file.target, other.name] as const) : [],
