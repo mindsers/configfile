@@ -27,7 +27,7 @@ configfile's mirror   ~/.configfile/dotfiles
 your home folder      ~/.zshrc, a copy kept up to date
 ```
 
-- **Your working copy** is a clone of the repository, wherever you like. It's the only place where you edit your dotfiles, commit and push, as for any git repository.
+- **Your working copy** is a clone of the repository, wherever you like. It's the only place where you edit your dotfiles, commit and push, as for any git repository. Once you tell *configfile* where it is ([`working_copy`](/reference/configuration/)), [`modules adopt`](/reference/commands/#configfile-modules-adopt) commits the files you adopt there, and `update` pushes its commits before syncing.
 - **The remote repository** is the reference that every machine follows.
 - **configfile's mirror** is a copy of the remote repository that *configfile* keeps for itself, in `~/.configfile/dotfiles` unless you chose another folder with `configfile init --folder`. [`configfile update`](/reference/commands/#configfile-update) makes it identical to the remote.
 - **Your home folder** receives the files your tools read, such as `~/.zshrc`: copies that `update` keeps up to date, or links into the mirror. Project folders receive local copies.

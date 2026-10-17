@@ -23,6 +23,7 @@ describe('ConfigStore', () => {
       repoUrl: 'git@example.com:me/dotfiles.git',
       folderPath: sandbox.repo,
       scriptExtensions: null,
+      workingCopy: null,
     })
   })
 

@@ -50,6 +50,7 @@ import {
   systemName,
 } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
+import { registerAdoptCommand } from './adopt.ts'
 
 type Strategy = ModuleFile['strategy']
 type UsableModule = Extract<Module, { error: null }>
@@ -151,6 +152,8 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
       'undeploy the remaining modules when a pre_undeploy or post_undeploy script fails',
     )
     .action((names: string[], options: RawOptions) => undeploy(names, normalize(options), ctx))
+
+  registerAdoptCommand(modules, ctx)
 }
 
 async function loadModules(ctx: Context): Promise<Module[]> {
@@ -483,6 +486,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     const context = await deployContext(ctx, repo.repository)
     const failed = new FailedHooks('deploy')
     let wouldSkip = 0
+    let wouldSkipLinks = 0
     let wouldSkipCopies = 0
     let wouldLeave = 0
     for (const { module, files } of units) {
@@ -497,7 +501,8 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
         try {
           const decision = await planDeploy(file, { ...context, force: options.force })
           if (decision.action === 'conflict' && !prompts.interactive) {
-            if (decision.paths == null) wouldSkip++
+            if (decision.replacedLink) wouldSkipLinks++
+            else if (decision.paths == null) wouldSkip++
             else wouldSkipCopies++
             complete = false
           }
@@ -529,6 +534,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     }
     const problems = [
       ...skippedProblems(wouldSkip, prompts.interactive),
+      ...skippedLinkProblems(wouldSkipLinks, prompts.interactive),
       ...skippedCopyProblems(wouldSkipCopies, prompts.interactive),
       ...unresolvedCopyProblems(wouldLeave),
       ...failed.problems(true),
@@ -538,6 +544,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
   }
 
   let skipped = 0
+  let skippedLinks = 0
   let skippedCopies = 0
   let unresolvedCopies = 0
   const outcome = await eachModule('deploy', units, scripts, options, ctx, async unit => {
@@ -546,11 +553,13 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     )
     failures += result.failures
     skipped += result.skipped
+    skippedLinks += result.skippedLinks
     skippedCopies += result.skippedCopies
     unresolvedCopies += result.unresolvedCopies
     return (
       result.failures === 0 &&
       result.skipped === 0 &&
+      result.skippedLinks === 0 &&
       result.skippedCopies === 0 &&
       result.unresolvedCopies === 0 &&
       unit.module.invalidEntries.length === 0
@@ -559,6 +568,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
 
   const problems = [
     ...skippedProblems(skipped, prompts.interactive),
+    ...skippedLinkProblems(skippedLinks, prompts.interactive),
     ...skippedCopyProblems(skippedCopies, prompts.interactive),
     ...unresolvedCopyProblems(unresolvedCopies),
     ...outcome.problems,
@@ -574,7 +584,13 @@ async function deployFiles(
   ctx: Context,
 ): Promise<DeployCounts> {
   const { output, prompts } = ctx
-  const counts: DeployCounts = { failures: 0, skipped: 0, skippedCopies: 0, unresolvedCopies: 0 }
+  const counts: DeployCounts = {
+    failures: 0,
+    skipped: 0,
+    skippedLinks: 0,
+    skippedCopies: 0,
+    unresolvedCopies: 0,
+  }
   const reportError = (file: { target: string }, error: unknown) => {
     counts.failures++
     reportFileError(file, error, ctx)
@@ -597,22 +613,29 @@ async function deployFiles(
     }
   }
 
-  const conflicts: { file: ModuleFile; paths: readonly string[] | null }[] = []
+  const conflicts: { file: ModuleFile; paths: readonly string[] | null; replacedLink: boolean }[] =
+    []
   for (const file of files) {
     try {
       const result = await deployFile(file, { ...context, force: options.force })
-      if (result.status === 'conflict') conflicts.push({ file, paths: result.paths ?? null })
-      else report(file, result)
+      if (result.status === 'conflict') {
+        conflicts.push({
+          file,
+          paths: result.paths ?? null,
+          replacedLink: result.replacedLink === true,
+        })
+      } else report(file, result)
     } catch (error) {
       reportError(file, error)
     }
   }
 
   // Asked once the other files of the module are deployed, so an answer never blocks them.
-  for (const { file, paths } of conflicts) {
+  for (const { file, paths, replacedLink } of conflicts) {
     const one = paths?.length === 1
-    const message =
-      paths == null
+    const message = replacedLink
+      ? `${file.target} replaced configfile's link. Replace it with the link (yours is moved to .old)?`
+      : paths == null
         ? `${file.target} already exists. Replace it (the current one is moved to .old)?`
         : `${conflictSubject(file, paths)} changed here and in the repository. Replace ` +
           `${one ? 'it' : 'them'} with the repository's version (yours ${one ? 'is' : 'are'} ` +
@@ -622,8 +645,11 @@ async function deployFiles(
       (await prompts.confirm({ message: escapeControls(message), default: false }))
 
     if (paths == null && !replace) {
-      counts.skipped++
-      output.print(`- ${file.target} (already exists, skipped)`)
+      if (replacedLink) counts.skippedLinks++
+      else counts.skipped++
+      output.print(
+        `- ${file.target} (${replacedLink ? 'a file replaced the link, kept' : 'already exists, skipped'})`,
+      )
       ctx.history.record({ kind: 'skipped', target: file.target, reason: 'exists' })
       continue
     }
@@ -652,6 +678,8 @@ interface DeployCounts {
   failures: number
   /** Local files that already existed, left as they are. */
   skipped: number
+  /** Files that replaced configfile's links, left as they are. */
+  skippedLinks: number
   /** Copies whose files changed on both sides were left as they are, as asked (or without a terminal). */
   skippedCopies: number
   /** Copies with files configfile could not update (behind a link, written meanwhile…). */
@@ -1285,6 +1313,16 @@ function skippedProblems(skipped: number, interactive: boolean): string[] {
     : []
 }
 
+function skippedLinkProblems(skipped: number, interactive: boolean): string[] {
+  if (interactive || skipped === 0) return []
+  const one = skipped === 1
+  return [
+    `${plural(skipped, 'file')} that replaced configfile's links ${one ? 'was' : 'were'} left as ` +
+      `${one ? 'it is' : 'they are'}. Use --force to link ${one ? 'it' : 'them'} again ` +
+      `(${one ? 'it is' : 'they are'} moved to .old).`,
+  ]
+}
+
 /** Without a terminal, conflicts in copies fail the command; answering no to them does not. */
 function skippedCopyProblems(skipped: number, interactive: boolean): string[] {
   if (interactive || skipped === 0) return []
@@ -1368,8 +1406,9 @@ function describePlannedDeploy(
           : previewCopy(file, decision.plan, 'none').filter(
               copied => copied.result !== 'conflict' || copied.reason != null,
             )
-      const what =
-        decision.paths == null
+      const what = decision.replacedLink
+        ? 'a file replaced the link'
+        : decision.paths == null
           ? 'already exists'
           : `${describePaths(decision.paths)} changed here and in the repository`
       const answer = interactive
@@ -1499,12 +1538,20 @@ function describeState(state: TargetState, file: Pick<ModuleFile, 'strategy'>): 
     case 'stale':
       return 'deployed, but linked to an old location of the repository: deploy it again'
     case 'foreign':
-      return `not deployed: a ${state.what} is in the way`
+      return `not deployed: a ${state.what} is in the way${compared(state.identical)}`
+    case 'replaced-link':
+      return `linked, but a file replaced the link${compared(state.identical)}`
     case 'source-missing':
       return state.ours
         ? 'deployed, but its source is missing from the repository'
         : 'its source is missing from the repository'
   }
+}
+
+/** ` (identical to the repository)`, ` (differs from the repository)`, or nothing when unknown. */
+function compared(identical: boolean | undefined): string {
+  if (identical == null) return ''
+  return ` (${identical ? 'identical to' : 'differs from'} the repository)`
 }
 
 function describeKept(state: KeptState, tense: 'would be' | 'was' = 'was'): string {

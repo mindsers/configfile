@@ -221,3 +221,19 @@ export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
     return entry.line
   })
 }
+
+/**
+ * A remote that accepts pushes, configfile's mirror of it, and the user's
+ * working copy (`<sandbox>/work`), both cloned from it.
+ */
+export async function createWorkingCopy(sandbox: Sandbox) {
+  const mirror = await createMirror(sandbox)
+  // A pushed branch that is checked out updates its files too.
+  git(mirror.remote, 'config', 'receive.denyCurrentBranch', 'updateInstead')
+  const work = path.join(sandbox.root, 'work')
+  git(sandbox.root, 'clone', '--quiet', mirror.remote, work)
+  git(work, 'config', 'user.name', 'test')
+  git(work, 'config', 'user.email', 'test@example.com')
+  git(work, 'config', 'commit.gpgsign', 'false')
+  return { ...mirror, work }
+}

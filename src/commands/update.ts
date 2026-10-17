@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
-import { applyCopy, type CopiedFile, inspectCopy, isRecordFor } from '../copy.ts'
+import { applyCopy, type CopiedFile, inspectCopy, isRecordFor, recordIdentical } from '../copy.ts'
 import { assertUsableSource, Guard, isGlobalCopy } from '../deploy.ts'
 import { CliError } from '../errors.ts'
 import { errnoCode, lstatOrNull, messageOf } from '../fsutil.ts'
@@ -18,6 +18,14 @@ import { findRemovedFiles } from '../removed.ts'
 import { loadRepository, type Module, type ModuleFile } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 import { syncMirror } from '../sync.ts'
+import {
+  addedCopyEntries,
+  type EntryKey,
+  openWorkingCopy,
+  push,
+  syncedFromBranch,
+  type WorkingCopy,
+} from '../working-copy.ts'
 import { describeDeploy, recordDeploy } from './modules.ts'
 
 export function registerUpdateCommand(program: Command, ctx: Context): void {
@@ -31,8 +39,7 @@ export function registerUpdateCommand(program: Command, ctx: Context): void {
 }
 
 async function update(ctx: Context): Promise<void> {
-  const { output } = ctx
-  const { folderPath } = await new ConfigStore(ctx.home, {
+  const { folderPath, workingCopy } = await new ConfigStore(ctx.home, {
     warn: message => ctx.output.warn(message),
   }).read()
 
@@ -46,6 +53,83 @@ async function update(ctx: Context): Promise<void> {
   }
 
   await ensureGit()
+  // Before syncing, so that the mirror gets what the working copy commits.
+  const copy = workingCopy == null ? null : await pushWorkingCopy(ctx, workingCopy, folderPath)
+  await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
+}
+
+/**
+ * Pushes the commits of the working copy that the remote lacks. Never fails:
+ * the sync goes on without them. Returns the working copy, or `null` when it
+ * cannot be used.
+ */
+async function pushWorkingCopy(
+  ctx: Context,
+  folder: string,
+  mirror: string,
+): Promise<WorkingCopy | null> {
+  let copy: WorkingCopy
+  try {
+    copy = await openWorkingCopy(folder, mirror)
+  } catch (error) {
+    ctx.output.warn(`Cannot use your working copy (${folder}): ${messageOf(error)}`)
+    return null
+  }
+  try {
+    const pushed = await push(copy)
+    if (pushed != null) {
+      ctx.history.record({ kind: 'pushed', folder, branch: copy.branch, ...pushed })
+      ctx.output.info(`Pushed ${copy.branch} from ${folder} to ${copy.remote}.`)
+    }
+  } catch (error) {
+    ctx.output.warn(`Cannot push your working copy (${folder}): ${messageOf(error)}`)
+  }
+  return copy
+}
+
+/**
+ * The copied entries added by the commits of the working copy's branch that
+ * the sync brought (see `syncedFromBranch`): an identical file at their
+ * target is one the user adopted, or one already in place for a commit the
+ * user pulled there. Commits pushed from elsewhere do not count. Never
+ * fails: what it cannot read is reported, and those files are left to
+ * `modules deploy`.
+ */
+async function adoptedEntries(
+  ctx: Context,
+  folderPath: string,
+  copy: WorkingCopy | null,
+  { before, after }: { before: string | null; after: string },
+): Promise<EntryKey[]> {
+  if (copy == null || before == null || before === after) return []
+  try {
+    const range = await syncedFromBranch(copy, folderPath, { before, after })
+    return range == null ? [] : await addedCopyEntries(folderPath, range)
+  } catch (error) {
+    ctx.output.warn(
+      `Cannot tell which files the new commits of your working copy added (${messageOf(error)}): ` +
+        'files you adopted are not kept as configfile\'s copies. "configfile modules deploy" ' +
+        'deploys them, moving yours to .old.',
+    )
+    return []
+  }
+}
+
+/**
+ * Syncs the mirror with the remote, then updates the copies of global files.
+ * With the working copy, it also records as configfile's copies the
+ * unrecorded targets of the copied entries that its synced commits added,
+ * when they already are the repository's version, and warns about those
+ * that differ (see `adoptedEntries`). Reports what it did. `deployHint` says
+ * to deploy the new files (not after `modules adopt`, whose files are already
+ * in place).
+ */
+export async function syncAndRefresh(
+  ctx: Context,
+  folderPath: string,
+  { workingCopy, deployHint = true }: { workingCopy: WorkingCopy | null; deployHint?: boolean },
+): Promise<Refresh> {
+  const { output } = ctx
   // Deployments read the mirror, which the sync replaces: they never overlap.
   const { result, refreshed } = await withCommandLock(ctx, async () => {
     output.info(`Syncing ${folderPath}…`)
@@ -60,8 +144,9 @@ async function update(ctx: Context): Promise<void> {
       from: result.before,
       to: result.after,
     })
+    const adopted = await adoptedEntries(ctx, folderPath, workingCopy, result)
     // Copies follow the repository too, before any deployment can start.
-    return { result, refreshed: await refreshCopies(ctx, folderPath) }
+    return { result, refreshed: await refreshCopies(ctx, folderPath, adopted) }
   })
 
   if (result.saved != null) {
@@ -77,10 +162,8 @@ async function update(ctx: Context): Promise<void> {
   if (result.before === result.after) {
     output.success(`Already up to date with ${result.upstream}.`)
   } else {
-    output.success(
-      `Synced with ${result.upstream} (${result.after.slice(0, 7)}). Run ` +
-        '"configfile modules deploy --all" for new files.',
-    )
+    const hint = deployHint ? ' Run "configfile modules deploy --all" for new files.' : ''
+    output.success(`Synced with ${result.upstream} (${result.after.slice(0, 7)}).${hint}`)
   }
   reportRefresh(refreshed, ctx)
   if (refreshed.modules != null) {
@@ -88,10 +171,11 @@ async function update(ctx: Context): Promise<void> {
   } else if (refreshed.problem != null) {
     output.warn(`Cannot check for files the repository no longer deploys: ${refreshed.problem}`)
   }
+  return refreshed
 }
 
 /** What following the repository did to the copies of global files. */
-interface Refresh {
+export interface Refresh {
   /** The repository's modules, read after the sync; `null` when they cannot be, and why. */
   readonly modules: Module[] | null
   /** Why the modules or the record cannot be read. */
@@ -106,6 +190,10 @@ interface Refresh {
   readonly linked: string[]
   /** Copies that need `modules deploy` (or a fixed module), and why. */
   readonly waiting: { target: string; reason: string }[]
+  /** Targets of adopted entries recorded as configfile's copies. */
+  readonly recorded: string[]
+  /** Targets of adopted entries left as they are: not the repository's version. */
+  readonly differing: { target: string; module: string }[]
 }
 
 /**
@@ -115,7 +203,11 @@ interface Refresh {
  * this machine is kept, and conflicts wait for `modules deploy`. Never fails,
  * the sync is already done: what it could not do is reported.
  */
-async function refreshCopies(ctx: Context, repository: string): Promise<Refresh> {
+async function refreshCopies(
+  ctx: Context,
+  repository: string,
+  adopted: readonly EntryKey[],
+): Promise<Refresh> {
   const refresh: Refresh = {
     modules: null,
     problem: null,
@@ -124,6 +216,8 @@ async function refreshCopies(ctx: Context, repository: string): Promise<Refresh>
     left: [],
     linked: [],
     waiting: [],
+    recorded: [],
+    differing: [],
   }
   let modules: Module[]
   let record: DeploymentRecord
@@ -145,6 +239,15 @@ async function refreshCopies(ctx: Context, repository: string): Promise<Refresh>
         const existing = await lstatOrNull(file.target)
         if (existing == null) continue
         const known = (await record.find(file.target))?.deployed
+        if (known == null && isAdopted(file, adopted)) {
+          if (await recordIdentical(file, record, view)) {
+            refresh.recorded.push(file.target)
+            ctx.history.record({ kind: 'recorded', target: file.target, source: file.source })
+          } else {
+            refresh.differing.push({ target: file.target, module: module.name })
+          }
+          continue
+        }
         if (known == null || !isRecordFor(known, file)) continue
         seen.add(file.target)
         if (existing.isSymbolicLink()) {
@@ -191,6 +294,13 @@ async function refreshCopies(ctx: Context, repository: string): Promise<Refresh>
   return { ...refresh, modules }
 }
 
+function isAdopted(file: ModuleFile, adopted: readonly EntryKey[]): boolean {
+  const { entry } = file
+  if (entry == null) return false
+  const module = entry.module.split(path.sep).join('/')
+  return adopted.some(key => key.module === module && key.source === path.normalize(entry.source))
+}
+
 /** Prints and records what updating a copy did, and keeps what is said once at the end. */
 function report(
   file: ModuleFile,
@@ -228,6 +338,17 @@ function report(
 
 function reportRefresh(refresh: Refresh, ctx: Context): void {
   const { output } = ctx
+  for (const target of refresh.recorded) {
+    output.print(`- ${target} (configfile's copy now)`)
+  }
+  for (const { target, module } of refresh.differing) {
+    // Changed since it was committed, or the repository changed it meanwhile.
+    output.warn(
+      `${target} is not the repository's version, so configfile left it as it is: ` +
+        `"configfile modules deploy ${module}" would move it to .old and copy the ` +
+        "repository's version.",
+    )
+  }
   if (refresh.kept.length > 0) {
     output.info(
       `Kept what changed on this machine in ${listPaths(refresh.kept)} ` +
@@ -259,7 +380,7 @@ function reportRefresh(refresh: Refresh, ctx: Context): void {
 }
 
 /** `a, b and c`, or the first ones and how many more. */
-function listPaths(paths: readonly string[], shown = 10): string {
+export function listPaths(paths: readonly string[], shown = 10): string {
   if (paths.length > shown) {
     return `${paths.slice(0, shown).join(', ')} and ${paths.length - shown} more`
   }

@@ -428,6 +428,7 @@ describe('inspectFile', () => {
     await expect(inspectFile(file('global'), context.record, context.view)).resolves.toEqual({
       kind: 'foreign',
       what: 'file',
+      identical: false,
     })
   })
 
@@ -502,7 +503,12 @@ describe('undeployFile', () => {
     await deployFile(file('global'), context)
     await rm(target)
     await sandbox.write('home/config/.zshrc', 'B')
-    await deployFile(file('global'), context)
+    // A file in place of configfile's link: replaced only with force.
+    await expect(deployFile(file('global'), context)).resolves.toEqual({
+      status: 'conflict',
+      replacedLink: true,
+    })
+    await deployFile(file('global'), { ...context, force: true })
 
     expect(await backupsOf(context, target)).toEqual([`${target}.old`, `${target}.old.1`])
     await undeployFile(file('global'), context)

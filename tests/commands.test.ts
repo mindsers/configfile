@@ -650,6 +650,76 @@ describe('modules status, dry run and undeploy', () => {
     expect(real.stdout).toContain(`${sandbox.home}/.vim (a, b: updated from the repository)`)
   })
 
+  it('still shows a file in the way of a link that it cannot read', async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox, { method: 'link' })
+    const zshrc = await sandbox.write('home/.zshrc', 'other', 0o000)
+
+    const result = await runCli(sandbox, ['modules', 'status', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`${zshrc} (not deployed: a file is in the way)\n`)
+  })
+
+  it("says whether a file in the way of a link is the repository's version", async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox, { method: 'link' })
+    await sandbox.write('home/.zshrc', 'zshrc')
+
+    const same = await runCli(sandbox, ['modules', 'status', 'zsh'])
+    await sandbox.write('home/.zshrc', 'mine')
+    const different = await runCli(sandbox, ['modules', 'status', 'zsh'])
+
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    expect(same.stdout).toContain(
+      `${zshrc} (not deployed: a file is in the way (identical to the repository))`,
+    )
+    expect(different.stdout).toContain(
+      `${zshrc} (not deployed: a file is in the way (differs from the repository))`,
+    )
+  })
+
+  it("asks before replacing a file that replaced configfile's link", async () => {
+    const sandbox = await createSandbox()
+    await withModule(sandbox, { method: 'link' })
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    const zshrc = path.join(sandbox.home, '.zshrc')
+    // Like a tool that saves by writing a new file and renaming it over the link.
+    await rm(zshrc)
+    await writeFile(zshrc, 'saved by a tool')
+
+    const status = await runCli(sandbox, ['modules', 'status', 'zsh'])
+    const planned = await runCli(sandbox, ['modules', 'deploy', '-n', 'zsh'], [], {
+      interactive: false,
+    })
+    const declined = await runCli(sandbox, ['modules', 'deploy', 'zsh'], [false])
+    const noTerminal = await runCli(sandbox, ['modules', 'deploy', 'zsh'], [], {
+      interactive: false,
+    })
+    const accepted = await runCli(sandbox, ['modules', 'deploy', 'zsh'], [true])
+
+    expect(status.stdout).toContain(
+      `${zshrc} (linked, but a file replaced the link (differs from the repository))`,
+    )
+    expect(planned.stdout).toContain(
+      `${zshrc} (a file replaced the link: would be skipped (use --force to replace it))`,
+    )
+    expect(declined).toMatchObject({
+      code: 0,
+      asked: [
+        `${zshrc} replaced configfile's link. Replace it with the link (yours is moved to .old)?`,
+      ],
+    })
+    expect(declined.stdout).toContain(`${zshrc} (a file replaced the link, kept)`)
+    expect(noTerminal.code).toBe(1)
+    expect(noTerminal.stderr).toContain(
+      "1 file that replaced configfile's links was left as it is. Use --force to link it again (it is moved to .old).",
+    )
+    expect(accepted.code).toBe(0)
+    expect(await readlink(zshrc)).toBe(path.join(sandbox.repo, 'files/zsh/zshrc'))
+    expect(await readFile(`${zshrc}.old`, 'utf8')).toBe('saved by a tool')
+  })
+
   it('shows what a deployment would do without changing anything', async () => {
     const sandbox = await createSandbox()
     await withModule(sandbox)
@@ -1076,7 +1146,7 @@ describe('modules status, dry run and undeploy', () => {
       const deployB = await runCli(sandbox, ['modules', 'deploy', 'b'])
       expect(deployB.stdout).toContain(`(${how}, previous file moved to ${target}.old.1)`)
       expect((await runCli(sandbox, ['modules', 'status', 'a'])).stdout).toContain(
-        `(not deployed: a ${what} is in the way)`,
+        `(not deployed: a ${what} is in the way${what === 'file' ? ' (differs from the repository)' : ''})`,
       )
 
       await runCli(sandbox, ['modules', 'undeploy', 'b'])
@@ -3810,6 +3880,33 @@ describe('history', () => {
           options: { folder: '/dotfiles' },
           changes: [{ kind: 'reused', repository: 'git@host:r.git', folder: '/dotfiles' }],
         }),
+        line({
+          command: 'modules adopt',
+          options: { module: 'zsh', paths: 1 },
+          changes: [
+            { kind: 'adopted', target: home('.zshrc'), source: 'files/zsh/zshrc', folder: '/work' },
+            {
+              kind: 'pushed',
+              folder: '/work',
+              branch: 'main',
+              from: 'abcdef1234',
+              to: '1234abcdef',
+            },
+            {
+              kind: 'recorded',
+              target: home('.zshrc'),
+              source: home('.configfile/dotfiles/files/zsh/zshrc'),
+            },
+          ],
+        }),
+        line({
+          command: 'init',
+          options: { workingCopy: '/work' },
+          changes: [
+            { kind: 'pushed', folder: '/work', branch: 'main', from: null, to: '1234abcdef' },
+          ],
+        }),
+        line({ command: 'modules adopt', options: { module: 'vim', paths: 2, push: false } }),
         line({ command: null, exitCode: 1, error: { message: 'boom', expected: false } }),
       ].join('\n')}\n`,
     )
@@ -3863,6 +3960,16 @@ describe('history', () => {
         '',
         'TIME  init --folder /dotfiles  ok',
         '  reused    /dotfiles for git@host:r.git',
+        '',
+        'TIME  modules adopt (1 path) --module zsh  ok',
+        '  adopted   ~/.zshrc  (committed as files/zsh/zshrc in /work)',
+        '  pushed    /work  main (abcdef1 → 1234abc)',
+        "  recorded  ~/.zshrc  (configfile's copy of ~/.configfile/dotfiles/files/zsh/zshrc)",
+        '',
+        'TIME  init --working-copy /work  ok',
+        '  pushed    /work  main (nothing → 1234abc)',
+        '',
+        'TIME  modules adopt (2 paths) --module vim --no-push  ok',
         '',
         'TIME  (unknown command)  exit 1',
         '  crashed   boom',

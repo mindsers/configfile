@@ -98,8 +98,17 @@ export type TargetState =
   | { kind: 'identical' }
   /** Global: the link configfile made, pointing to an old location of the source. */
   | { kind: 'stale' }
-  /** Something configfile did not put there, or its copy for another entry. */
-  | { kind: 'foreign'; what: 'file' | 'folder' | 'link' }
+  /**
+   * Something configfile did not put there, or its copy for another entry.
+   * `identical`: for a file or a folder, whether it is the repository's version.
+   */
+  | { kind: 'foreign'; what: 'file' | 'folder' | 'link'; identical?: boolean }
+  /**
+   * Global link: configfile linked it, and a file (or folder) replaced the
+   * link, as tools that save through a new file do. `identical`: whether it is
+   * the repository's version.
+   */
+  | { kind: 'replaced-link'; identical?: boolean }
   /** Something is there but the source is missing. `ours`: configfile put it there. */
   | { kind: 'source-missing'; ours: boolean }
 
@@ -133,7 +142,7 @@ export type DeployDecision =
    * user agrees). For a global copy, `paths` changed both here and in the
    * repository, and `plan` is what the rest would get.
    */
-  | { action: 'conflict'; paths?: readonly string[]; plan?: CopyPlan }
+  | { action: 'conflict'; paths?: readonly string[]; plan?: CopyPlan; replacedLink?: true }
 
 /**
  * How a deployment treats a global copy changed both here and in the
@@ -176,7 +185,7 @@ export type DeployResult =
   | { status: 'converted' }
   /** Global copy: what following the repository did, and kept. */
   | { status: 'updated'; outcome: CopyOutcome }
-  | { status: 'conflict'; paths?: readonly string[]; plan?: CopyPlan }
+  | { status: 'conflict'; paths?: readonly string[]; plan?: CopyPlan; replacedLink?: true }
 
 export type UndeployResult =
   | {
@@ -245,7 +254,13 @@ export async function inspectFile(
       recorded.source !== file.source &&
       (await lstatOrNull(recorded.source)) == null
     if (recordedHere && existing.isSymbolicLink() && recordedSourceGone) return { kind: 'stale' }
-    return { kind: 'foreign', what: kindOf(existing) }
+    if (existing.isSymbolicLink()) return { kind: 'foreign', what: 'link' }
+    // Only said in status: a file that cannot be read is still in the way.
+    const identical = await sameContent(file.source, file.target).catch(() => undefined)
+    if (recorded != null && recorded.copy == null && isRecordFor(recorded, file)) {
+      return { kind: 'replaced-link', ...(identical != null && { identical }) }
+    }
+    return { kind: 'foreign', what: kindOf(existing), ...(identical != null && { identical }) }
   }
 
   if (!sourceExists) return { kind: 'source-missing', ours: false }
@@ -261,7 +276,10 @@ function stateOfCopy(state: CopyState): TargetState {
     case 'identical':
       return { kind: state.kind }
     case 'foreign':
-      return { kind: 'foreign', what: state.what }
+      // Identical files are their own state: anything else in the way differs.
+      return state.what === 'link'
+        ? { kind: 'foreign', what: 'link' }
+        : { kind: 'foreign', what: state.what, identical: false }
     case 'source-missing':
       return { kind: 'source-missing', ours: state.ours }
     case 'copy':
@@ -327,6 +345,12 @@ export async function planDeploy(
       return force
         ? { action: 'replace', what: 'copy', backup: nextBackupPath(file.target) }
         : { action: 'conflict' }
+    case 'replaced-link': {
+      // Most likely a tool's own save: replaced only with force, or once the user agrees.
+      if (!force) return { action: 'conflict', replacedLink: true }
+      const what = (await lstatOrNull(file.target))?.isDirectory() ? 'folder' : 'file'
+      return { action: 'replace', what, backup: nextBackupPath(file.target) }
+    }
     case 'foreign':
       if (file.strategy === 'local' && !force) return { action: 'conflict' }
       return { action: 'replace', what: state.what, backup: nextBackupPath(file.target) }
@@ -446,6 +470,12 @@ export async function planUndeploy(
       return state.ours && file.strategy === 'global'
         ? { action: 'remove', backup: await checkLatestBackup(file.target, record) }
         : { action: 'keep', state }
+    case 'replaced-link':
+      // Not configfile's link any more: whatever replaced it stays.
+      return {
+        action: 'keep',
+        state: { kind: 'foreign', what: existing?.isDirectory() ? 'folder' : 'file' },
+      }
     case 'modified':
     case 'identical':
     case 'foreign':
@@ -476,8 +506,13 @@ export async function deployFile(
   const decision = await planDeploy(file, { ...context, force: context.force ?? false })
 
   if (decision.action === 'conflict') {
-    const { paths, plan } = decision
-    return { status: 'conflict', ...(paths != null && { paths }), ...(plan != null && { plan }) }
+    const { paths, plan, replacedLink } = decision
+    return {
+      status: 'conflict',
+      ...(paths != null && { paths }),
+      ...(plan != null && { plan }),
+      ...(replacedLink && { replacedLink }),
+    }
   }
   if (decision.action === 'update') {
     const outcome = await applyCopy(file, decision.plan, {

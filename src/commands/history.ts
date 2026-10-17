@@ -102,11 +102,15 @@ function describeRun(line: HistoryLine): string {
   if (typeof options.script === 'string') words.push(options.script)
   if (typeof options.repo === 'string') words.push('--repo', options.repo)
   if (typeof options.folder === 'string') words.push('--folder', options.folder)
+  if (typeof options.workingCopy === 'string') words.push('--working-copy', options.workingCopy)
+  if (typeof options.paths === 'number') words.push(`(${plural(options.paths, 'path')})`)
+  if (typeof options.module === 'string') words.push('--module', options.module)
   for (const flag of ['local', 'all', 'force', 'removed'] as const) {
     if (options[flag] === true) words.push(`--${flag}`)
   }
   if (options.keepGoing === true) words.push('--keep-going')
   if (options.hooks === false) words.push('--no-hooks')
+  if (options.push === false) words.push('--no-push')
   if (typeof options.argCount === 'number' && options.argCount > 0) {
     words.push(`(${plural(options.argCount, 'argument')})`)
   }
@@ -188,6 +192,18 @@ function describeChange(change: Change): string {
       return line('reused', `${change.folder} for ${change.repository}`)
     case 'configured':
       return line('saved', `configuration ${change.file}`)
+    case 'adopted':
+      return line(
+        'adopted',
+        `${change.target}  (committed as ${change.source} in ${change.folder})`,
+      )
+    case 'pushed':
+      return line(
+        'pushed',
+        `${change.folder}  ${change.branch} (${short(change.from)} → ${short(change.to)})`,
+      )
+    case 'recorded':
+      return line('recorded', `${change.target}  (configfile's copy of ${change.source})`)
   }
 }
 

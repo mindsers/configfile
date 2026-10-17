@@ -191,6 +191,28 @@ export async function inspectCopy(
   return { kind: 'foreign', what: kindOf(existing), deployed: othersCopy }
 }
 
+/**
+ * Records a target configfile did not deploy as its copy, when it already is
+ * the repository's version: a file adopted into the repository (see
+ * `modules adopt`), or committed in the working copy before `update` brings
+ * it. The target is left untouched: only the record changes.
+ * Returns whether it was recorded.
+ */
+export async function recordIdentical(
+  file: CopySubject,
+  record: DeploymentRecord,
+  view: RepositoryView,
+): Promise<boolean> {
+  if ((await record.find(file.target))?.deployed != null) return false
+  const state = await inspectCopy(file, record, view)
+  if (state.kind !== 'identical') return false
+  const plan = await planCopy(file, view, {}, state.what === 'folder')
+  // Planned again: anything but recording means the target changed meanwhile.
+  if (!plan.steps.every(step => step.action === 'record')) return false
+  await applyCopy(file, plan, { replace: 'none', record, always: true })
+  return true
+}
+
 /** The files a plan would change from the repository, keep, or leave in conflict. */
 export function summarize(plan: CopyPlan): {
   outdated: string[]
