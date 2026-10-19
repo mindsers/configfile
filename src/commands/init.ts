@@ -137,7 +137,12 @@ async function chooseProfiles(
   store: ConfigStore,
   ctx: Context,
 ): Promise<string[] | null> {
-  const modules = await listModules(folderPath, { home: ctx.home, cwd: ctx.cwd, warn: () => {} })
+  // Warnings say why a module, and the profiles it names, cannot be read.
+  const modules = await listModules(folderPath, {
+    home: ctx.home,
+    cwd: ctx.cwd,
+    warn: message => ctx.output.warn(message),
+  })
   const known = knownProfiles(modules)
   const listed = known.map(name => `"${name}"`).join(', ')
   if (given != null) {
@@ -151,14 +156,27 @@ async function chooseProfiles(
     }
     return [...new Set(given)]
   }
-  if (known.length === 0 || !ctx.prompts.interactive) return null
+  if (known.length === 0) return null
+  // A saved value that cannot be used is replaced by the answer.
+  const saved = await store.read().then(
+    config => config.profiles,
+    () => [],
+  )
+  if (!ctx.prompts.interactive) {
+    if (saved.length === 0) {
+      ctx.output.info(
+        `Some modules are only for machines with the profiles ${listed}: give this machine's ` +
+          `with --profile, or add them to "profiles" in ${store.path}.`,
+      )
+    }
+    return null
+  }
 
   const parse = (answer: string) =>
     answer
       .split(',')
       .map(name => name.trim())
       .filter(name => name !== '')
-  const saved = (await store.read()).profiles
   const answer = await ctx.prompts.input({
     message: `Profiles of this machine (${known.join(', ')}; separate them with commas, or leave empty):`,
     ...(saved.length > 0 && { default: saved.join(', ') }),

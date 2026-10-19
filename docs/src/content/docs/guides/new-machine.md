@@ -29,7 +29,7 @@ Avoid putting a token in the repository URL: *configfile* saves the URL in `~/.c
 configfile init
 ```
 
-*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When some modules are only for some machines ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work`.
+*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When the repository's modules name profiles ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work` (without a terminal, give them with `--profile`).
 
 ## 4. Deploy your modules
 

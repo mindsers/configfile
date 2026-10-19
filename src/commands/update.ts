@@ -14,7 +14,7 @@ import { RepositoryView } from '../mirror.ts'
 import { plural } from '../output.ts'
 import { configfilePaths } from '../paths.ts'
 import { ensureGit } from '../process.ts'
-import { findRemovedFiles } from '../removed.ts'
+import { findRemovedFiles, type RecordedFile } from '../removed.ts'
 import { loadRepository, type Module, type ModuleFile } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 import { syncMirror } from '../sync.ts'
@@ -389,6 +389,25 @@ export function listPaths(paths: readonly string[], shown = 10): string {
 }
 
 /**
+ * The commands that undeploy these files: local copies from the folders
+ * they were copied into.
+ */
+function undeploySteps(files: readonly RecordedFile[]): string {
+  const local = files.filter(file => file.strategy === 'local')
+  const folders = [...new Set(local.map(file => file.folder))].filter(folder => folder != null)
+  return [
+    files.some(file => file.strategy === 'global')
+      ? 'run "configfile modules undeploy --removed"'
+      : null,
+    local.length > 0
+      ? `run "configfile modules undeploy --removed --local" in ${folders.join(', ')}`
+      : null,
+  ]
+    .filter(step => step != null)
+    .join(', and ')
+}
+
+/**
  * Deployed files whose entry left the repository stay in place until they are
  * undeployed: says so. Never fails, the sync is already done.
  */
@@ -410,8 +429,8 @@ async function warnAboutRemovedFiles(
       output.warn(
         `${plural(notHere.length, 'deployed file')} ${one ? 'is' : 'are'} no longer for this ` +
           `machine: ${notHere.map(file => `${file.target} (${file.notHere})`).join(', ')}. ` +
-          `If "profiles" in ${configfilePaths(ctx.home).rc} is right, run ` +
-          `"configfile modules undeploy --removed" to remove ${one ? 'it' : 'them'}.`,
+          `If "profiles" in ${configfilePaths(ctx.home).rc} is right, ` +
+          `${undeploySteps(notHere)} to remove ${one ? 'it' : 'them'}.`,
       )
     }
     const global = found.filter(file => file.notHere == null && file.strategy === 'global')
@@ -421,18 +440,10 @@ async function warnAboutRemovedFiles(
 
     const one = count === 1
     const targets = [...global, ...local].map(file => file.target).join(', ')
-    // A local copy is undeployed from the folder it was copied into.
-    const folders = [...new Set(local.map(file => file.folder))].filter(folder => folder != null)
-    const steps = [
-      global.length > 0 ? 'run "configfile modules undeploy --removed"' : null,
-      local.length > 0
-        ? `run "configfile modules undeploy --removed --local" in ${folders.join(', ')}`
-        : null,
-    ].filter(step => step != null)
     output.warn(
       `${plural(count, 'deployed file')} ${one ? 'is' : 'are'} no longer deployed by the ` +
         `repository: ${targets}. To remove ${one ? 'it' : 'them'} and restore what ` +
-        `${one ? 'it' : 'they'} replaced, ${steps.join(', and ')}.`,
+        `${one ? 'it' : 'they'} replaced, ${undeploySteps([...global, ...local])}.`,
     )
   } catch (error) {
     output.warn(`Cannot check for files the repository no longer deploys: ${messageOf(error)}`)

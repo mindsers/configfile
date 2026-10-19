@@ -81,7 +81,9 @@ describe('modules for some machines', () => {
 
     const result = await runCli(sandbox, ['modules', 'deploy', 'aws'])
 
-    expect(result).toMatchObject({ code: 0, stderr: '' })
+    expect(result.code).toBe(0)
+    // "admin" is only given to scripts: no module names it.
+    expect(result.stderr).toContain('No module is for profile "admin"')
     expect(await readFile(home(sandbox, '.aws'), 'utf8')).toBe('aws')
     expect(await ran(sandbox)).toBe('setup work,admin\n')
   })
@@ -422,5 +424,140 @@ describe('adopt --os and --profile', () => {
     )
     // Deployed by aws on work machines only, but adopting it would clash there.
     expect(await adopt('-m', 'zsh')).toContain('Module aws already deploys')
+  })
+})
+
+describe('after the review', () => {
+  it('says which files of a named module it could not check, instead of "nothing is deployed"', async () => {
+    const sandbox = await setUp(['work'])
+    await runCli(sandbox, ['modules', 'deploy', 'aws'])
+    await writeModule(sandbox, 'aws', {
+      when: { profiles: 'work' },
+      files: [
+        { source_path: 'aws', target_path: '~/.aws', deploy: 'global' },
+        { source_path: 'aws', target_path: '~/.aws2', deploy: 'global', when: { os: 'darwin' } },
+      ],
+    })
+    await sandbox.configure()
+
+    const result = await runCli(sandbox, ['modules', 'undeploy', 'aws'])
+
+    expect(result.stderr).toContain(
+      `${home(sandbox, '.aws')} was not checked: module "aws" has invalid entries.`,
+    )
+    expect(result.stdout).not.toContain('nothing is deployed')
+    expect(existsSync(home(sandbox, '.aws'))).toBe(true)
+  })
+
+  it('previews the scripts of another system too', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await writeModule(sandbox, 'zsh', { hooks: { post_deploy: 'setup' } })
+    await sandbox.write('home/dotfiles/scripts/setup.linux.sh', '#!/bin/sh\n', 0o755)
+
+    const here = await runCli(sandbox, ['modules', 'deploy', '-n', 'zsh'])
+    const mac = await runCli(sandbox, ['modules', 'deploy', '-n', 'zsh', '--os', 'macos'])
+
+    expect(here.stdout).toContain('- script "setup" (post_deploy of zsh: would run)')
+    expect(mac.stdout).toContain(
+      '- script "setup" (post_deploy of zsh: would be skipped, no version for macos)',
+    )
+  })
+
+  it('says in a real deploy which files are not for this machine, and warns about profiles', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure({ profiles: ['wrok'] })
+    await writeModule(sandbox, 'code', {
+      files: [
+        {
+          source_path: 'code',
+          target_path: '~/.code-linux',
+          deploy: 'global',
+          when: { os: 'linux' },
+        },
+        {
+          source_path: 'code',
+          target_path: '~/.code-mac',
+          deploy: 'global',
+          when: { os: 'macos' },
+        },
+      ],
+    })
+    await writeModule(sandbox, 'mac', {
+      files: [
+        { source_path: 'mac', target_path: '~/.mac', deploy: 'global', when: { os: 'macos' } },
+      ],
+    })
+    await writeModule(sandbox, 'aws', { when: { profiles: 'work' } })
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'code', 'mac'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(
+      'code: 1 file not for this machine (for macos; this machine: linux), skipped.',
+    )
+    expect(result.stdout).toContain(
+      'mac: 1 file not for this machine (for macos; this machine: linux), skipped.',
+    )
+    expect(result.stdout).not.toContain('No global file to deploy')
+    expect(result.stderr).toContain('No module is for profile "wrok"')
+    expect(existsSync(home(sandbox, '.code-linux'))).toBe(true)
+  })
+
+  it('says which profiles init could not ask for, and replaces a saved value it cannot use', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+    await sandbox.write(
+      'remote/files/aws/settings.json',
+      JSON.stringify({ when: { profiles: 'work' }, files: [] }),
+    )
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', 'aws')
+
+    const quiet = await runCli(sandbox, ['init', '--repo', remote], [], { interactive: false })
+    await sandbox.configure({ repo_url: remote, profiles: 'work' })
+    const fixed = await runCli(sandbox, ['init', '--force', '--repo', remote], ['work'])
+
+    expect(quiet.stdout).toContain(
+      `Some modules are only for machines with the profiles "work": give this machine's with ` +
+        `--profile, or add them to "profiles" in ${home(sandbox, '.configfilerc')}.`,
+    )
+    expect(fixed.code).toBe(0)
+    expect(JSON.parse(await readFile(home(sandbox, '.configfilerc'), 'utf8')).profiles).toEqual([
+      'work',
+    ])
+  })
+
+  it('gives the command for local copies that are no longer for this machine', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('files/editor/editorconfig', 'root = true')
+    await commitInRemote(
+      'files/editor/settings.json',
+      JSON.stringify({
+        files: [
+          {
+            source_path: 'editorconfig',
+            target_path: '.editorconfig',
+            deploy: 'local',
+            when: { profiles: 'work' },
+          },
+        ],
+      }),
+    )
+    await sandbox.configure({ profiles: ['work'] })
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', '--local', 'editor'])
+    await sandbox.configure({ profiles: ['personal'] })
+
+    const result = await runCli(sandbox, ['update'])
+    const status = await runCli(sandbox, ['modules', 'status', '--local'])
+
+    expect(result.stderr).toContain(
+      `run "configfile modules undeploy --removed --local" in ${sandbox.cwd} to remove it.`,
+    )
+    expect(status.stdout).toContain(
+      `  ${path.join(sandbox.cwd, '.editorconfig')} (for profile "work"`,
+    )
   })
 })

@@ -32,6 +32,8 @@ export interface RecordedFile {
 export interface HeldBack {
   readonly target: string
   readonly reason: string
+  /** The module folder it came from, when known and loaded. */
+  readonly module: string | null
 }
 
 /**
@@ -95,7 +97,11 @@ export async function findRemovedFiles(
     const entry = deployed.entry ?? entryOf(deployed.source, repository)
     const reason = await uncertainty(entry, loaded, repository)
     if (reason != null) {
-      heldBack.push({ target, reason })
+      heldBack.push({
+        target,
+        reason,
+        module: entry == null ? null : (loaded.get(entry.module)?.path ?? null),
+      })
       continue
     }
 

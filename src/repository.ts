@@ -523,6 +523,11 @@ export async function listScripts(
   return { scripts, otherSystems }
 }
 
+/** The platform a system name stands for (`macos` is `darwin`), or the name itself. */
+export function platformOf(system: string): NodeJS.Platform {
+  return SCRIPT_SYSTEMS.get(system) ?? (system as NodeJS.Platform)
+}
+
 /** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */
 export function systemName(platform: NodeJS.Platform): string {
   for (const [name, system] of SCRIPT_SYSTEMS) if (system === platform) return name

@@ -47,6 +47,7 @@ import {
   loadScripts,
   type Module,
   type ModuleFile,
+  platformOf,
   type Script,
   scriptEnvironment,
   systemName,
@@ -252,7 +253,8 @@ function describeListed(module: Module): string {
   return parts.length === 0 ? '' : ` (${parts.join('; ')})`
 }
 
-async function status(names: string[], options: Options, ctx: Context): Promise<void> {
+async function status(names: string[], options: Options, given: Context): Promise<void> {
+  const ctx = previewing(given, options)
   const { output } = ctx
   const repo = await loadRepository(ctx, options.preview)
   const selected = names.length === 0 ? repo.modules : pickModules(repo.modules, names)
@@ -452,6 +454,11 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
   }
 }
 
+/** The context of a run that previews another system: scripts are picked for it. */
+function previewing(ctx: Context, { preview }: Pick<Options, 'preview'>): Context {
+  return preview.os == null ? ctx : { ...ctx, platform: platformOf(preview.os) }
+}
+
 /**
  * Says which machine a preview checks, and warns about profiles no module
  * names: a typo there would skip files without a word.
@@ -570,7 +577,9 @@ async function loadHookScripts(
   )
 }
 
-async function deploy(names: string[], options: Options, ctx: Context): Promise<void> {
+async function deploy(names: string[], options: Options, given: Context): Promise<void> {
+  // Scripts too are picked for the system previewed: only allowed in a dry run (below).
+  const ctx = options.dryRun ? previewing(given, options) : given
   const { output, prompts } = ctx
   if (!options.dryRun && (options.preview.os != null || options.preview.profiles != null)) {
     throw new CliError(
@@ -579,7 +588,7 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
     )
   }
   const repo = await loadRepository(ctx, options.preview)
-  if (options.dryRun) reportMachine(repo, options, ctx)
+  reportMachine(repo, options, ctx)
   const run = await prepare('deploy', repo, names, options, ctx)
   if (run == null) return
 
@@ -1173,7 +1182,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
     const ofAway = (file: { module: string | null }) =>
       away.some(module => module.path === file.module)
     const removed = withRemoved ? found.removed : found.removed.filter(ofAway)
-    const heldBack = withRemoved ? found.heldBack : []
+    const heldBack = withRemoved ? found.heldBack : found.heldBack.filter(ofAway)
     for (const { target, reason } of heldBack) {
       output.warn(`${target} was not checked: ${reason}.`)
     }
@@ -1182,6 +1191,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
         output.info(`Every deployed ${options.strategy} file is still deployed by the repository.`)
       }
       for (const module of withRemoved ? [] : away) {
+        if (heldBack.some(file => file.module === module.path)) continue
         output.info(
           `${module.name} is not for this machine (${module.notHere}): nothing is deployed for it.`,
         )
@@ -1358,6 +1368,21 @@ async function prepare(
     }
   }
 
+  // Files for other machines, inside modules for this one. A dry run lists
+  // them with the files of their module, when it has any here.
+  const skipping = new Set<UsableModule>()
+  for (const module of verb === 'deploy' ? usable : []) {
+    const elsewhere = module.elsewhere.filter(({ file }) => file.strategy === options.strategy)
+    if (elsewhere.length === 0) continue
+    skipping.add(module)
+    const here = module.files.some(file => file.strategy === options.strategy)
+    if (options.dryRun && here) continue
+    const reasons = [...new Set(elsewhere.map(({ reason }) => reason))].join('; ')
+    output.info(
+      `${module.name}: ${plural(elsewhere.length, 'file')} not for this machine (${reasons}), skipped.`,
+    )
+  }
+
   const files = usable
     .flatMap(module => module.files)
     .filter(file => file.strategy === options.strategy)
@@ -1368,7 +1393,10 @@ async function prepare(
       throw new CliError(
         `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry', 'modules or settings entries')} failed.`,
       )
-    if (usable.length > 0) output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
+    // The modules whose files are all for other machines were explained above.
+    const empty = usable.filter(module => !skipping.has(module)).map(module => module.name)
+    if (empty.length > 0)
+      output.info(`No ${options.strategy} file to ${verb} in ${empty.join(', ')}.`)
     return { modules: usable, away, failures, all }
   }
 
