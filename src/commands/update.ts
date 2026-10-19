@@ -402,8 +402,20 @@ async function warnAboutRemovedFiles(
     const record = await DeploymentRecord.load(ctx.home)
     const find = async (strategy: 'global' | 'local') =>
       (await findRemovedFiles(record, modules, { repository, home: ctx.home, strategy })).removed
-    const global = await find('global')
-    const local = await find('local')
+    const found = [...(await find('global')), ...(await find('local'))]
+    // Their entry is still there, for other machines: maybe the profiles are wrong.
+    const notHere = found.filter(file => file.notHere != null)
+    if (notHere.length > 0) {
+      const one = notHere.length === 1
+      output.warn(
+        `${plural(notHere.length, 'deployed file')} ${one ? 'is' : 'are'} no longer for this ` +
+          `machine: ${notHere.map(file => `${file.target} (${file.notHere})`).join(', ')}. ` +
+          `If "profiles" in ${configfilePaths(ctx.home).rc} is right, run ` +
+          `"configfile modules undeploy --removed" to remove ${one ? 'it' : 'them'}.`,
+      )
+    }
+    const global = found.filter(file => file.notHere == null && file.strategy === 'global')
+    const local = found.filter(file => file.notHere == null && file.strategy === 'local')
     const count = global.length + local.length
     if (count === 0) return
 

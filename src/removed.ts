@@ -24,6 +24,8 @@ export interface RecordedFile {
   readonly module: string | null
   /** Local copies: the folder it was copied into, where undeploy --local finds it. */
   readonly folder?: string
+  /** Its entry is still in the repository, but not for this machine: why. */
+  readonly notHere?: string
 }
 
 /** A deployed file configfile cannot tell about, and why. */
@@ -34,8 +36,8 @@ export interface HeldBack {
 
 /**
  * Files configfile deployed that the repository no longer deploys: their
- * entry was removed or set to `"deploy": "none"`, its target changed, or its
- * module was deleted.
+ * entry was removed or set to `"deploy": "none"`, its target changed, its
+ * module was deleted, or it is no longer for this machine (`"when"`).
  *
  * A file is still deployed when a current entry of the same strategy resolves
  * to its target: global entries from the home folder, local entries from the
@@ -98,6 +100,15 @@ export async function findRemovedFiles(
     }
 
     const module = entry == null ? null : loaded.get(entry.module)
+    const away =
+      entry == null || module?.error != null
+        ? undefined
+        : module?.elsewhere.find(
+            ({ file }) =>
+              file.strategy === strategy &&
+              file.entry?.module === entry.module &&
+              path.normalize(file.entry.source) === path.normalize(entry.source),
+          )
     removed.push({
       source: deployed.source,
       target,
@@ -107,6 +118,7 @@ export async function findRemovedFiles(
       repository,
       module: module?.path ?? null,
       ...(strategy === 'local' && deployed.entry != null && { folder: deployed.entry.folder }),
+      ...(away != null && { notHere: away.reason }),
     })
   }
 

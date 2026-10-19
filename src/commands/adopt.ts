@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import type { Command } from 'commander'
 
+import { type Machine, readWhen, whyNotFor } from '../conditions.ts'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
@@ -10,7 +11,7 @@ import { describeJsonError, errnoCode, lstatOrNull, messageOf } from '../fsutil.
 import { plural } from '../output.ts'
 import { contains, resolveUserPath, slugify } from '../paths.ts'
 import { ensureGit, git, gitOutput } from '../process.ts'
-import { listModules, unsafeTarget } from '../repository.ts'
+import { listModules, systemName, unsafeTarget } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 import {
   catchUp,
@@ -30,7 +31,12 @@ interface AdoptOptions {
   message?: string
   push: boolean
   dryRun?: boolean
+  os?: string
+  profile?: string[]
 }
+
+/** The `"when"` adopt writes, as in settings.json. */
+type When = { os?: string; profiles?: string | string[] }
 
 /** The schema settings.json files point to, for editors. */
 const SCHEMA = 'https://docs.configfile.sh/schemas/settings.json'
@@ -48,6 +54,15 @@ export function registerAdoptCommand(modules: Command, ctx: Context): void {
     .option('--as <name>', 'the name of the file in the module (one path only)')
     .option('--message <text>', 'the commit message')
     .option('--no-push', 'commit without pushing ("configfile update" pushes it later)')
+    .option(
+      '--os <system>',
+      'the files are only for this system (macos or linux): written as "when" in settings.json',
+    )
+    .option(
+      '--profile <name>',
+      'the files are only for machines with this profile (repeatable): written as "when"',
+      (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+    )
     .option('-n, --dry-run', 'show what would be done, without changing anything')
     .action((paths: string[], options: AdoptOptions) => adopt(paths, options, ctx))
 }
@@ -76,6 +91,8 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
   const { output } = ctx
   const store = new ConfigStore(ctx.home, { warn: message => output.warn(message) })
   const config = await store.read()
+  const machine: Machine = { os: systemName(ctx.platform), profiles: config.profiles }
+  const when = whenOf(options, machine)
   const into = options.into ?? config.workingCopy
   if (into == null) {
     throw new CliError(
@@ -112,7 +129,7 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
     const behind = await catchUp(copy)
     if (behind > 0) output.info(`Brought ${folder} up to date (${plural(behind, 'commit')}).`)
   }
-  const module = await findModule(copy, options.module)
+  const module = await findModule(copy, options.module, machine)
   const adoptions = await nameAdoptions(targets, module, options.as, copy, ctx)
 
   if (options.dryRun === true) {
@@ -128,7 +145,7 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
     return
   }
 
-  await commit(copy, module, adoptions, options.message ?? describeCommit(adoptions, ctx))
+  await commit(copy, module, adoptions, when, options.message ?? describeCommit(adoptions, ctx))
   for (const adoption of adoptions) {
     ctx.history.record({
       kind: 'adopted',
@@ -241,7 +258,41 @@ async function holdsRepository(folder: string): Promise<boolean> {
 }
 
 /** The module named `name` in the working copy, or where to create it. */
-async function findModule(copy: WorkingCopy, name: string): Promise<ModuleFolder> {
+/**
+ * The `"when"` that `--os` and `--profile` ask for, or `null`. The files come
+ * from this machine: it must be one they are for.
+ */
+function whenOf(options: Pick<AdoptOptions, 'os' | 'profile'>, machine: Machine): When | null {
+  if (options.os == null && options.profile == null) return null
+  const profiles = options.profile == null ? null : [...new Set(options.profile)]
+  const when: When = {
+    ...(options.os != null && { os: options.os }),
+    ...(profiles != null && { profiles: profiles.length === 1 ? profiles[0] : profiles }),
+  }
+  const condition = readWhen(when)
+  if ('invalid' in condition) {
+    throw new CliError(
+      condition.invalid
+        .replace('"when.os"', '--os')
+        .replace('"when.profiles"', '--profile')
+        .replace(', or a list of them', ''),
+    )
+  }
+  const reason = whyNotFor(condition, machine)
+  if (reason != null) {
+    throw new CliError(
+      `The files come from this machine, which --os and --profile leave out (${reason}): ` +
+        'they would never be deployed here.',
+    )
+  }
+  return when
+}
+
+async function findModule(
+  copy: WorkingCopy,
+  name: string,
+  machine: Machine,
+): Promise<ModuleFolder> {
   const modules = await listModules(copy.folder, {
     home: copy.folder,
     cwd: copy.folder,
@@ -252,6 +303,13 @@ async function findModule(copy: WorkingCopy, name: string): Promise<ModuleFolder
   if (found != null) {
     if (found.error != null) {
       throw new CliError(`Module "${name}" cannot be used: ${found.error}.`)
+    }
+    const away = whyNotFor(found.when, machine)
+    if (away != null) {
+      throw new CliError(
+        `Module "${name}" is not for this machine (${away}): files adopted into it would not ` +
+          'be deployed here.',
+      )
     }
     const settings = await readFile(path.join(found.path, 'settings.json'), 'utf8')
     return {
@@ -304,7 +362,12 @@ async function nameAdoptions(
   }
   const deployed = new Map(
     modules.flatMap(other =>
-      other.error == null ? other.files.map(file => [file.target, other.name] as const) : [],
+      // Every entry, whatever machine it is for: they would clash on that machine.
+      other.error == null
+        ? [...other.files, ...other.elsewhere.map(item => item.file)].map(
+            file => [file.target, other.name] as const,
+          )
+        : [],
     ),
   )
 
@@ -366,6 +429,7 @@ async function commit(
   copy: WorkingCopy,
   module: ModuleFolder,
   adoptions: readonly Adoption[],
+  when: When | null,
   message: string,
 ): Promise<void> {
   const cwd = copy.folder
@@ -384,7 +448,7 @@ async function commit(
         preserveTimestamps: true,
       })
     }
-    await writeFile(settingsPath, withEntries(module.settings, adoptions))
+    await writeFile(settingsPath, withEntries(module.settings, adoptions, when))
     await gitOutput(['add', '--', module.relative], { cwd })
     // git add skips what a .gitignore excludes: the entry would point to nothing.
     for (const adoption of adoptions) {
@@ -459,13 +523,23 @@ async function undo(
  * The settings.json with the new entries at the end of its "files" list,
  * keeping its keys in order and its indentation.
  */
-function withEntries(settings: string | null, adoptions: readonly Adoption[]): string {
+function withEntries(
+  settings: string | null,
+  adoptions: readonly Adoption[],
+  when: When | null,
+): string {
+  // A new module is for these machines as a whole; in an existing one, only the new entries.
+  const onEntries = settings != null && when != null
   const entries = adoptions.map(item => ({
     source_path: item.name,
     target_path: item.targetPath,
     deploy: 'global',
+    ...(onEntries && { when }),
   }))
-  if (settings == null) return `${JSON.stringify({ $schema: SCHEMA, files: entries }, null, 2)}\n`
+  if (settings == null) {
+    const created = { $schema: SCHEMA, ...(when != null && { when }), files: entries }
+    return `${JSON.stringify(created, null, 2)}\n`
+  }
 
   let parsed: { files: unknown[] }
   try {

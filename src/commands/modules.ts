@@ -3,7 +3,7 @@ import path from 'node:path'
 import { inspect } from 'node:util'
 
 import type { Command } from 'commander'
-
+import { describeWhen, isProfileName, type Machine, SYSTEMS } from '../conditions.ts'
 import type { Context } from '../context.ts'
 import { type CopiedFile, previewCopy } from '../copy.ts'
 import {
@@ -36,11 +36,13 @@ import {
   readMirrorChanges,
 } from '../mirror.ts'
 import { escapeControls, plural } from '../output.ts'
+import { configfilePaths } from '../paths.ts'
 import { runScript } from '../process.ts'
 import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
 import {
   HOOKS,
   type Hook,
+  knownProfiles,
   loadRepository,
   loadScripts,
   type Module,
@@ -64,6 +66,8 @@ interface RawOptions {
   removed?: boolean
   hooks?: boolean
   keepGoing?: boolean
+  os?: string
+  profile?: string[]
 }
 
 /** Options once normalized at the command boundary. */
@@ -78,10 +82,25 @@ interface Options {
   hooks: boolean
   /** Go on with the modules that come after a script that failed. */
   keepGoing: boolean
+  /** The machine to check `"when"` against instead of this one (`--os`, `--profile`). */
+  preview: Partial<Machine>
 }
 
 function normalize(options: RawOptions): Options {
+  if (options.os != null && !(SYSTEMS as readonly string[]).includes(options.os)) {
+    throw new CliError(`--os must be ${SYSTEMS.join(' or ')}, not "${options.os}".`)
+  }
+  const invalid = (options.profile ?? []).filter(name => !isProfileName(name))
+  if (invalid.length > 0) {
+    throw new CliError(
+      `"${invalid[0]}" is not a profile name: use letters, digits, ".", "_" and "-".`,
+    )
+  }
   return {
+    preview: {
+      ...(options.os != null && { os: options.os }),
+      ...(options.profile != null && { profiles: [...new Set(options.profile)] }),
+    },
     strategy: options.local === true ? 'local' : 'global',
     all: options.all === true,
     force: options.force === true,
@@ -110,6 +129,12 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
     .argument('[modules...]', 'modules to check (all when omitted)')
     .description('show whether the files of the modules are deployed')
     .option('-l, --local', 'check the local files of the modules, in the current folder')
+    .option('--os <system>', 'check as if this machine ran this system (macos or linux)')
+    .option(
+      '--profile <name>',
+      'check as if this machine had this profile instead of its own (repeatable)',
+      collect,
+    )
     .action((names: string[], options: RawOptions) => status(names, normalize(options), ctx))
 
   modules
@@ -127,6 +152,12 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
       'replace existing local files, and copies changed on this machine, without asking (they are moved to .old)',
     )
     .option('-n, --dry-run', 'show what would be done, without changing anything')
+    .option('--os <system>', 'with --dry-run: as if this machine ran this system (macos or linux)')
+    .option(
+      '--profile <name>',
+      'with --dry-run: as if this machine had this profile instead of its own (repeatable)',
+      collect,
+    )
     .option('--no-hooks', 'do not run the pre_deploy and post_deploy scripts of the modules')
     .option(
       '--keep-going',
@@ -154,6 +185,11 @@ export function registerModulesCommand(program: Command, ctx: Context): void {
     .action((names: string[], options: RawOptions) => undeploy(names, normalize(options), ctx))
 
   registerAdoptCommand(modules, ctx)
+}
+
+/** Collects a repeatable option. */
+function collect(value: string, previous: string[] | undefined): string[] {
+  return [...(previous ?? []), value]
 }
 
 async function loadModules(ctx: Context): Promise<Module[]> {
@@ -200,17 +236,27 @@ async function list(ctx: Context): Promise<void> {
   for (const module of modules) reportSettings(module, ctx)
 }
 
-/** What `modules list` adds to a module's name: why it is ignored, or the scripts it names. */
+/**
+ * What `modules list` adds to a module's name: why it is ignored, or the
+ * machines it is for and the scripts it names.
+ */
 function describeListed(module: Module): string {
   if (module.error != null) return ` (ignored: ${module.error})`
+  const parts: string[] = []
+  if (module.when != null) {
+    const away = module.notHere == null ? '' : ', not this machine'
+    parts.push(`for ${describeWhen(module.when)}${away}`)
+  }
   const hooks = HOOKS.filter(hook => module.hooks[hook] != null)
-  return hooks.length === 0 ? '' : ` (${hooks.join(', ')})`
+  if (hooks.length > 0) parts.push(hooks.join(', '))
+  return parts.length === 0 ? '' : ` (${parts.join('; ')})`
 }
 
 async function status(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output } = ctx
-  const repo = await loadRepository(ctx)
+  const repo = await loadRepository(ctx, options.preview)
   const selected = names.length === 0 ? repo.modules : pickModules(repo.modules, names)
+  reportMachine(repo, options, ctx)
 
   // Read only: status never changes files or the record.
   const record = await DeploymentRecord.load(ctx.home)
@@ -301,11 +347,21 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
   }
 
+  // Modules for other machines: one line for all, unless they are named.
+  const away: string[] = []
   for (const module of selected) {
+    if (module.error == null && module.notHere != null && names.length === 0) {
+      away.push(module.name)
+      continue
+    }
     output.print(`${module.name}:`)
 
     if (module.error != null) {
       output.print(`  ignored: ${module.error}`)
+      continue
+    }
+    if (module.notHere != null) {
+      output.print(`  not for this machine (${module.notHere})`)
       continue
     }
     reportSettings(module, ctx)
@@ -319,10 +375,14 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
       printCopiedFiles(state)
       await printChangesThroughLink(file, state)
     }
+    const elsewhere = module.elsewhere.filter(({ file }) => file.strategy === options.strategy)
+    for (const { file, reason } of elsewhere) {
+      output.print(`  ${file.target} (not for this machine: ${reason})`)
+    }
     for (const source of module.undecided) {
       output.print(`  ${source} (no deployment strategy)`)
     }
-    if (files.length === 0 && module.undecided.length === 0) {
+    if (files.length === 0 && elsewhere.length === 0 && module.undecided.length === 0) {
       output.print(`  no ${options.strategy} file`)
     }
     for (const hook of HOOKS) {
@@ -338,12 +398,28 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
     }
   }
 
-  if (removed.length > 0) {
+  if (away.length > 0) {
+    output.print(
+      `Not for this machine: ${away.join(', ')} ("configfile modules status <module>" says why).`,
+    )
+  }
+  const gone = removed.filter(file => file.notHere == null)
+  if (gone.length > 0) {
     output.print(
       `No longer deployed by the repository (run "${undeployRemovedCommand(options.strategy)}"):`,
     )
-    for (const file of removed) {
+    for (const file of gone) {
       output.print(`  ${file.target} (${await describeTarget(file)})`)
+    }
+  }
+  const notHere = removed.filter(file => file.notHere != null)
+  if (notHere.length > 0) {
+    output.print(
+      `No longer for this machine (unless "profiles" in ${configfilePaths(ctx.home).rc} is ` +
+        `wrong, run "${undeployRemovedCommand(options.strategy)}"):`,
+    )
+    for (const file of notHere) {
+      output.print(`  ${file.target} (${file.notHere}; ${await describeTarget(file)})`)
     }
   }
   if (heldBack.length > 0) {
@@ -373,6 +449,35 @@ async function status(names: string[], options: Options, ctx: Context): Promise<
   }
   if (unchecked > 0) {
     throw new CliError(`${plural(unchecked, 'file')} could not be checked: see why above.`)
+  }
+}
+
+/**
+ * Says which machine a preview checks, and warns about profiles no module
+ * names: a typo there would skip files without a word.
+ */
+function reportMachine(
+  { modules, machine }: Pick<Repository, 'modules' | 'machine'>,
+  options: Pick<Options, 'preview'>,
+  ctx: Context,
+): void {
+  const { preview } = options
+  if (preview.os != null || preview.profiles != null) {
+    const profiles =
+      machine.profiles.length === 0
+        ? 'no profile'
+        : `${machine.profiles.length === 1 ? 'profile' : 'profiles'} ${machine.profiles.map(name => `"${name}"`).join(', ')}`
+    ctx.output.info(`As a machine running ${machine.os}, with ${profiles}:`)
+  }
+  const known = knownProfiles(modules)
+  for (const name of machine.profiles.filter(profile => !known.includes(profile))) {
+    const where = preview.profiles == null ? ` (in ${configfilePaths(ctx.home).rc})` : ''
+    ctx.output.warn(
+      `No module is for profile "${name}"${where}: ` +
+        (known.length === 0
+          ? 'the repository uses no profiles.'
+          : `the repository uses ${known.map(profile => `"${profile}"`).join(', ')}.`),
+    )
   }
 }
 
@@ -467,7 +572,14 @@ async function loadHookScripts(
 
 async function deploy(names: string[], options: Options, ctx: Context): Promise<void> {
   const { output, prompts } = ctx
-  const repo = await loadRepository(ctx)
+  if (!options.dryRun && (options.preview.os != null || options.preview.profiles != null)) {
+    throw new CliError(
+      '--os and --profile only preview another machine: add --dry-run. To change this ' +
+        `machine's profiles, edit "profiles" in ${configfilePaths(ctx.home).rc}.`,
+    )
+  }
+  const repo = await loadRepository(ctx, options.preview)
+  if (options.dryRun) reportMachine(repo, options, ctx)
   const run = await prepare('deploy', repo, names, options, ctx)
   if (run == null) return
 
@@ -526,6 +638,11 @@ async function deploy(names: string[], options: Options, ctx: Context): Promise<
           failures++
           complete = false
           reportFileError(file, error, ctx)
+        }
+      }
+      for (const { file, reason } of module.elsewhere) {
+        if (file.strategy === options.strategy) {
+          output.print(`- ${file.target} (not for this machine: ${reason})`)
         }
       }
       if (!planHook(module, 'post_deploy', scripts, ctx, { complete })) {
@@ -969,7 +1086,7 @@ async function runHook(
         signal ??= received
       },
       env: {
-        ...scriptEnvironment(script, scripts.repository, ctx.platform),
+        ...scriptEnvironment(script, scripts.repository, ctx.platform, scripts.profiles),
         CONFIGFILE_HOOK: hook,
         CONFIGFILE_MODULE: module.name,
         CONFIGFILE_DEPLOY: strategy,
@@ -1005,10 +1122,12 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
 
   const repo = await loadRepository(ctx)
   const run = options.removed
-    ? { modules: [], failures: 0, all: false }
+    ? { modules: [], away: [], failures: 0, all: false }
     : await prepare('undeploy', repo, names, options, ctx)
   // Undeploying every module also undeploys what the repository no longer deploys.
   const withRemoved = options.removed || options.all || run?.all === true
+  // Named modules not for this machine: what was deployed for them, without their scripts.
+  const away = withRemoved ? [] : (run?.away ?? [])
   if (run == null && !withRemoved) return
   const units = unitsOf(run?.modules ?? [], options.strategy)
   const scripts = await loadHookScripts(
@@ -1045,9 +1164,16 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
     return complete
   }
 
-  /** The files the repository no longer deploys: no module is left to name a script for them. */
+  /**
+   * The files the repository no longer deploys, or only those of the `away`
+   * modules: no module is left to name a script for them here.
+   */
   const undeployRemoved = async (context: DeployContext): Promise<number> => {
-    const { removed, heldBack } = await removedFiles(context.record, repo, options.strategy, ctx)
+    const found = await removedFiles(context.record, repo, options.strategy, ctx)
+    const ofAway = (file: { module: string | null }) =>
+      away.some(module => module.path === file.module)
+    const removed = withRemoved ? found.removed : found.removed.filter(ofAway)
+    const heldBack = withRemoved ? found.heldBack : []
     for (const { target, reason } of heldBack) {
       output.warn(`${target} was not checked: ${reason}.`)
     }
@@ -1055,13 +1181,21 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
       if (options.removed && heldBack.length === 0) {
         output.info(`Every deployed ${options.strategy} file is still deployed by the repository.`)
       }
+      for (const module of withRemoved ? [] : away) {
+        output.info(
+          `${module.name} is not for this machine (${module.notHere}): nothing is deployed for it.`,
+        )
+      }
       return 0
     }
 
+    const which = withRemoved
+      ? 'files the repository no longer deploys'
+      : `files of ${away.map(module => module.name).join(', ')} (not for this machine)`
     output.info(
       options.dryRun
-        ? 'Files the repository no longer deploys would be undeployed:'
-        : 'Undeploying the files the repository no longer deploys…',
+        ? `${which[0]?.toUpperCase()}${which.slice(1)} would be undeployed:`
+        : `Undeploying the ${which}…`,
     )
     for (const file of removed) {
       try {
@@ -1105,7 +1239,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
         failed.add('post_undeploy', module)
       }
     }
-    if (withRemoved) count += await undeployRemoved(context)
+    if (withRemoved || away.length > 0) count += await undeployRemoved(context)
     const problems = failed.problems(true)
     if (count > 0 || failures > 0 || problems.length > 0) {
       finish(failures, problems, count > 0 ? 'Dry run finished.' : '', ctx)
@@ -1119,7 +1253,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
     ),
   )
   const problems = outcome.problems
-  if (withRemoved) {
+  if (withRemoved || away.length > 0) {
     if (outcome.stopped) {
       problems.push('The files the repository no longer deploys were not checked.')
     } else {
@@ -1165,23 +1299,31 @@ async function prepare(
   options: Options,
   ctx: Context,
 ): Promise<{
-  /** The selected modules that can be used, in repository order. */
+  /** The selected modules that can be used on this machine, in repository order. */
   modules: UsableModule[]
+  /** The selected modules that are not for this machine (their `"when"`). */
+  away: UsableModule[]
   failures: number
   /** Every module was selected (with --all, or at the question), even when there is none. */
   all: boolean
 } | null> {
   const { output } = ctx
   const { selected, all } = await selectModules(verb, modules, names, options, ctx)
-  if (selected.length === 0) return all ? { modules: [], failures: 0, all } : null
+  if (selected.length === 0) return all ? { modules: [], away: [], failures: 0, all } : null
 
   let failures = 0
   const usable: UsableModule[] = []
+  const away: UsableModule[] = []
   for (const module of selected) {
     if (module.error != null) {
       failures++
       output.error(`Module "${module.name}" was not ${verb}ed: ${module.error}.`)
       ctx.history.record({ kind: 'failed', module: module.name, reason: module.error })
+      continue
+    }
+    // Not this machine's: neither its files nor its scripts, and nothing to fix here.
+    if (module.notHere != null) {
+      away.push(module)
       continue
     }
 
@@ -1206,6 +1348,16 @@ async function prepare(
     }
   }
 
+  if (verb === 'deploy' && away.length > 0) {
+    if (all) {
+      output.info(`Not for this machine, skipped: ${away.map(module => module.name).join(', ')}.`)
+    } else {
+      for (const module of away) {
+        output.info(`${module.name}: not for this machine (${module.notHere}), skipped.`)
+      }
+    }
+  }
+
   const files = usable
     .flatMap(module => module.files)
     .filter(file => file.strategy === options.strategy)
@@ -1216,8 +1368,8 @@ async function prepare(
       throw new CliError(
         `Nothing could be ${verb}ed. ${plural(failures, 'module or settings entry', 'modules or settings entries')} failed.`,
       )
-    output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
-    return { modules: usable, failures, all }
+    if (usable.length > 0) output.info(`No ${options.strategy} file to ${verb} in ${moduleNames}.`)
+    return { modules: usable, away, failures, all }
   }
 
   const action = verb === 'deploy' ? 'Deploying' : 'Undeploying'
@@ -1226,7 +1378,7 @@ async function prepare(
       ? `Dry run, nothing is changed. ${action} ${moduleNames} would do:`
       : `${action} ${moduleNames}…`,
   )
-  return { modules: usable, failures, all }
+  return { modules: usable, away, failures, all }
 }
 
 async function selectModules(

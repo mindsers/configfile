@@ -29,7 +29,7 @@ Avoid putting a token in the repository URL: *configfile* saves the URL in `~/.c
 configfile init
 ```
 
-*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`.
+*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When some modules are only for some machines ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work`.
 
 ## 4. Deploy your modules
 
@@ -81,7 +81,7 @@ set -e
 curl -fsSL https://configfile.sh/install.sh -o /tmp/install-configfile.sh
 sh /tmp/install-configfile.sh
 export PATH="$HOME/.local/bin:$PATH"
-configfile init --repo git@github.com:me/dotfiles.git
+configfile init --repo git@github.com:me/dotfiles.git --profile work
 configfile modules deploy --all
 configfile scripts run setup
 ```

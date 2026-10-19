@@ -24,10 +24,39 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 | `target_path` | Where the file is deployed. `~` is your home folder. A relative path is relative to your home folder for global files (`.zshrc` is `~/.zshrc`) and to the current folder for local files. Targets can be anywhere you can write, except: your home folder, the current folder, the dotfiles repository, the module folder, *configfile*'s own files (`~/.configfilerc`, `~/.configfile/`), one of their parents, or anything inside the repository. These are recognised whatever the path used to reach them (letter case, symbolic links). |
 | `deploy` | Where the file goes. `"global"`: usually into your home folder (a relative `target_path` starts there), with `configfile modules deploy`. `"local"`: into the current folder, typically a project, with `configfile modules deploy --local`. `"none"`: **never deployed**, which keeps it in the repository for later. |
 | `method` | How a global file is deployed. `"copy"` (the default): the file is **copied**, and *configfile* keeps the copy up to date with the repository while keeping the changes made on this machine (see [Global files](#global-files)). `"link"`: the file is a **symbolic link** to *configfile*'s copy of the repository, so whatever writes to it writes there ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). Local files are always copied: `"link"` is an error for them. Copies follow the symbolic links of the source, so they never point into the repository. |
+| `when` | The machines the file is for, in addition to its module's `when`: see [Deploy on some machines only](#deploy-on-some-machines-only). |
 
 An entry without `deploy` is not deployed, and `modules deploy` warns about it. The `"global": true | false` key of *configfile* 1.x, and a `settings.json` that is a plain list (the format of *configfile* 0.3), are no longer read: [Upgrading from 1.x](/guides/upgrading-from-1/#settings-20-no-longer-reads) says how to update them.
 
 When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A copy or a link already in place is left as is, so deploying twice is safe.
+
+## Deploy on some machines only
+
+One repository can serve several machines: a personal Mac, a work laptop, a Linux server. `when` says which machines a module, or one of its files, is for:
+
+```json
+{
+  "when": { "profiles": "work" },
+  "files": [
+    { "source_path": "config", "target_path": "~/.aws/config", "deploy": "global" },
+    { "source_path": "code.json", "target_path": "~/Library/Application Support/Code/User/settings.json", "deploy": "global", "when": { "os": "macos" } },
+    { "source_path": "code.json", "target_path": "~/.config/Code/User/settings.json", "deploy": "global", "when": { "os": "linux" } }
+  ]
+}
+```
+
+| Setting | Description |
+| --- | --- |
+| `when` | Next to `files`: the machines the whole module is for. On other machines, `modules deploy` skips the module and its scripts, even when it is named, and still succeeds. |
+
+- `os`: `"macos"` or `"linux"`, or a list of them. The machine must run one of them.
+- `profiles`: a profile name, or a list of them. The machine must have one of them. A machine's profiles are `"profiles"` in [`~/.configfilerc`](/reference/configuration/), set by `configfile init --profile work` or by its question. A machine can have several.
+- With both keys, the machine must match both. An entry's `when` and its module's both apply.
+- A key or a value *configfile* doesn't know makes the module unusable, or the entry invalid, so the files are never deployed everywhere by mistake. `when` needs *configfile* 2.0: older versions ignore it, and deploy the files on every machine.
+
+`modules status` says which modules and files are not for this machine, and why. It also warns about a profile of this machine that no module uses, which is usually a typo. To see what another machine would get, run `modules status --os linux --profile work`, or `modules deploy --dry-run` with the same options.
+
+Files deployed before they stopped being for this machine (its profiles changed, or the repository added a `when`) are listed apart by `modules status` and `update`. `modules undeploy --removed` removes them, without the module's scripts, and so does `modules undeploy <module>` for a module that is no longer for this machine.
 
 ## Global files
 

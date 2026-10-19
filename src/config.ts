@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { chmod, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import { isProfileName } from './conditions.ts'
 import { CliError, NotInitializedError } from './errors.ts'
 import { describeJsonError, messageOf, writeFileAtomic } from './fsutil.ts'
 import { resolveUserPath } from './paths.ts'
@@ -18,6 +19,8 @@ export interface Config {
   readonly scriptExtensions: readonly string[] | null
   /** Absolute path of the user's own clone of the repository (`working_copy`), or `null`. */
   readonly workingCopy: string | null
+  /** This machine's profiles (`profiles`), which `"when"` conditions name. */
+  readonly profiles: readonly string[]
 }
 
 /** On-disk shape of `~/.configfilerc`. Unknown keys are preserved on write. */
@@ -26,6 +29,7 @@ interface RawConfig {
   folder_path?: unknown
   script_extensions?: unknown
   working_copy?: unknown
+  profiles?: unknown
   [key: string]: unknown
 }
 
@@ -69,6 +73,7 @@ export class ConfigStore {
       folderPath: resolveUserPath(raw.folder_path.trim(), { home: this.#home, cwd: this.#home }),
       scriptExtensions: this.#readExtensions(raw.script_extensions),
       workingCopy: this.#readWorkingCopy(raw.working_copy),
+      profiles: this.#readProfiles(raw.profiles),
     }
   }
 
@@ -135,6 +140,13 @@ export class ConfigStore {
     await this.#save({ ...previous, working_copy: folder })
   }
 
+  /** Saves this machine's profiles (`profiles`), keeping the rest. */
+  async setProfiles(profiles: readonly string[]): Promise<void> {
+    const previous = await this.#readRaw()
+    if (previous == null) throw new NotInitializedError(this.path)
+    await this.#save({ ...previous, profiles: [...profiles] })
+  }
+
   async #save(next: RawConfig): Promise<void> {
     try {
       // Readable by the user only: the repository URL may contain credentials.
@@ -155,6 +167,17 @@ export class ConfigStore {
       )
     }
     return resolveUserPath(value.trim(), { home: this.#home, cwd: this.#home })
+  }
+
+  #readProfiles(value: unknown): readonly string[] {
+    if (value === undefined || value === null) return []
+    if (!Array.isArray(value) || !value.every(isProfileName)) {
+      throw new InvalidConfigError(
+        `Invalid configuration in ${this.path}: "profiles" must be a list of profile names ` +
+          '(letters, digits, ".", "_" and "-"), such as ["work"].',
+      )
+    }
+    return [...new Set(value)]
   }
 
   #readExtensions(value: unknown): readonly string[] | null {
