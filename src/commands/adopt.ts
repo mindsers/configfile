@@ -11,7 +11,7 @@ import { describeJsonError, errnoCode, lstatOrNull, messageOf } from '../fsutil.
 import { plural } from '../output.ts'
 import { contains, resolveUserPath, slugify } from '../paths.ts'
 import { ensureGit, git, gitOutput } from '../process.ts'
-import { listModules, systemName, unsafeTarget } from '../repository.ts'
+import { listModules, readRepositorySettings, systemName, unsafeTarget } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 import {
   catchUp,
@@ -35,11 +35,11 @@ interface AdoptOptions {
   profile?: string[]
 }
 
-/** The `"when"` adopt writes, as in settings.json. */
+/** The `"when"` adopt writes, as in a module's settings. */
 type When = { os?: string; profiles?: string | string[] }
 
-/** The schema settings.json files point to, for editors. */
-const SCHEMA = 'https://docs.configfile.sh/schemas/settings.json'
+/** The schema the settings of a module point to, for editors. */
+const SCHEMA = 'https://docs.configfile.sh/schemas/module.json'
 
 export function registerAdoptCommand(modules: Command, ctx: Context): void {
   modules
@@ -56,7 +56,7 @@ export function registerAdoptCommand(modules: Command, ctx: Context): void {
     .option('--no-push', 'commit without pushing ("configfile update" pushes it later)')
     .option(
       '--os <system>',
-      'the files are only for this system (macos or linux): written as "when" in settings.json',
+      'the files are only for this system (macos or linux): written as "when" in the module\'s settings',
     )
     .option(
       '--profile <name>',
@@ -71,7 +71,7 @@ export function registerAdoptCommand(modules: Command, ctx: Context): void {
 interface Adoption {
   /** Absolute path on this machine, which becomes the entry's target. */
   readonly target: string
-  /** `target_path`, as written in settings.json (`~/.zshrc`). */
+  /** `target_path`, as written in the module's settings (`~/.zshrc`). */
   readonly targetPath: string
   /** `source_path`: its name in the module folder. */
   readonly name: string
@@ -83,7 +83,9 @@ interface ModuleFolder {
   /** Relative to the working copy, with `/` (`files/zsh`). */
   readonly relative: string
   readonly path: string
-  /** The content of its settings.json, or `null` when the module is created. */
+  /** The name of its settings file (`module_settings` of the repository). */
+  readonly settingsFile: string
+  /** The content of its settings file, or `null` when the module is created. */
   readonly settings: string | null
 }
 
@@ -293,12 +295,21 @@ async function findModule(
   name: string,
   machine: Machine,
 ): Promise<ModuleFolder> {
-  const modules = await listModules(copy.folder, {
-    home: copy.folder,
-    cwd: copy.folder,
-    // Shown once, when the targets are checked (see `nameAdoptions`).
-    warn: () => {},
-  })
+  const settings = await readRepositorySettings(copy.folder)
+  // Warnings are shown once, when the targets are checked (see
+  // `nameAdoptions`); those about the module's own folder say, below, why it
+  // cannot be used.
+  const skipped = new Map<string, string[]>()
+  const modules = await listModules(
+    copy.folder,
+    {
+      home: copy.folder,
+      cwd: copy.folder,
+      warn: () => {},
+      skipped: (folder, warning) => skipped.set(folder, [...(skipped.get(folder) ?? []), warning]),
+    },
+    settings,
+  )
   const found = modules.find(module => module.name === name)
   if (found != null) {
     if (found.error != null) {
@@ -311,10 +322,11 @@ async function findModule(
           'be deployed here.',
       )
     }
-    const settings = await readFile(path.join(found.path, 'settings.json'), 'utf8')
+    const settings = await readFile(path.join(found.path, found.settingsFile), 'utf8')
     return {
       relative: path.relative(copy.folder, found.path).split(path.sep).join('/'),
       path: found.path,
+      settingsFile: found.settingsFile,
       settings,
     }
   }
@@ -325,10 +337,15 @@ async function findModule(
   }
   const relative = `files/${name}`
   const modulePath = path.join(copy.folder, 'files', name)
+  const { moduleSettings } = settings
   if ((await lstatOrNull(modulePath)) != null) {
-    throw new CliError(`${modulePath} exists and is not a module (it has no settings.json).`)
+    const why = skipped.get(modulePath) ?? []
+    throw new CliError(
+      `${modulePath} exists and is not a module (it has no ${moduleSettings}).` +
+        why.map(warning => ` ${warning}`).join(''),
+    )
   }
-  return { relative, path: modulePath, settings: null }
+  return { relative, path: modulePath, settingsFile: moduleSettings, settings: null }
 }
 
 /**
@@ -377,8 +394,10 @@ async function nameAdoptions(
     if (name.includes('/') || name.includes(path.sep) || name === '.' || name === '..') {
       throw new CliError(`"${name}" cannot name a file of the module.`)
     }
-    if (name === 'settings.json') {
-      throw new CliError(`${target} would be named settings.json: choose another name with --as.`)
+    if (name === module.settingsFile) {
+      throw new CliError(
+        `${target} would be named ${name}, the module's own settings file: choose another name with --as.`,
+      )
     }
     if (adoptions.some(other => other.name === name)) {
       throw new CliError(`Two files would be named ${name}: adopt one of them with --as <name>.`)
@@ -422,7 +441,7 @@ function describeCommit(adoptions: readonly Adoption[], ctx: Context): string {
 }
 
 /**
- * Copies the files into the module, adds their entries to its settings.json,
+ * Copies the files into the module, adds their entries to its settings file,
  * and commits. When anything fails, what was written is removed.
  */
 async function commit(
@@ -433,7 +452,7 @@ async function commit(
   message: string,
 ): Promise<void> {
   const cwd = copy.folder
-  const settingsPath = path.join(module.path, 'settings.json')
+  const settingsPath = path.join(module.path, module.settingsFile)
   const written: string[] = []
   try {
     await mkdir(module.path, { recursive: true })
@@ -448,7 +467,7 @@ async function commit(
         preserveTimestamps: true,
       })
     }
-    await writeFile(settingsPath, withEntries(module.settings, adoptions, when))
+    await writeFile(settingsPath, withEntries(module, adoptions, when))
     await gitOutput(['add', '--', module.relative], { cwd })
     // git add skips what a .gitignore excludes: the entry would point to nothing.
     for (const adoption of adoptions) {
@@ -495,7 +514,7 @@ async function undo(
       left.push(`${what} (${messageOf(error)})`)
     }
   }
-  const settingsPath = path.join(module.path, 'settings.json')
+  const settingsPath = path.join(module.path, module.settingsFile)
   await attempt(`unstaging ${module.relative}`, () =>
     gitOutput(['reset', '--quiet', '--', module.relative], { cwd: copy.folder }),
   )
@@ -520,11 +539,11 @@ async function undo(
 }
 
 /**
- * The settings.json with the new entries at the end of its "files" list,
+ * The module's settings with the new entries at the end of its "files" list,
  * keeping its keys in order and its indentation.
  */
 function withEntries(
-  settings: string | null,
+  { settings, settingsFile }: Pick<ModuleFolder, 'settings' | 'settingsFile'>,
   adoptions: readonly Adoption[],
   when: When | null,
 ): string {
@@ -545,7 +564,7 @@ function withEntries(
   try {
     parsed = JSON.parse(settings) as { files: unknown[] }
   } catch (error) {
-    throw new CliError(`settings.json is not valid JSON (${describeJsonError(error)}).`)
+    throw new CliError(`${settingsFile} is not valid JSON (${describeJsonError(error)}).`)
   }
   parsed.files.push(...entries)
   const indent = /^[ \t]+(?=")/m.exec(settings)?.[0] ?? '  '

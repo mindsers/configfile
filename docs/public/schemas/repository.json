@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.configfile.sh/schemas/repository.json",
+  "title": "configfile repository settings",
+  "description": "configfile.repository.json, at the root of a dotfiles repository: settings of the repository itself, the same on every machine. See https://docs.configfile.sh/reference/modules/#repository-settings",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The JSON Schema of this file, for editor completion and validation. configfile only checks that it is text.",
+      "type": "string"
+    },
+    "module_settings": {
+      "description": "The name of the settings file of each module, in its folder. Default: configfile.module.json. configfile 1.x used settings.json.",
+      "type": "string",
+      "pattern": "^[^/\\\\]+\\.json$",
+      "not": {
+        "const": "configfile.repository.json"
+      }
+    }
+  },
+  "additionalProperties": false
+}

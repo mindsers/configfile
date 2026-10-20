@@ -52,7 +52,7 @@ With `configfile scripts run`, *configfile*'s own messages go to stderr and the 
 
 ## Check your dotfiles repository on every push
 
-A mistake in a `settings.json`, such as invalid JSON, a missing `target_path`, or a target *configfile* refuses, is usually found on the next machine you set up. A CI workflow can find it when you push, by deploying the repository into a throwaway home folder with `--dry-run`: *configfile* reads every module and entry, checks every target, and exits with `1` if anything can't be deployed.
+A mistake in the settings of a module, such as invalid JSON, a missing `target_path`, or a target *configfile* refuses, is usually found on the next machine you set up. A CI workflow can find it when you push, by deploying the repository into a throwaway home folder with `--dry-run`: *configfile* reads every module and entry, checks every target, and exits with `1` if anything can't be deployed.
 
 With GitHub Actions, add this workflow to your dotfiles repository:
 
@@ -98,5 +98,5 @@ To also test your setup script, add a step that runs it, on the systems it suppo
 Run it only if the script is safe to run on a fresh CI machine: it installs and changes things for real, as on your own computer.
 
 :::tip
-In your editor, the [JSON Schema of `settings.json`](/reference/modules/#completion-and-validation-in-your-editor) catches most of these mistakes before you even commit.
+In your editor, the [JSON Schema of the settings of a module](/reference/modules/#completion-and-validation-in-your-editor) catches most of these mistakes before you even commit.
 :::

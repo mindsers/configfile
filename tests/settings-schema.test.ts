@@ -1,6 +1,7 @@
-// The JSON Schema of settings.json (docs/public/schemas/settings.json, served at
-// https://docs.configfile.sh/schemas/settings.json) must accept what configfile
-// accepts and refuse what it refuses: each example below goes through both.
+// The JSON Schemas of a module's settings (docs/public/schemas/module.json, served at
+// https://docs.configfile.sh/schemas/module.json; settings.json is the same except for its $id, for the
+// "$schema" of configfile 1.x) and of configfile.repository.json must accept what
+// configfile accepts and refuse what it refuses: each example below goes through both.
 
 import { readFile } from 'node:fs/promises'
 
@@ -10,15 +11,18 @@ import { describe, expect, it } from 'vitest'
 import { listModules } from '../src/repository.ts'
 import { createSandbox } from './helpers.ts'
 
-const schemaFile = new URL('../docs/public/schemas/settings.json', import.meta.url)
-const schema = JSON.parse(await readFile(schemaFile, 'utf8'))
+const readSchema = async (name: string) =>
+  JSON.parse(await readFile(new URL(`../docs/public/schemas/${name}`, import.meta.url), 'utf8'))
+const schema = await readSchema('module.json')
 const validate = new Ajv2020({ allErrors: true }).compile(schema)
+const repositorySchema = await readSchema('repository.json')
+const validateRepository = new Ajv2020({ allErrors: true }).compile(repositorySchema)
 
-/** Whether configfile uses every entry of this settings.json, with no error. */
+/** Whether configfile uses every entry of these module settings, with no error. */
 async function configfileAccepts(settings: unknown): Promise<boolean> {
   const sandbox = await createSandbox()
   await sandbox.write('home/dotfiles/files/zsh/zshrc')
-  await sandbox.write('home/dotfiles/files/zsh/settings.json', JSON.stringify(settings))
+  await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', JSON.stringify(settings))
 
   const [module] = await listModules(sandbox.repo, { ...sandbox, warn: () => {} })
   if (module == null) throw new Error('no module')
@@ -47,7 +51,7 @@ const accepted: [string, unknown][] = [
   ['no files', { files: [] }],
   ['scripts to run when deployed', { files: [], pre_deploy: 'check', post_deploy: 'setup' }],
   ['scripts to run when undeployed', { files: [], pre_undeploy: 'stop', post_undeploy: 'clean' }],
-  ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/settings.json', files: [] }],
+  ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/module.json', files: [] }],
   ['a module for one system', { when: { os: 'macos' }, files: [] }],
   [
     'a module for some profiles',
@@ -133,14 +137,66 @@ describe('settings.json schema', () => {
     )
     const documented = [...page.matchAll(/^\| `(\w+)` \|/gm)].map(match => match[1])
 
-    // The keys of an entry, and those of the file itself next to "files".
+    // The keys of an entry, those of the file itself next to "files", and those of the
+    // repository's settings.
     const { $schema, files, ...settings } = schema.properties
-    const described = [...Object.keys(schema.$defs.entry.properties), ...Object.keys(settings)]
+    const { $schema: _, ...repository } = repositorySchema.properties
+    const described = [
+      ...Object.keys(schema.$defs.entry.properties),
+      ...Object.keys(settings),
+      ...Object.keys(repository),
+    ]
 
     expect(described.sort()).toEqual(documented.sort())
   })
 
   it('is served where its $id says, from the documentation site', () => {
-    expect(schema.$id).toBe('https://docs.configfile.sh/schemas/settings.json')
+    expect(schema.$id).toBe('https://docs.configfile.sh/schemas/module.json')
+    expect(repositorySchema.$id).toBe('https://docs.configfile.sh/schemas/repository.json')
+  })
+
+  it('is also served as settings.json, the "$schema" of configfile 1.x modules', async () => {
+    const { $id, ...legacy } = await readSchema('settings.json')
+    const { $id: _, ...current } = schema
+
+    expect($id).toBe('https://docs.configfile.sh/schemas/settings.json')
+    expect(legacy).toEqual(current)
+  })
+})
+
+/** Whether configfile reads the modules of a repository with these repository settings. */
+async function configfileAcceptsRepository(settings: unknown): Promise<boolean> {
+  const sandbox = await createSandbox()
+  await sandbox.write('home/dotfiles/configfile.repository.json', JSON.stringify(settings))
+  return listModules(sandbox.repo, { ...sandbox, warn: () => {} }).then(
+    () => true,
+    () => false,
+  )
+}
+
+describe('configfile.repository.json schema', () => {
+  it.each([
+    ['no settings', {}],
+    ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/repository.json' }],
+    ['the settings file of configfile 1.x', { module_settings: 'settings.json' }],
+    ['another settings file', { module_settings: 'module.json' }],
+  ])('accepts %s, as configfile does', async (_, settings) => {
+    expect(await configfileAcceptsRepository(settings)).toBe(true)
+    expect(validateRepository(settings), JSON.stringify(validateRepository.errors)).toBe(true)
+  })
+
+  it.each([
+    ['an unknown key', { hooks: {} }],
+    ['a path', { module_settings: 'modules/settings.json' }],
+    ['a Windows path', { module_settings: 'modules\\settings.json' }],
+    ['a file that is not JSON', { module_settings: 'settings.yaml' }],
+    ['its own name', { module_settings: 'configfile.repository.json' }],
+    ['a name that is not a string', { module_settings: true }],
+    ['no name', { module_settings: null }],
+    ['a "$schema" that is not a string', { $schema: 1 }],
+    ['a list', []],
+  ])('refuses %s, as configfile does', async (_, settings) => {
+    expect(await configfileAcceptsRepository(settings)).toBe(false)
+    expect(validateRepository(settings)).toBe(false)
   })
 })

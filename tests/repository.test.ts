@@ -1,4 +1,4 @@
-import { chmod, mkdir, symlink } from 'node:fs/promises'
+import { chmod, mkdir, readFile, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -24,7 +24,7 @@ async function modulesOf(sandbox: Sandbox) {
   return { modules, warnings }
 }
 
-/** The module, which must have a usable settings.json. */
+/** The module, which must have usable settings. */
 function usable(module: Module | undefined) {
   if (module == null || module.error != null) throw new Error(`unusable module: ${module?.error}`)
   return module
@@ -43,12 +43,12 @@ async function scriptsOf(
 }
 
 describe('listModules', () => {
-  it('lists folders of files/ that have a settings.json, with slugified names', async () => {
+  it('lists folders of files/ that have a configfile.module.json, with slugified names', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/My Zsh/settings.json', settings([]))
-    await sandbox.write('home/dotfiles/files/git/settings.json', settings([]))
+    await sandbox.write('home/dotfiles/files/git/configfile.module.json', settings([]))
     await sandbox.write('home/dotfiles/files/no-settings/file', '')
-    await sandbox.write('home/dotfiles/files/.hidden/settings.json', settings([]))
+    await sandbox.write('home/dotfiles/files/.hidden/configfile.module.json', settings([]))
     await sandbox.write('home/dotfiles/files/.DS_Store', '')
 
     const { modules } = await modulesOf(sandbox)
@@ -58,7 +58,7 @@ describe('listModules', () => {
 
   it('follows symlinks to module folders', async () => {
     const sandbox = await createSandbox()
-    await sandbox.write('elsewhere/zsh/settings.json', settings([]))
+    await sandbox.write('elsewhere/zsh/configfile.module.json', settings([]))
     await mkdir(path.join(sandbox.repo, 'files'), { recursive: true })
     await symlink(path.join(sandbox.root, 'elsewhere/zsh'), path.join(sandbox.repo, 'files/zsh'))
 
@@ -70,8 +70,8 @@ describe('listModules', () => {
   it('warns about broken symlinks, duplicate and empty names', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/Foo Bar/settings.json', settings([]))
-    await sandbox.write('home/dotfiles/files/foo-bar/settings.json', settings([]))
-    await sandbox.write('home/dotfiles/files/@@@/settings.json', settings([]))
+    await sandbox.write('home/dotfiles/files/foo-bar/configfile.module.json', settings([]))
+    await sandbox.write('home/dotfiles/files/@@@/configfile.module.json', settings([]))
     await symlink(path.join(sandbox.root, 'nowhere'), path.join(sandbox.repo, 'files/broken'))
 
     const { modules, warnings } = await modulesOf(sandbox)
@@ -87,7 +87,7 @@ describe('listModules', () => {
   it('resolves source and target paths with their deployment strategy', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([
         { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' },
         { source_path: 'local.env', target_path: '.env', deploy: 'local' },
@@ -159,7 +159,7 @@ describe('listModules', () => {
   it('copies global files unless they ask for a link, and refuses links for local files', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([
         { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global', method: 'link' },
         { source_path: 'aliases', target_path: '~/.aliases', deploy: 'global', method: 'copy' },
@@ -185,7 +185,7 @@ describe('listModules', () => {
   it('resolves relative global targets against the home folder, local ones against the current folder', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([
         { source_path: 'zshrc', target_path: '.zshrc', deploy: 'global' },
         { source_path: 'env', target_path: '.env', deploy: 'local' },
@@ -210,7 +210,7 @@ describe('listModules', () => {
   ])('reports an invalid entry: %o', async (entry, reason) => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([{ source_path: 'zshrc', target_path: '~/.zshrc', ...entry }]),
     )
 
@@ -236,7 +236,7 @@ describe('listModules', () => {
   ])('refuses the dangerous target_path %s (%s)', async (target, deploy, reason) => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([{ source_path: 'zshrc', target_path: target, deploy }]),
     )
 
@@ -252,7 +252,7 @@ describe('listModules', () => {
     async source => {
       const sandbox = await createSandbox()
       await sandbox.write(
-        'home/dotfiles/files/zsh/settings.json',
+        'home/dotfiles/files/zsh/configfile.module.json',
         settings([{ source_path: source, target_path: '~/.zshrc', deploy: 'global' }]),
       )
 
@@ -267,7 +267,7 @@ describe('listModules', () => {
   it('accepts sources in subfolders of the module', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       settings([{ source_path: 'conf/./zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
     )
 
@@ -281,14 +281,14 @@ describe('listModules', () => {
   it('refuses the configfile 0.3 list format, and says how to fix it', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/zsh/settings.json',
+      'home/dotfiles/files/zsh/configfile.module.json',
       JSON.stringify([{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }]),
     )
 
     const { modules } = await modulesOf(sandbox)
 
     expect(modules[0]?.error).toBe(
-      'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+      'configfile.module.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
         'Put the list in a "files" key: { "files": [ ... ] }',
     )
   })
@@ -296,7 +296,7 @@ describe('listModules', () => {
   it('reads the scripts to run before and after the module is deployed', async () => {
     const sandbox = await createSandbox()
     const write = (module: string, content: unknown) =>
-      sandbox.write(`home/dotfiles/files/${module}/settings.json`, JSON.stringify(content))
+      sandbox.write(`home/dotfiles/files/${module}/configfile.module.json`, JSON.stringify(content))
     await write('a', { files: [], pre_deploy: 'check', post_deploy: ' plugins ' })
     await write('b', { files: [] })
     await write('c', { files: [], pre_deploy: '', post_deploy: 42 })
@@ -320,7 +320,7 @@ describe('listModules', () => {
     const sandbox = await createSandbox()
     // The repository lives in ~/.config/dot and a module targets ~/.config.
     await sandbox.write(
-      'home/.config/dot/files/cfg/settings.json',
+      'home/.config/dot/files/cfg/configfile.module.json',
       settings([{ source_path: 'config', target_path: '~/.config', deploy: 'global' }]),
     )
 
@@ -335,7 +335,7 @@ describe('listModules', () => {
   it('refuses local targets inside the repository, when run from it', async () => {
     const sandbox = await createSandbox()
     await sandbox.write(
-      'home/dotfiles/files/app/settings.json',
+      'home/dotfiles/files/app/configfile.module.json',
       settings([{ source_path: 'config.json', target_path: 'config.json', deploy: 'local' }]),
     )
 
@@ -348,19 +348,255 @@ describe('listModules', () => {
     expect(usable(modules[0]).invalidEntries[0]).toContain('is inside the dotfiles repository')
   })
 
-  it('keeps modules with an unusable settings.json, with the reason', async () => {
+  it('keeps modules with unusable settings, with the reason', async () => {
     const sandbox = await createSandbox()
-    await sandbox.write('home/dotfiles/files/broken/settings.json', '{')
-    await sandbox.write('home/dotfiles/files/nofiles/settings.json', '{}')
+    await sandbox.write('home/dotfiles/files/broken/configfile.module.json', '{')
+    await sandbox.write('home/dotfiles/files/nofiles/configfile.module.json', '{}')
 
     const { modules, warnings } = await modulesOf(sandbox)
 
     expect(modules).toEqual([
       expect.objectContaining({ name: 'broken', error: expect.stringContaining('not valid JSON') }),
-      expect.objectContaining({ name: 'nofiles', error: 'settings.json has no "files" list' }),
+      expect.objectContaining({
+        name: 'nofiles',
+        error: 'configfile.module.json has no "files" list',
+      }),
     ])
     expect(modules[0]).not.toHaveProperty('files')
     expect(warnings).toEqual([])
+  })
+
+  it("lets a module deploy an app's own settings.json", async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/files/zed/configfile.module.json',
+      settings([
+        {
+          source_path: 'settings.json',
+          target_path: '~/.config/zed/settings.json',
+          deploy: 'global',
+        },
+      ]),
+    )
+    await sandbox.write('home/dotfiles/files/zed/settings.json', '{ "theme": "One Dark" }')
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules.map(module => module.name)).toEqual(['zed'])
+    expect(usable(modules[0]).files.map(file => file.source)).toEqual([
+      path.join(sandbox.repo, 'files/zed/settings.json'),
+    ])
+    expect(warnings).toEqual([])
+  })
+
+  it('says how to rename the settings.json of a configfile 1.x module', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', settings([]))
+    await sandbox.write('home/dotfiles/files/old/settings.json', '[]')
+    // An app's own settings.json, in a folder that is not a module.
+    await sandbox.write('home/dotfiles/files/zed/settings.json', '{ "theme": "One Dark" }')
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(module => [module.name, module.error])).toEqual([
+      [
+        'old',
+        "it has settings.json, but this repository's modules are described by " +
+          'configfile.module.json: rename it ("git mv files/old/settings.json ' +
+          'files/old/configfile.module.json" in your working copy), or set "module_settings": ' +
+          '"settings.json" in configfile.repository.json',
+      ],
+      [
+        'zsh',
+        expect.stringContaining(
+          '"git mv files/zsh/settings.json files/zsh/configfile.module.json"',
+        ),
+      ],
+    ])
+  })
+
+  it('reads the modules with the settings file the repository names', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/configfile.repository.json',
+      JSON.stringify({
+        $schema: 'https://docs.configfile.sh/schemas/repository.json',
+        module_settings: 'settings.json',
+      }),
+    )
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', settings([]))
+    await sandbox.write('home/dotfiles/files/nofiles/settings.json', '{}')
+    await sandbox.write('home/dotfiles/files/other/configfile.module.json', settings([]))
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(module => [module.name, module.error, module.settingsFile])).toEqual([
+      ['nofiles', 'settings.json has no "files" list', 'settings.json'],
+      [
+        'other',
+        "it has configfile.module.json, but this repository's modules are described by " +
+          'settings.json: rename it ("git mv files/other/configfile.module.json ' +
+          'files/other/settings.json" in your working copy), or set "module_settings": ' +
+          '"configfile.module.json" in configfile.repository.json',
+        'settings.json',
+      ],
+      ['zsh', null, 'settings.json'],
+    ])
+  })
+
+  it('warns about settings under another name that it cannot read, instead of skipping them', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/broken/settings.json', '<<<<<<< HEAD\n')
+    await sandbox.write('home/dotfiles/files/typo/settings.json', '{ "file": [] }')
+    await sandbox.write('home/dotfiles/files/unreadable/settings.json/x')
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules).toEqual([])
+    const file = (folder: string) => path.join(sandbox.repo, `files/${folder}/settings.json`)
+    expect(warnings).toEqual([
+      `${file('broken')} is not read: this repository's modules are described by ` +
+        'configfile.module.json. If it holds the settings of a module, fix it (not valid JSON: ' +
+        `${warnings[0]?.match(/not valid JSON: (.*)\), then/)?.[1]}), then rename it to configfile.module.json.`,
+      `${file('typo')} is not read: this repository's modules are described by ` +
+        'configfile.module.json. If it holds the settings of a module, fix it (it has no "files" ' +
+        'list), then rename it to configfile.module.json.',
+      expect.stringContaining(`${file('unreadable')} is not read`),
+    ])
+    expect(warnings[2]).toContain('(cannot be read: EISDIR)')
+  })
+
+  it('refuses a configfile.repository.json that cannot be read or is a broken link', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
+    await mkdir(path.join(sandbox.repo, 'configfile.repository.json'))
+
+    await expect(modulesOf(sandbox)).rejects.toThrow('Cannot read')
+
+    const other = await createSandbox()
+    await other.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
+    await symlink(
+      path.join(other.root, 'nowhere.json'),
+      path.join(other.repo, 'configfile.repository.json'),
+    )
+
+    await expect(modulesOf(other)).rejects.toThrow('is a broken symbolic link')
+  })
+
+  it.each([
+    ['an unknown key', '{ "hooks": {} }', 'has "hooks", which configfile'],
+    [
+      'a folder in the name',
+      '{ "module_settings": "a/b.json" }',
+      'must be the name of a JSON file',
+    ],
+    [
+      'a name that is not JSON',
+      '{ "module_settings": "module.yaml" }',
+      'must be the name of a JSON file',
+    ],
+    [
+      'its own name',
+      '{ "module_settings": "configfile.repository.json" }',
+      'must be the name of a JSON file',
+    ],
+    ['a name that is not a string', '{ "module_settings": 1 }', 'must be the name of a JSON file'],
+    ['a list', '[]', 'is not a JSON object.'],
+    ['invalid JSON', '{', 'is not valid JSON'],
+  ])('refuses repository settings with %s', async (_, content, message) => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/configfile.repository.json', content)
+    await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
+
+    await expect(modulesOf(sandbox)).rejects.toThrow(message)
+  })
+
+  it('quotes the rename hint for the shell, and says where to rename through a link', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/My Zsh.d/settings.json', settings([]))
+    await sandbox.write('elsewhere/git/settings.json', settings([]))
+    await symlink(path.join(sandbox.root, 'elsewhere/git'), path.join(sandbox.repo, 'files/git'))
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(module => module.error)).toEqual([
+      expect.stringContaining('rename it to configfile.module.json where files/git links to,'),
+      expect.stringContaining(
+        `"git mv 'files/My Zsh.d/settings.json' 'files/My Zsh.d/configfile.module.json'"`,
+      ),
+    ])
+  })
+
+  it('says when the settings of a module, or a file under another name, are a broken link', async () => {
+    const sandbox = await createSandbox()
+    await mkdir(path.join(sandbox.repo, 'files/zsh'), { recursive: true })
+    await symlink(
+      path.join(sandbox.root, 'nowhere.json'),
+      path.join(sandbox.repo, 'files/zsh/configfile.module.json'),
+    )
+    await mkdir(path.join(sandbox.repo, 'files/old'), { recursive: true })
+    await symlink(
+      path.join(sandbox.root, 'nowhere.json'),
+      path.join(sandbox.repo, 'files/old/settings.json'),
+    )
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules.map(module => [module.name, module.error])).toEqual([
+      ['zsh', 'configfile.module.json cannot be read (a broken symbolic link)'],
+    ])
+    expect(warnings).toEqual([
+      expect.stringContaining('fix it (it is a broken symbolic link), then rename it'),
+    ])
+  })
+
+  it('prefers the settings of a module among the other names, when the repository names its own', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/configfile.repository.json',
+      JSON.stringify({ module_settings: 'dot.json' }),
+    )
+    await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', '{')
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', settings([]))
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toContain(
+      "it has settings.json, but this repository's modules are described by dot.json",
+    )
+    expect(warnings).toEqual([])
+  })
+
+  it('names its own version when the repository settings have a key it does not know', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/configfile.repository.json', '{ "hooks": {} }')
+    const { version } = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+
+    await expect(modulesOf(sandbox)).rejects.toThrow(
+      `has "hooks", which configfile ${version} doesn't know`,
+    )
+  })
+
+  it('quotes an apostrophe in the rename hint', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write("home/dotfiles/files/Bob's zsh/settings.json", settings([]))
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toContain(
+      `"git mv 'files/Bob'\\''s zsh/settings.json' 'files/Bob'\\''s zsh/configfile.module.json'"`,
+    )
+  })
+
+  it('says when the settings of a module cannot be read, apart from invalid JSON', async () => {
+    const sandbox = await createSandbox()
+    await mkdir(path.join(sandbox.repo, 'files/zsh/configfile.module.json'), { recursive: true })
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toBe('configfile.module.json cannot be read (EISDIR)')
   })
 
   it('returns nothing when files/ does not exist', async () => {
@@ -572,7 +808,7 @@ describe('"when" conditions', () => {
       ...(when !== undefined && { when }),
     })
     await sandbox.write(
-      'home/dotfiles/files/m/settings.json',
+      'home/dotfiles/files/m/configfile.module.json',
       settings([
         entry('mac', { os: 'macos' }),
         entry('linux', { os: ['linux'] }),
@@ -602,7 +838,7 @@ describe('"when" conditions', () => {
     await sandbox.write('home/dotfiles/files/aws/config')
     await sandbox.write('home/dotfiles/files/aws/credentials')
     await sandbox.write(
-      'home/dotfiles/files/aws/settings.json',
+      'home/dotfiles/files/aws/configfile.module.json',
       JSON.stringify({
         when: { profiles: 'work' },
         files: [
@@ -636,7 +872,7 @@ describe('"when" conditions', () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/a/x')
     await sandbox.write(
-      'home/dotfiles/files/a/settings.json',
+      'home/dotfiles/files/a/configfile.module.json',
       JSON.stringify({ when: { host: 'laptop' }, files: [] }),
     )
     await sandbox.write('home/dotfiles/files/b/x')
@@ -647,7 +883,7 @@ describe('"when" conditions', () => {
       when,
     })
     await sandbox.write(
-      'home/dotfiles/files/b/settings.json',
+      'home/dotfiles/files/b/configfile.module.json',
       settings([
         entry({ os: 'windows' }),
         entry({}),
@@ -676,7 +912,7 @@ describe('"when" conditions', () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/m/x')
     await sandbox.write(
-      'home/dotfiles/files/m/settings.json',
+      'home/dotfiles/files/m/configfile.module.json',
       settings([
         { source_path: 'x', target_path: '~/.x', deploy: 'global', when: { os: 'linux' } },
       ]),
@@ -692,7 +928,7 @@ describe('"when" conditions', () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/files/m/x')
     await sandbox.write(
-      'home/dotfiles/files/m/settings.json',
+      'home/dotfiles/files/m/configfile.module.json',
       JSON.stringify({
         when: { os: 'macos' },
         files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global', when: { os: 'linux' } }],

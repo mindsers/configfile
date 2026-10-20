@@ -29,9 +29,9 @@ mkdir -p files/zsh
 echo 'alias ll="ls -la"' > files/zsh/zshrc
 ```
 
-Then tell *configfile* where this file goes, in the module's `settings.json`:
+Then tell *configfile* where this file goes, in the module's `configfile.module.json`:
 
-```json title="files/zsh/settings.json"
+```json title="files/zsh/configfile.module.json"
 {
   "files": [
     { "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" }
@@ -65,7 +65,7 @@ Your repository now looks like this:
 ```txt
 files/
     zsh/
-        settings.json
+        configfile.module.json
         zshrc
 scripts/
     setup.sh
@@ -197,7 +197,7 @@ configfile modules undeploy zsh
 
 ## Next steps
 
-- [Modules and `settings.json`](/reference/modules/): local files copied into a project, files kept in the repository without being deployed, and every rule for targets.
+- [Modules and their settings](/reference/modules/): local files copied into a project, files kept in the repository without being deployed, and every rule for targets.
 - [Scripts](/reference/scripts/): scripts in any language, folder scripts, and versions per system (`setup.macos.sh`).
 - [Run scripts when a module is deployed](/guides/module-scripts/): install plugins or start a service each time a module is deployed, and clean up when it is undeployed.
 - [Commands](/reference/commands/): every command and option, including the ones for running *configfile* from scripts and CI.

@@ -23,7 +23,7 @@ function command(args: string[]): [string, string[]] {
 async function exec(args: string[]) {
   const sandbox = await createSandbox()
   await sandbox.configure()
-  await sandbox.write('home/dotfiles/files/zsh/settings.json', '{"files": []}')
+  await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', '{"files": []}')
   await sandbox.write('home/dotfiles/scripts/fail.sh', 'exit 4\n')
   await sandbox.write('home/dotfiles/scripts/hello.js', 'console.log("hello from Node.js")\n')
 
@@ -154,7 +154,7 @@ describe('built CLI', () => {
       for (const name of ['a', 'b']) {
         await sandbox.write(`home/dotfiles/files/${name}/rc`)
         await sandbox.write(
-          `home/dotfiles/files/${name}/settings.json`,
+          `home/dotfiles/files/${name}/configfile.module.json`,
           JSON.stringify({
             files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
             post_deploy: 'long',
@@ -180,7 +180,7 @@ describe('built CLI', () => {
       for (const name of ['a', 'b']) {
         await sandbox.write(`home/dotfiles/files/${name}/rc`)
         await sandbox.write(
-          `home/dotfiles/files/${name}/settings.json`,
+          `home/dotfiles/files/${name}/configfile.module.json`,
           JSON.stringify({
             files: [{ source_path: 'rc', target_path: `~/.${name}rc`, deploy: 'global' }],
             ...settings,
@@ -320,7 +320,7 @@ describe('built CLI', () => {
     for (const name of modules) {
       await sandbox.write(`home/dotfiles/files/${name}/x`, name)
       await sandbox.write(
-        `home/dotfiles/files/${name}/settings.json`,
+        `home/dotfiles/files/${name}/configfile.module.json`,
         JSON.stringify({
           files: [{ source_path: 'x', target_path: '~/.shared', deploy: 'global' }],
         }),

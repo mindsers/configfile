@@ -8,6 +8,7 @@ import { isProfileName } from '../conditions.ts'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
+import { messageOf } from '../fsutil.ts'
 import { checkRepositoryUrl } from '../git-url.ts'
 import { withCommandLock } from '../lock.ts'
 import { redactUrl } from '../output.ts'
@@ -138,15 +139,23 @@ async function chooseProfiles(
   ctx: Context,
 ): Promise<string[] | null> {
   // Warnings say why a module, and the profiles it names, cannot be read.
+  let unreadable = false
   const modules = await listModules(folderPath, {
     home: ctx.home,
     cwd: ctx.cwd,
     warn: message => ctx.output.warn(message),
+  }).catch(error => {
+    // The repository is cloned and configured: --profile is still saved.
+    if (!(error instanceof CliError)) throw error
+    ctx.output.warn(`The modules cannot be read, to check the profiles: ${messageOf(error)}`)
+    unreadable = true
+    return []
   })
   const known = knownProfiles(modules)
   const listed = known.map(name => `"${name}"`).join(', ')
   if (given != null) {
-    for (const name of given.filter(profile => !known.includes(profile))) {
+    // Without the modules, which profiles they name is not known: nothing more to say.
+    for (const name of unreadable ? [] : given.filter(profile => !known.includes(profile))) {
       ctx.output.warn(
         `No module is for profile "${name}" yet: ` +
           (known.length === 0

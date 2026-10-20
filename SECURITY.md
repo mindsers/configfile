@@ -21,7 +21,7 @@ Please include:
 
 - the *configfile* version (`configfile --version`), Node.js version and operating system;
 - what an attacker can do, and what they need first (for example, control of the dotfiles repository, or another local user account);
-- the steps to reproduce it, ideally with a minimal dotfiles repository or `settings.json`;
+- the steps to reproduce it, ideally with a minimal dotfiles repository or `configfile.module.json`;
 - any idea of a fix, if you have one.
 
 The report stays private while it is investigated. You will get an answer in the advisory, and be credited in it when the fix is released, unless you prefer not to be.

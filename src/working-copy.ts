@@ -5,6 +5,12 @@ import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { git, gitOutput, gitResult } from './process.ts'
+import {
+  DEFAULT_REPOSITORY_SETTINGS,
+  KNOWN_MODULE_SETTINGS,
+  parseRepositorySettings,
+  REPOSITORY_SETTINGS,
+} from './repository.ts'
 import { upstreamOf } from './sync.ts'
 
 /**
@@ -19,7 +25,7 @@ export interface WorkingCopy {
   readonly branch: string
 }
 
-/** An entry of a settings.json: its module folder (`files/zsh`) and `source_path`, normalized. */
+/** An entry of a module's settings: its module folder (`files/zsh`) and `source_path`, normalized. */
 export interface EntryKey {
   readonly module: string
   readonly source: string
@@ -206,7 +212,7 @@ export async function push(copy: WorkingCopy): Promise<Pushed | null> {
 }
 
 /**
- * The global entries copied (not linked) that the settings.json of the
+ * The global entries copied (not linked) that the settings files of the
  * modules have at commit `to` and did not have at `from`, in the repository
  * in `folder`: those whose target an identical file may already hold (see
  * `modules adopt`).
@@ -216,23 +222,51 @@ export async function addedCopyEntries(
   { from, to }: { from: string; to: string },
 ): Promise<EntryKey[]> {
   const cwd = folder
+  // Each commit names its own module settings file: one may have renamed them.
+  // A configfile.repository.json that git stores as a symbolic link reads as
+  // the path it points to: not valid JSON, so reported like any other error.
+  const settingsAt = async (commit: string) => {
+    const content = await gitOutput(['show', `${commit}:${REPOSITORY_SETTINGS}`], {
+      cwd,
+      allowFailure: true,
+    })
+    const settings =
+      content == null
+        ? DEFAULT_REPOSITORY_SETTINGS
+        : parseRepositorySettings(content, `${REPOSITORY_SETTINGS} at ${commit.slice(0, 7)}`)
+    return settings.moduleSettings
+  }
+  const moduleSettings = await settingsAt(to)
+  // Settings it cannot use at the previous commit only make more entries look new.
+  const previousSettings = await settingsAt(from).catch(error => {
+    if (!(error instanceof CliError)) throw error
+    return DEFAULT_REPOSITORY_SETTINGS.moduleSettings
+  })
   const changed = await gitOutput(
     ['diff', '--name-only', '--no-renames', '-z', from, to, '--', 'files'],
     {
       cwd,
     },
   )
-  const settings = (changed ?? '')
-    .split('\0')
-    .filter(file => /^files\/[^/]+\/settings\.json$/.test(file))
+  const settings = (changed ?? '').split('\0').filter(file => {
+    const parts = file.split('/')
+    return parts.length === 3 && parts[0] === 'files' && parts[2] === moduleSettings
+  })
 
   const added: EntryKey[] = []
   for (const file of settings) {
-    const read = (commit: string) =>
-      gitOutput(['show', `${commit}:${file}`], { cwd, allowFailure: true })
-    const before = copiedEntries(await read(from))
+    const read = (commit: string, name: string) =>
+      gitOutput(['show', `${commit}:${name}`], { cwd, allowFailure: true })
     const module = path.posix.dirname(file)
-    for (const entry of copiedEntries(await read(to))) {
+    // Renamed meanwhile (the settings of configfile 1.x, or another name): the
+    // entries it had under its former name are not new.
+    let previous: string | null = null
+    for (const name of [previousSettings, moduleSettings, ...KNOWN_MODULE_SETTINGS]) {
+      previous = await read(from, `${module}/${name}`)
+      if (previous != null) break
+    }
+    const before = copiedEntries(previous)
+    for (const entry of copiedEntries(await read(to, file))) {
       const known = before.some(old => old.source === entry.source && old.target === entry.target)
       if (!known) added.push({ module, source: entry.source })
     }
@@ -277,7 +311,7 @@ export async function isAncestor(cwd: string, ancestor: string, commit: string):
   )
 }
 
-/** The global entries of a settings.json that are copied, or none when it cannot be read. */
+/** The global entries of a module's settings that are copied, or none when they cannot be read. */
 function copiedEntries(content: string | null): { source: string; target: string }[] {
   if (content == null) return []
   let settings: unknown

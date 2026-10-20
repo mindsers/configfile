@@ -6,7 +6,7 @@ sidebar:
 ---
 
 - With Homebrew or npm, Node.js 24.11 or later is required, on macOS or Linux; the standalone binary needs none. Install again as described in [Installation](/getting-started/installation/). To switch to Homebrew or the install script, remove the npm version first (`npm uninstall --global configfile`).
-- `~/.configfilerc` and the repository layout work as before. A `settings.json` that is a plain list (the 0.3 format) is no longer read: put the list in a `"files"` key, `{ "files": [ ... ] }`. Links deployed by 0.3 are recognised, and `modules deploy` turns them into copies, as it does for 1.x ([Upgrading from 1.x](/guides/upgrading-from-1/)).
+- `~/.configfilerc` works as before. The settings of a module are now read from `configfile.module.json` instead of `settings.json` ([rename them](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)), and settings that are a plain list (the 0.3 format) are no longer read: put the list in a `"files"` key, `{ "files": [ ... ] }`. Links deployed by 0.3 are recognised, and `modules deploy` turns them into copies, as it does for 1.x ([Upgrading from 1.x](/guides/upgrading-from-1/)).
 - If you installed 0.3 with Yarn, remove it first: `yarn global remove configfile`.
 - `"global": true | false` is no longer read: replace it with `"deploy": "global" | "local"`.
 - A **relative** `target_path` of a global file is now relative to your home folder, not to the folder you run *configfile* from. Targets starting with `~/` or `/` are not affected.

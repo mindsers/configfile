@@ -5,6 +5,8 @@ description: The ~/.configfilerc file and the ~/.configfile/ folder.
 
 *configfile* keeps its configuration in `~/.configfilerc`, and its working files in the `~/.configfile/` folder: the mirror of your repository (`dotfiles/`), the record of deployments (`state.json`), the [history](/reference/history/) (`history.jsonl`), the lock, and saved local changes (`saved/`).
 
+*configfile* has two kinds of settings. `~/.configfilerc` describes **this machine**: where it gets the repository, its working copy, its profiles, how *configfile* runs here. [`configfile.repository.json`](/reference/modules/#repository-settings), at the root of the repository, describes **the repository**, and is the same on every machine. A setting never lives in both: one that two machines using the same repository could want different belongs to `~/.configfilerc`.
+
 `~/.configfilerc` is a JSON file, readable by you only: the repository URL may contain credentials, so if other users can read it, *configfile* makes it private and warns you.
 
 ```json

@@ -117,7 +117,7 @@ Short form: `configfile m u`.
 Adds files or folders of this machine to a module of your repository, so that you don't have to copy them into it by hand. It works in your own working copy of the repository (never in *configfile*'s copy, which `update` resets), given with `--into` the first time and then remembered as [`working_copy`](/reference/configuration/):
 
 1. it checks that the working copy is a clone of your dotfiles repository, on the branch *configfile* follows, with no uncommitted changes (untracked files included: commit, stash or remove them first); it fetches, and brings the branch up to date when it is behind (it stops when the branch has diverged; `--dry-run` doesn't fetch);
-2. it copies each file or folder into the module's folder (created, with its `settings.json`, when the module doesn't exist), named after it without its leading dot (`~/.zshrc` becomes `zshrc`, or the name given with `--as`), and adds an entry `{ "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" }` at the end of its `settings.json`, keeping the rest of the file as written;
+2. it copies each file or folder into the module's folder (created, with its `configfile.module.json`, when the module doesn't exist), named after it without its leading dot (`~/.zshrc` becomes `zshrc`, or the name given with `--as`), and adds an entry `{ "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" }` at the end of its `configfile.module.json`, keeping the rest of the file as written;
 3. it commits them, with your identity and hooks, as `Adopt ~/.zshrc` (or `--message`), and pushes;
 4. it syncs *configfile*'s copy, like `update`, and keeps each file as *configfile*'s copy: the file stays where it is, unchanged, and follows the repository from then on ([Global files](/reference/modules/#global-files)).
 
@@ -138,7 +138,7 @@ Short form: `configfile m adopt`.
 | `--as <name>` | the name of the file in the module (one path only) |
 | `--message <text>` | the commit message |
 | `--no-push` | commit without pushing ("configfile update" pushes it later) |
-| `--os <system>` | the files are only for this system (macos or linux): written as "when" in settings.json |
+| `--os <system>` | the files are only for this system (macos or linux): written as "when" in the module's settings |
 | `--profile <name>` | the files are only for machines with this profile (repeatable): written as "when" |
 | `-n, --dry-run` | show what would be done, without changing anything |
 <!-- /generated -->

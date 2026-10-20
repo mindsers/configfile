@@ -24,9 +24,9 @@ The script runs **every time** the module is deployed, so it must be safe to run
 
 ## 2. Name it in the module
 
-In the module's `settings.json`, next to `files`:
+In the module's `configfile.module.json`, next to `files`:
 
-```json title="files/tmux/settings.json" {5}
+```json title="files/tmux/configfile.module.json" {5}
 {
   "files": [
     { "source_path": "tmux.conf", "target_path": "~/.tmux.conf", "deploy": "global" }
@@ -94,7 +94,7 @@ A name that matches no script is caught earlier: *configfile* checks the names b
 rm -rf "$HOME/.tmux/plugins"
 ```
 
-```json title="files/tmux/settings.json" {6}
+```json title="files/tmux/configfile.module.json" {6}
 {
   "files": [
     { "source_path": "tmux.conf", "target_path": "~/.tmux.conf", "deploy": "global" }
