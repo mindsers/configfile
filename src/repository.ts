@@ -2,6 +2,14 @@ import type { Dirent, Stats } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import {
+  type Condition,
+  combine,
+  type Machine,
+  profilesOf,
+  readWhen,
+  whyNotFor,
+} from './conditions.ts'
 import { ConfigStore } from './config.ts'
 import type { Context } from './context.ts'
 import { CliError } from './errors.ts'
@@ -23,6 +31,8 @@ export interface ModuleFile {
   readonly module: string
   /** The settings.json entry of the file, recorded when it is deployed. */
   readonly entry?: Entry
+  /** The machines it is for: its entry's `"when"` with its module's; everywhere when missing. */
+  readonly condition?: Condition
 }
 
 /**
@@ -49,8 +59,17 @@ export type Module = ModuleBase &
   (
     | {
         readonly error: null
-        /** Files to deploy. `"deploy": "none"`, invalid and undecided entries are left out. */
+        /**
+         * Files to deploy on this machine. `"deploy": "none"`, invalid and
+         * undecided entries, and those for other machines are left out.
+         */
         readonly files: readonly ModuleFile[]
+        /** The module's own `"when"`, or `null`. */
+        readonly when: Condition | null
+        /** Why the module is not for this machine (its own `"when"`), or `null`. */
+        readonly notHere: string | null
+        /** Valid entries for other machines, and why: every entry when the module is not for this one. */
+        readonly elsewhere: readonly { readonly file: ModuleFile; readonly reason: string }[]
         /** `source_path` of entries that define no deployment strategy (not deployed). */
         readonly undecided: readonly string[]
         /** Why some entries of settings.json are ignored. */
@@ -77,33 +96,64 @@ export interface Script {
   readonly path: string
 }
 
-type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void }
+type Environment = Pick<Context, 'home' | 'cwd'> & {
+  warn(message: string): void
+  /** What `"when"` is checked against; without it, entries with a condition are for no machine. */
+  machine?: Machine
+}
 
-/** The modules, and the folder of the repository they come from. */
+/**
+ * The modules, the folder of the repository they come from, and the machine
+ * their conditions were checked against: this one, or what `preview` gives
+ * instead (`--os`, `--profile`), for that run only.
+ */
 export async function loadRepository(
   ctx: Context,
-): Promise<{ repository: string; modules: Module[] }> {
-  const { folderPath } = await new ConfigStore(ctx.home, {
+  preview: Partial<Machine> = {},
+): Promise<{ repository: string; modules: Module[]; machine: Machine }> {
+  const { folderPath, profiles } = await new ConfigStore(ctx.home, {
     warn: message => ctx.output.warn(message),
   }).read()
+  const machine: Machine = {
+    os: preview.os ?? systemName(ctx.platform),
+    profiles: preview.profiles ?? profiles,
+  }
   const modules = await listModules(folderPath, {
     home: ctx.home,
     cwd: ctx.cwd,
     warn: message => ctx.output.warn(message),
+    machine,
   })
-  return { repository: folderPath, modules }
+  return { repository: folderPath, modules, machine }
+}
+
+/** The profiles the conditions of the repository name, sorted. */
+export function knownProfiles(modules: readonly Module[]): string[] {
+  const names = new Set<string>()
+  for (const module of modules) {
+    if (module.error != null) continue
+    for (const name of profilesOf(module.when)) names.add(name)
+    for (const file of [...module.files, ...module.elsewhere.map(item => item.file)]) {
+      for (const name of profilesOf(file.condition ?? null)) names.add(name)
+    }
+  }
+  return [...names].sort()
 }
 
 /** The scripts, and the folder of the repository they come from. */
-export async function loadScripts(
-  ctx: Context,
-): Promise<{ repository: string; scripts: Script[]; otherSystems: string[] }> {
+export async function loadScripts(ctx: Context): Promise<{
+  repository: string
+  scripts: Script[]
+  otherSystems: string[]
+  /** This machine's profiles, given to the scripts. */
+  profiles: readonly string[]
+}> {
   const warn = (message: string) => ctx.output.warn(message)
   const config = await new ConfigStore(ctx.home, { warn }).read()
   const listed = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
     warn,
   })
-  return { repository: config.folderPath, ...listed }
+  return { repository: config.folderPath, ...listed, profiles: config.profiles }
 }
 
 /**
@@ -116,11 +166,13 @@ export function scriptEnvironment(
   script: Script,
   repository: string,
   platform: NodeJS.Platform,
+  profiles: readonly string[],
 ): Record<string, string> {
   return {
     CONFIGFILE_REPO: repository,
     CONFIGFILE_SCRIPT: script.name,
     CONFIGFILE_OS: systemName(platform),
+    CONFIGFILE_PROFILES: profiles.join(','),
   }
 }
 
@@ -225,7 +277,20 @@ async function readModuleFiles(
     return { error: 'settings.json has no "files" list' }
   }
 
+  // A module whose condition cannot be read is for no machine: never deployed everywhere.
+  const rawWhen = (settings as Record<string, unknown>).when
+  const when = rawWhen === undefined ? null : readWhen(rawWhen)
+  if (when != null && 'invalid' in when) return { error: when.invalid }
+  const whyNotHere = (condition: Condition | null) =>
+    env.machine == null
+      ? condition == null
+        ? null
+        : 'no machine to check "when" against'
+      : whyNotFor(condition, env.machine)
+  const moduleReason = whyNotHere(when)
+
   const files: ModuleFile[] = []
+  const elsewhere: { file: ModuleFile; reason: string }[] = []
   const undecided: string[] = []
   const invalidEntries: string[] = []
 
@@ -280,6 +345,12 @@ async function readModuleFiles(
       invalid(method.invalid)
       continue
     }
+    const entryWhen = fields.when === undefined ? null : readWhen(fields.when)
+    if (entryWhen != null && 'invalid' in entryWhen) {
+      invalid(entryWhen.invalid)
+      continue
+    }
+    const condition = combine(when, entryWhen)
 
     // Global files belong to the user's home; local files to the current folder.
     const resolvedTarget = resolveUserPath(target.trim(), {
@@ -301,7 +372,7 @@ async function readModuleFiles(
       continue
     }
 
-    files.push({
+    const file: ModuleFile = {
       source: resolvedSource,
       target: resolvedTarget,
       strategy,
@@ -314,7 +385,11 @@ async function readModuleFiles(
         target: target.trim(),
         folder: strategy === 'global' ? env.home : env.cwd,
       },
-    })
+      ...(condition != null && { condition }),
+    }
+    const reason = moduleReason ?? whyNotHere(condition)
+    if (reason == null) files.push(file)
+    else elsewhere.push({ file, reason })
   }
 
   const hooks: Partial<Record<Hook, string>> = {}
@@ -327,7 +402,17 @@ async function readModuleFiles(
       hookProblems[hook] = `"${hook}" is ignored: it must be the name of a script of the repository`
   }
 
-  return { error: null, files, undecided, invalidEntries, hooks, hookProblems }
+  return {
+    error: null,
+    files,
+    when,
+    notHere: moduleReason,
+    elsewhere,
+    undecided,
+    invalidEntries,
+    hooks,
+    hookProblems,
+  }
 }
 
 /**
@@ -436,6 +521,11 @@ export async function listScripts(
 
   const otherSystems = [...elsewhere].filter(name => !scripts.some(script => script.name === name))
   return { scripts, otherSystems }
+}
+
+/** The platform a system name stands for (`macos` is `darwin`), or the name itself. */
+export function platformOf(system: string): NodeJS.Platform {
+  return SCRIPT_SYSTEMS.get(system) ?? (system as NodeJS.Platform)
 }
 
 /** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */

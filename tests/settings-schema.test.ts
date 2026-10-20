@@ -48,6 +48,19 @@ const accepted: [string, unknown][] = [
   ['scripts to run when deployed', { files: [], pre_deploy: 'check', post_deploy: 'setup' }],
   ['scripts to run when undeployed', { files: [], pre_undeploy: 'stop', post_undeploy: 'clean' }],
   ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/settings.json', files: [] }],
+  ['a module for one system', { when: { os: 'macos' }, files: [] }],
+  [
+    'a module for some profiles',
+    { when: { profiles: ['work', 'client-x.2'] }, files: [{ ...zshrc, deploy: 'global' }] },
+  ],
+  [
+    'an entry for some systems and a profile',
+    {
+      files: [
+        { ...zshrc, deploy: 'global', when: { os: ['macos', 'linux'], profiles: 'personal' } },
+      ],
+    },
+  ],
 ]
 
 const refused: [string, unknown][] = [
@@ -75,6 +88,19 @@ const refused: [string, unknown][] = [
   ['a "pre_deploy" that is not a string', { files: [], pre_deploy: 42 }],
   ['an empty "post_undeploy"', { files: [], post_undeploy: '' }],
   ['a source that is not a string', { files: [{ ...zshrc, source_path: 42, deploy: 'global' }] }],
+  ['an unknown system', { when: { os: 'windows' }, files: [] }],
+  ['an unknown condition', { when: { host: 'laptop' }, files: [] }],
+  ['an empty condition', { when: {}, files: [] }],
+  ['a condition that is not an object', { when: 'macos', files: [] }],
+  ['an empty list of systems', { files: [{ ...zshrc, deploy: 'global', when: { os: [] } }] }],
+  [
+    'a profile name with a space',
+    { files: [{ ...zshrc, deploy: 'global', when: { profiles: 'my work' } }] },
+  ],
+  [
+    'an unknown condition on an entry',
+    { files: [{ ...zshrc, deploy: 'global', when: { arch: 'arm64' } }] },
+  ],
 ]
 
 // Stricter on purpose, to catch mistakes in an editor: configfile ignores these.

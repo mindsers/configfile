@@ -554,3 +554,157 @@ describe('listScripts', () => {
     expect(scripts.map(script => script.name)).toEqual(['tool'])
   })
 })
+
+describe('"when" conditions', () => {
+  async function loadFor(sandbox: Sandbox, machine: { os: string; profiles: readonly string[] }) {
+    return listModules(sandbox.repo, { ...sandbox, warn: () => {}, machine })
+  }
+
+  it('keeps the entries for this machine, and says why the others are not', async () => {
+    const sandbox = await createSandbox()
+    for (const name of ['mac', 'linux', 'work', 'any']) {
+      await sandbox.write(`home/dotfiles/files/m/${name}`)
+    }
+    const entry = (name: string, when?: unknown) => ({
+      source_path: name,
+      target_path: `~/.${name}`,
+      deploy: 'global',
+      ...(when !== undefined && { when }),
+    })
+    await sandbox.write(
+      'home/dotfiles/files/m/settings.json',
+      settings([
+        entry('mac', { os: 'macos' }),
+        entry('linux', { os: ['linux'] }),
+        entry('work', { os: ['macos', 'linux'], profiles: ['work', 'client'] }),
+        entry('any'),
+      ]),
+    )
+
+    const [macOnly] = await loadFor(sandbox, { os: 'macos', profiles: [] })
+    const [linuxWork] = await loadFor(sandbox, { os: 'linux', profiles: ['client'] })
+
+    const names = (module: Module | undefined) =>
+      usable(module).files.map(file => path.basename(file.source))
+    expect(names(macOnly)).toEqual(['mac', 'any'])
+    expect(
+      usable(macOnly).elsewhere.map(({ file, reason }) => [path.basename(file.source), reason]),
+    ).toEqual([
+      ['linux', 'for linux; this machine: macos'],
+      ['work', 'for profile "work" or "client"; this machine has no profile'],
+    ])
+    expect(names(linuxWork)).toEqual(['linux', 'work', 'any'])
+    expect(usable(linuxWork).notHere).toBeNull()
+  })
+
+  it('applies a module condition to every entry, with the entry conditions', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/aws/config')
+    await sandbox.write('home/dotfiles/files/aws/credentials')
+    await sandbox.write(
+      'home/dotfiles/files/aws/settings.json',
+      JSON.stringify({
+        when: { profiles: 'work' },
+        files: [
+          { source_path: 'config', target_path: '~/.aws/config', deploy: 'global' },
+          {
+            source_path: 'credentials',
+            target_path: '~/.aws/credentials',
+            deploy: 'global',
+            when: { profiles: 'admin', os: 'linux' },
+          },
+        ],
+      }),
+    )
+
+    const [personal] = await loadFor(sandbox, { os: 'linux', profiles: ['personal'] })
+    const [work] = await loadFor(sandbox, { os: 'linux', profiles: ['work'] })
+    const [admin] = await loadFor(sandbox, { os: 'linux', profiles: ['work', 'admin'] })
+
+    expect(usable(personal).notHere).toBe('for profile "work"; this machine: "personal"')
+    expect(usable(personal).files).toEqual([])
+    expect(usable(personal).elsewhere).toHaveLength(2)
+    expect(usable(work).files.map(file => file.target)).toEqual([
+      path.join(sandbox.home, '.aws/config'),
+    ])
+    expect(usable(work).elsewhere[0]?.reason).toBe('for profile "admin"; this machine: "work"')
+    expect(usable(admin).files).toHaveLength(2)
+    expect(usable(admin).when).toEqual({ profiles: [['work']] })
+  })
+
+  it('makes a module or an entry invalid when its condition cannot be read', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/a/x')
+    await sandbox.write(
+      'home/dotfiles/files/a/settings.json',
+      JSON.stringify({ when: { host: 'laptop' }, files: [] }),
+    )
+    await sandbox.write('home/dotfiles/files/b/x')
+    const entry = (when: unknown) => ({
+      source_path: 'x',
+      target_path: '~/.x',
+      deploy: 'global',
+      when,
+    })
+    await sandbox.write(
+      'home/dotfiles/files/b/settings.json',
+      settings([
+        entry({ os: 'windows' }),
+        entry({}),
+        entry('macos'),
+        entry({ profiles: ['my work'] }),
+        entry({ os: [] }),
+      ]),
+    )
+
+    const [a, b] = await loadFor(sandbox, { os: 'macos', profiles: [] })
+
+    expect(a?.error).toBe(
+      '"when" has "host", which configfile doesn\'t know (use "os" and "profiles")',
+    )
+    expect(usable(b).files).toEqual([])
+    expect(usable(b).invalidEntries).toEqual([
+      'entry #1 is ignored: "when.os" must be "macos" or "linux", or a list of them',
+      'entry #2 is ignored: "when" is empty (use "os" and "profiles")',
+      'entry #3 is ignored: "when" must be an object, such as { "os": "macos" }',
+      'entry #4 is ignored: "when.profiles" must be a profile name (letters, digits, ".", "_" and "-"), or a list of them',
+      'entry #5 is ignored: "when.os" must be "macos" or "linux", or a list of them',
+    ])
+  })
+
+  it('deploys no conditional entry when no machine is given', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/m/x')
+    await sandbox.write(
+      'home/dotfiles/files/m/settings.json',
+      settings([
+        { source_path: 'x', target_path: '~/.x', deploy: 'global', when: { os: 'linux' } },
+      ]),
+    )
+
+    const [module] = (await modulesOf(sandbox)).modules
+
+    expect(usable(module).files).toEqual([])
+    expect(usable(module).elsewhere[0]?.reason).toBe('no machine to check "when" against')
+  })
+
+  it('says why an entry is for no system when the module and the entry disagree', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/m/x')
+    await sandbox.write(
+      'home/dotfiles/files/m/settings.json',
+      JSON.stringify({
+        when: { os: 'macos' },
+        files: [{ source_path: 'x', target_path: '~/.x', deploy: 'global', when: { os: 'linux' } }],
+      }),
+    )
+
+    const [module] = await loadFor(sandbox, { os: 'linux', profiles: [] })
+
+    expect(usable(module).notHere).toBe('for macos; this machine: linux')
+    const [mac] = await loadFor(sandbox, { os: 'macos', profiles: [] })
+    expect(usable(mac).elsewhere[0]?.reason).toBe(
+      'for no system: the module and the entry name others',
+    )
+  })
+})

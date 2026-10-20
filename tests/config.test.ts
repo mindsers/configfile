@@ -24,6 +24,7 @@ describe('ConfigStore', () => {
       folderPath: sandbox.repo,
       scriptExtensions: null,
       workingCopy: null,
+      profiles: [],
     })
   })
 

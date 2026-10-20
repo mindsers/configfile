@@ -9,6 +9,10 @@
       "description": "The JSON Schema of this file, for editor completion and validation. configfile ignores it.",
       "type": "string"
     },
+    "when": {
+      "$ref": "#/$defs/when",
+      "description": "The machines the module is for. On other machines, configfile modules deploy skips it and its scripts. Requires configfile 2.0."
+    },
     "files": {
       "description": "The files of the module.",
       "type": "array",
@@ -40,6 +44,34 @@
       "type": "string",
       "pattern": "\\S"
     },
+    "when": {
+      "type": "object",
+      "properties": {
+        "os": {
+          "description": "The systems it is for: any of them.",
+          "oneOf": [
+            { "$ref": "#/$defs/os" },
+            { "type": "array", "items": { "$ref": "#/$defs/os" }, "minItems": 1 }
+          ]
+        },
+        "profiles": {
+          "description": "The profiles it is for: a machine with any of them (\"profiles\" in ~/.configfilerc).",
+          "oneOf": [
+            { "$ref": "#/$defs/profile" },
+            { "type": "array", "items": { "$ref": "#/$defs/profile" }, "minItems": 1 }
+          ]
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "os": {
+      "enum": ["macos", "linux"]
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
     "entry": {
       "type": "object",
       "properties": {
@@ -54,6 +86,10 @@
         "deploy": {
           "description": "Where the file is deployed: \"global\" into your home folder (configfile modules deploy), \"local\" into the current folder (configfile modules deploy --local), \"none\" keeps it in the repository without deploying it.",
           "enum": ["global", "local", "none"]
+        },
+        "when": {
+          "$ref": "#/$defs/when",
+          "description": "The machines the file is for, in addition to the module's \"when\". On other machines, configfile modules deploy skips it. Requires configfile 2.0."
         },
         "method": {
           "description": "How a global file is deployed: \"copy\" (the default) copies it, and configfile updates the copy when the repository changes, keeping changes made on this machine; \"link\" makes a symbolic link to configfile's copy of the repository. Local files are always copied.",

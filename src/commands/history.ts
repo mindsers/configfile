@@ -109,6 +109,10 @@ function describeRun(line: HistoryLine): string {
     if (options[flag] === true) words.push(`--${flag}`)
   }
   if (options.keepGoing === true) words.push('--keep-going')
+  if (typeof options.os === 'string') words.push('--os', options.os)
+  if (Array.isArray(options.profile)) {
+    for (const name of options.profile) words.push('--profile', String(name))
+  }
   if (options.hooks === false) words.push('--no-hooks')
   if (options.push === false) words.push('--no-push')
   if (typeof options.argCount === 'number' && options.argCount > 0) {

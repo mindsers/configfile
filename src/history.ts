@@ -154,19 +154,19 @@ export function describeInvocation(action: Command): Invocation {
 
   switch (command) {
     case 'init':
-      copy('force', 'folder', 'workingCopy')
+      copy('force', 'folder', 'workingCopy', 'profile')
       if (typeof given.repo === 'string') options.repo = redactUrl(given.repo)
       break
     case 'modules deploy':
     case 'modules undeploy':
     case 'modules status':
       options.modules = Array.isArray(args[0]) ? args[0] : []
-      copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing')
+      copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing', 'os', 'profile')
       // On unless turned off with --no-hooks.
       if (given.hooks === false) options.hooks = false
       break
     case 'modules adopt':
-      copy('module', 'dryRun')
+      copy('module', 'dryRun', 'os', 'profile')
       options.paths = Array.isArray(args[0]) ? args[0].length : 0
       if (given.push === false) options.push = false
       break

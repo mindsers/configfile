@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import type { Command } from 'commander'
 
+import { isProfileName } from '../conditions.ts'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
@@ -12,12 +13,14 @@ import { withCommandLock } from '../lock.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
+import { knownProfiles, listModules } from '../repository.ts'
 
 interface InitOptions {
   force?: boolean
   repo?: string
   folder?: string
   workingCopy?: string
+  profile?: string[]
 }
 
 export function registerInitCommand(program: Command, ctx: Context): void {
@@ -32,11 +35,20 @@ export function registerInitCommand(program: Command, ctx: Context): void {
       '--working-copy <path>',
       'your own clone of the repository, where "modules adopt" commits and from which "update" pushes',
     )
+    .option(
+      '--profile <name>',
+      'a profile of this machine, which "when" conditions of the modules name (repeatable; skips the question)',
+      (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
+    )
     .action((options: InitOptions) => init(options, ctx))
 }
 
 async function init(options: InitOptions, ctx: Context): Promise<void> {
   const { output, prompts } = ctx
+  const invalid = (options.profile ?? []).find(name => !isProfileName(name))
+  if (invalid != null) {
+    throw new CliError(`"${invalid}" is not a profile name: use letters, digits, ".", "_" and "-".`)
+  }
   const store = new ConfigStore(ctx.home, { warn: message => output.warn(message) })
   const previous = await store.readPartial()
 
@@ -109,7 +121,73 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   if (options.workingCopy != null) {
     await store.setWorkingCopy(resolveUserPath(options.workingCopy.trim(), ctx))
   }
+  const profiles = await chooseProfiles(options.profile, folderPath, store, ctx)
+  if (profiles != null) await store.setProfiles(profiles)
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
+}
+
+/**
+ * This machine's profiles: those given with `--profile` (with a warning for
+ * those no module names), or the answer to a question when the repository's
+ * modules name some. `null` keeps the saved ones.
+ */
+async function chooseProfiles(
+  given: readonly string[] | undefined,
+  folderPath: string,
+  store: ConfigStore,
+  ctx: Context,
+): Promise<string[] | null> {
+  // Warnings say why a module, and the profiles it names, cannot be read.
+  const modules = await listModules(folderPath, {
+    home: ctx.home,
+    cwd: ctx.cwd,
+    warn: message => ctx.output.warn(message),
+  })
+  const known = knownProfiles(modules)
+  const listed = known.map(name => `"${name}"`).join(', ')
+  if (given != null) {
+    for (const name of given.filter(profile => !known.includes(profile))) {
+      ctx.output.warn(
+        `No module is for profile "${name}" yet: ` +
+          (known.length === 0
+            ? 'the repository uses no profiles.'
+            : `the repository uses ${listed}.`),
+      )
+    }
+    return [...new Set(given)]
+  }
+  if (known.length === 0) return null
+  // A saved value that cannot be used is replaced by the answer.
+  const saved = await store.read().then(
+    config => config.profiles,
+    () => [],
+  )
+  if (!ctx.prompts.interactive) {
+    if (saved.length === 0) {
+      ctx.output.info(
+        `Some modules are only for machines with the profiles ${listed}: give this machine's ` +
+          `with --profile, or add them to "profiles" in ${store.path}.`,
+      )
+    }
+    return null
+  }
+
+  const parse = (answer: string) =>
+    answer
+      .split(',')
+      .map(name => name.trim())
+      .filter(name => name !== '')
+  const answer = await ctx.prompts.input({
+    message: `Profiles of this machine (${known.join(', ')}; separate them with commas, or leave empty):`,
+    ...(saved.length > 0 && { default: saved.join(', ') }),
+    validate: value => {
+      const unknown = parse(value).find(name => !known.includes(name))
+      return unknown == null
+        ? true
+        : `No module is for profile "${unknown}": the repository uses ${listed}.`
+    },
+  })
+  return [...new Set(parse(answer))]
 }
 
 function needsClone(folder: Awaited<ReturnType<typeof inspectFolder>>): boolean {

@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
   no longer accepts either.
 ### Added
+- Modules and their files can be for some machines only, with `"when": { "os": "macos",
+  "profiles": "work" }` in `settings.json`. A machine's profiles are `"profiles"` in
+  `~/.configfilerc`, set by `init --profile` or by `init`'s question. `modules deploy` skips
+  what is not for this machine, scripts included, and still succeeds; `modules status` says why,
+  and warns about a profile no module uses. `--os` and `--profile` on `modules status` and
+  `modules deploy --dry-run` preview another machine. Files no longer for this machine are
+  reported by `status` and `update`, and removed by `modules undeploy --removed`. Scripts get
+  `CONFIGFILE_PROFILES`, and `modules adopt --os/--profile` writes the condition. An unknown
+  condition makes the module or entry invalid; configfile 1.x ignores `when`
+  ([#302](https://github.com/mindsers/configfile/issues/302)).
 - `configfile modules adopt <path…> --module <name>` adds files or folders of this machine to a
   module: in your own working copy (given with `--into`, then remembered as `"working_copy"`),
   it copies them into the module, adds their entries to its `settings.json`, commits, pushes,

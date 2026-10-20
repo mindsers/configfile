@@ -42,7 +42,7 @@ async function list(ctx: Context): Promise<void> {
 }
 
 async function run(name: string, args: string[], ctx: Context): Promise<void> {
-  const { repository, scripts } = await loadScripts(ctx)
+  const { repository, scripts, profiles } = await loadScripts(ctx)
   const script = scripts.find(candidate => candidate.name === name)
 
   if (script == null) {
@@ -55,7 +55,7 @@ async function run(name: string, args: string[], ctx: Context): Promise<void> {
   const output = ctx.output.toStderr()
 
   output.info(`Running "${name}"…`)
-  const env = scriptEnvironment(script, repository, ctx.platform)
+  const env = scriptEnvironment(script, repository, ctx.platform, profiles)
   const code = await runScript(script, args, { cwd: ctx.cwd, env })
   // The arguments are never recorded: they may contain secrets.
   ctx.history.record({ kind: 'script', name: script.name, file: script.path, exitCode: code })
