@@ -289,6 +289,15 @@ async function refreshCopies(
       })
     } else if (module != null && module.invalidEntries.length > 0) {
       refresh.waiting.push({ target, reason: `module "${module.name}" has invalid entries` })
+    } else if (
+      module == null &&
+      (await lstatOrNull(path.join(repository, deployed.entry.module)).catch(() => null)) != null
+    ) {
+      // Its folder is there, without settings the repository can read (see the warnings above).
+      refresh.waiting.push({
+        target,
+        reason: `${deployed.entry.module} is in the repository but is not a usable module`,
+      })
     }
   }
   return { ...refresh, modules }

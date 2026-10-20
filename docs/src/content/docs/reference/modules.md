@@ -91,7 +91,7 @@ When a local file already exists and differs from the one in the repository, *co
 
 When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a local copy whose source is gone) is left where it is, and *configfile* stops tracking it.
 
-To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose settings cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
+To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose settings cannot be used or have invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
 
 `modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, then stops with an error (the lock is `~/.configfile/lock`). Both take the lock for the files of each module in turn, and release it while a [script of the module](#run-scripts-when-a-module-is-deployed-or-undeployed) runs: another deployment can take its turn between two modules, and a deployment that cannot take the lock again stops there, saying which modules were left out. `update` and `init` take the same lock while they change configfile's copy of the repository or its configuration, so files are never deployed from a repository being synced. The modules and their settings are read when the deployment starts, before it takes the lock.
 
@@ -150,11 +150,11 @@ No script runs for the files the repository no longer deploys (`modules undeploy
 
 | Key | Description |
 | --- | --- |
-| `module_settings` | The name of the settings file of each module, in its folder: `configfile.module.json` by default. A plain `.json` file name, without a folder. |
+| `module_settings` | The name of the settings file of each module, in its folder: `configfile.module.json` by default. A plain `.json` file name, without a folder, other than `configfile.repository.json`. |
 
 A key *configfile* doesn't know is an error, which names it: ignoring it could read the repository the wrong way, so a repository that uses a newer setting needs a newer *configfile*.
 
-The modules of *configfile* 1.x are described by `settings.json`. Rename those files (`git mv files/zsh/settings.json files/zsh/configfile.module.json`), or set `"module_settings": "settings.json"` to keep them: until then, such a module cannot be used, and *configfile* says how to fix it ([Upgrading from 1.x](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)).
+The modules of *configfile* 1.x are described by `settings.json`. Rename those files (`git mv files/zsh/settings.json files/zsh/configfile.module.json`), or set `"module_settings": "settings.json"` to keep them: until then, *configfile* says how to fix each module whose `settings.json` it can read (valid JSON with a `"files"` list), and doesn't use it ([Upgrading from 1.x](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)).
 
 ## Completion and validation in your editor
 

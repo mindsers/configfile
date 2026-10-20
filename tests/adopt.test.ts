@@ -746,6 +746,54 @@ describe('modules adopt in a repository that names its module settings file', ()
   })
 })
 
+describe('repository settings, end to end', () => {
+  it('stops every command on a key it does not know, deploying nothing', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'home/dotfiles/files/zsh/configfile.module.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    await sandbox.write('home/dotfiles/configfile.repository.json', '{ "hooks": {} }')
+
+    const result = await runCli(sandbox, ['modules', 'deploy', '--all'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('configfile.repository.json has "hooks", which configfile ')
+    expect(existsSync(path.join(sandbox.home, '.zshrc'))).toBe(false)
+  })
+
+  it('takes the renamed settings of a module for what they are, not for new entries', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    await sandbox.write('work/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'work/files/zsh/settings.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'zsh, as configfile 1.x wrote it')
+    git(work, 'push', '--quiet', 'origin', 'main')
+    // Not deployed here, and not the repository's version.
+    const zshrc = await sandbox.write('home/.zshrc', 'mine')
+    await runCli(sandbox, ['update'])
+    git(work, 'mv', 'files/zsh/settings.json', 'files/zsh/configfile.module.json')
+    git(work, 'commit', '--quiet', '-m', 'rename the settings of zsh')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain(`Pushed main from ${work} to origin.`)
+    expect(result.stderr).not.toContain("is not the repository's version")
+    expect(await isRecordedCopy(sandbox, zshrc)).toBe(false)
+  })
+})
+
 describe('update with a working copy', () => {
   it('pushes the commits the remote lacks before syncing', async () => {
     const { sandbox, remote, work } = await setUp()

@@ -1,5 +1,5 @@
 import type { Dirent, Stats } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 import {
@@ -208,11 +208,22 @@ export async function readRepositorySettings(folder: string): Promise<Repository
   } catch (error) {
     // A repository that is missing, or not a folder, is said so when its modules are read.
     if (['ENOENT', 'ENOTDIR'].includes(errorCode(error))) {
+      // A symbolic link to nothing is a mistake: the defaults could misread the repository.
+      if ((await lstat(file).catch(() => null))?.isSymbolicLink()) {
+        throw new CliError(`${file} is a broken symbolic link.`)
+      }
       return { moduleSettings: DEFAULT_MODULE_SETTINGS }
     }
     throw new CliError(`Cannot read ${file}: ${(error as Error).message}`, { cause: error })
   }
+  return parseRepositorySettings(content, file)
+}
 
+/**
+ * Reads the content of `configfile.repository.json` (`file` names it in
+ * messages). Fails on what configfile cannot use.
+ */
+export function parseRepositorySettings(content: string, file: string): RepositorySettings {
   let settings: unknown
   try {
     settings = JSON.parse(content)
@@ -231,7 +242,11 @@ export async function readRepositorySettings(folder: string): Promise<Repository
     )
   }
 
-  const moduleSettings = fields.module_settings ?? DEFAULT_MODULE_SETTINGS
+  if (fields.$schema !== undefined && typeof fields.$schema !== 'string') {
+    throw new CliError(`"$schema" in ${file} must be the address of a JSON Schema.`)
+  }
+  const moduleSettings =
+    fields.module_settings === undefined ? DEFAULT_MODULE_SETTINGS : fields.module_settings
   if (
     typeof moduleSettings !== 'string' ||
     !/^[^/\\]+\.json$/.test(moduleSettings) ||
@@ -248,7 +263,8 @@ export async function readRepositorySettings(folder: string): Promise<Repository
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`
  * (symlinks to folders included) that contains the settings file its
- * repository names (`configfile.module.json` by default).
+ * repository names (`configfile.module.json` by default), and, as unusable,
+ * those that only have the `settings.json` of configfile 1.x.
  */
 export async function listModules(folderPath: string, env: Environment): Promise<Module[]> {
   const { moduleSettings } = await readRepositorySettings(folderPath)
@@ -264,26 +280,34 @@ export async function listModules(folderPath: string, env: Environment): Promise
 
     const settingsPath = path.join(modulePath, moduleSettings)
     const settingsStats = await stat(settingsPath).catch(errorCode)
-    const legacy =
-      settingsStats === 'ENOENT' &&
-      moduleSettings !== LEGACY_MODULE_SETTINGS &&
-      (await isModuleSettings(path.join(modulePath, LEGACY_MODULE_SETTINGS)))
-    if (settingsStats === 'ENOENT' && !legacy) continue
+    // Settings under another name: those of configfile 1.x, or the default
+    // one when the repository names another. Said, never skipped without a word.
+    const misplaced =
+      settingsStats === 'ENOENT' ? await findMisplacedSettings(modulePath, moduleSettings) : null
+    if (settingsStats === 'ENOENT' && misplaced?.kind !== 'module') {
+      if (misplaced != null) {
+        env.warn(
+          `${path.join(modulePath, misplaced.file)} is not read: this repository's modules are ` +
+            `described by ${moduleSettings}. If it holds the settings of a module, fix it ` +
+            `(${misplaced.problem}), then rename it to ${moduleSettings}.`,
+        )
+      }
+      continue
+    }
 
     const name = slugify(entry.name)
     if (!isUsableName(name, entry.name, modules, 'module', env)) continue
     const base = { name, path: modulePath, settingsFile: moduleSettings }
 
-    if (legacy) {
-      // A module of configfile 1.x: said, never skipped without a word.
-      const from = path.join('files', entry.name, LEGACY_MODULE_SETTINGS)
+    if (misplaced?.kind === 'module') {
+      const from = path.join('files', entry.name, misplaced.file)
       const to = path.join('files', entry.name, moduleSettings)
       modules.push({
         ...base,
         error:
-          `it has ${LEGACY_MODULE_SETTINGS}, but this repository's modules are described by ` +
+          `it has ${misplaced.file}, but this repository's modules are described by ` +
           `${moduleSettings}: rename it ("git mv ${from} ${to}" in your working copy), or set ` +
-          `"module_settings": "${LEGACY_MODULE_SETTINGS}" in ${REPOSITORY_SETTINGS}`,
+          `"module_settings": "${misplaced.file}" in ${REPOSITORY_SETTINGS}`,
       })
       continue
     }
@@ -301,18 +325,44 @@ export async function listModules(folderPath: string, env: Environment): Promise
   return modules
 }
 
+/** The names a module's settings may have instead: configfile 1.x's, and the default. */
+export const KNOWN_MODULE_SETTINGS = [DEFAULT_MODULE_SETTINGS, LEGACY_MODULE_SETTINGS]
+
 /**
- * Whether a file is the settings file of a module (a JSON object with a
- * `"files"` list, or the list of configfile 0.3), not an app's own
- * `settings.json` that a module deploys.
+ * Settings of the module under another known name than the repository's:
+ * `module` when the file is a module's settings (a JSON object with a
+ * `"files"` list, or the list of configfile 0.3), `other` with why it is
+ * not one (an app's own `settings.json`, or settings that cannot be read).
  */
-async function isModuleSettings(file: string): Promise<boolean> {
-  try {
-    const content: unknown = JSON.parse(await readFile(file, 'utf8'))
-    return Array.isArray(content) || Array.isArray((content as { files?: unknown } | null)?.files)
-  } catch {
-    return false
+async function findMisplacedSettings(
+  folder: string,
+  moduleSettings: string,
+): Promise<
+  { file: string; kind: 'module' } | { file: string; kind: 'other'; problem: string } | null
+> {
+  let other: { file: string; kind: 'other'; problem: string } | null = null
+  for (const file of KNOWN_MODULE_SETTINGS.filter(name => name !== moduleSettings)) {
+    let content: unknown
+    try {
+      content = JSON.parse(await readFile(path.join(folder, file), 'utf8'))
+    } catch (error) {
+      if (errorCode(error) === 'ENOENT') continue
+      other ??= {
+        file,
+        kind: 'other',
+        problem:
+          error instanceof SyntaxError
+            ? `not valid JSON: ${describeJsonError(error)}`
+            : `cannot be read: ${errorCode(error)}`,
+      }
+      continue
+    }
+    if (Array.isArray(content) || Array.isArray((content as { files?: unknown } | null)?.files)) {
+      return { file, kind: 'module' }
+    }
+    other ??= { file, kind: 'other', problem: 'it has no "files" list' }
   }
+  return other
 }
 
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const

@@ -561,3 +561,23 @@ describe('after the review', () => {
     )
   })
 })
+
+describe('init with repository settings it cannot use', () => {
+  it('still saves the profiles given, with a warning', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+    await sandbox.write('remote/configfile.repository.json', '{ "hooks": {} }')
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', 'newer settings')
+
+    const result = await runCli(sandbox, ['init', '--repo', remote, '--profile', 'work'], [], {
+      interactive: false,
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain('The modules cannot be read, to check the profiles:')
+    expect(JSON.parse(await readFile(home(sandbox, '.configfilerc'), 'utf8')).profiles).toEqual([
+      'work',
+    ])
+  })
+})

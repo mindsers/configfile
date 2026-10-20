@@ -5,7 +5,12 @@ import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { git, gitOutput, gitResult } from './process.ts'
-import { readRepositorySettings } from './repository.ts'
+import {
+  DEFAULT_MODULE_SETTINGS,
+  KNOWN_MODULE_SETTINGS,
+  parseRepositorySettings,
+  REPOSITORY_SETTINGS,
+} from './repository.ts'
 import { upstreamOf } from './sync.ts'
 
 /**
@@ -216,9 +221,21 @@ export async function addedCopyEntries(
   folder: string,
   { from, to }: { from: string; to: string },
 ): Promise<EntryKey[]> {
-  // The modules are described by the files the repository names now.
-  const { moduleSettings } = await readRepositorySettings(folder)
   const cwd = folder
+  // Each commit names its own module settings file: one may have renamed them.
+  const settingsAt = async (commit: string) => {
+    const content = await gitOutput(['show', `${commit}:${REPOSITORY_SETTINGS}`], {
+      cwd,
+      allowFailure: true,
+    })
+    return content == null
+      ? DEFAULT_MODULE_SETTINGS
+      : parseRepositorySettings(content, `${REPOSITORY_SETTINGS} at ${commit.slice(0, 7)}`)
+          .moduleSettings
+  }
+  const moduleSettings = await settingsAt(to)
+  // Settings it cannot read at the previous commit only make more entries look new.
+  const previousSettings = await settingsAt(from).catch(() => DEFAULT_MODULE_SETTINGS)
   const changed = await gitOutput(
     ['diff', '--name-only', '--no-renames', '-z', from, to, '--', 'files'],
     {
@@ -232,11 +249,18 @@ export async function addedCopyEntries(
 
   const added: EntryKey[] = []
   for (const file of settings) {
-    const read = (commit: string) =>
-      gitOutput(['show', `${commit}:${file}`], { cwd, allowFailure: true })
-    const before = copiedEntries(await read(from))
+    const read = (commit: string, name: string) =>
+      gitOutput(['show', `${commit}:${name}`], { cwd, allowFailure: true })
     const module = path.posix.dirname(file)
-    for (const entry of copiedEntries(await read(to))) {
+    // Renamed meanwhile (the settings of configfile 1.x, or another name): the
+    // entries it had under its former name are not new.
+    let previous: string | null = null
+    for (const name of [previousSettings, moduleSettings, ...KNOWN_MODULE_SETTINGS]) {
+      previous = await read(from, `${module}/${name}`)
+      if (previous != null) break
+    }
+    const before = copiedEntries(previous)
+    for (const entry of copiedEntries(await read(to, file))) {
       const known = before.some(old => old.source === entry.source && old.target === entry.target)
       if (!known) added.push({ module, source: entry.source })
     }

@@ -432,8 +432,55 @@ describe('listModules', () => {
 
     expect(modules.map(module => [module.name, module.error, module.settingsFile])).toEqual([
       ['nofiles', 'settings.json has no "files" list', 'settings.json'],
+      [
+        'other',
+        "it has configfile.module.json, but this repository's modules are described by " +
+          'settings.json: rename it ("git mv files/other/configfile.module.json ' +
+          'files/other/settings.json" in your working copy), or set "module_settings": ' +
+          '"configfile.module.json" in configfile.repository.json',
+        'settings.json',
+      ],
       ['zsh', null, 'settings.json'],
     ])
+  })
+
+  it('warns about settings under another name that it cannot read, instead of skipping them', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/broken/settings.json', '<<<<<<< HEAD\n')
+    await sandbox.write('home/dotfiles/files/typo/settings.json', '{ "file": [] }')
+    await sandbox.write('home/dotfiles/files/unreadable/settings.json/x')
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules).toEqual([])
+    const file = (folder: string) => path.join(sandbox.repo, `files/${folder}/settings.json`)
+    expect(warnings).toEqual([
+      `${file('broken')} is not read: this repository's modules are described by ` +
+        'configfile.module.json. If it holds the settings of a module, fix it (not valid JSON: ' +
+        `${warnings[0]?.match(/not valid JSON: (.*)\), then/)?.[1]}), then rename it to configfile.module.json.`,
+      `${file('typo')} is not read: this repository's modules are described by ` +
+        'configfile.module.json. If it holds the settings of a module, fix it (it has no "files" ' +
+        'list), then rename it to configfile.module.json.',
+      expect.stringContaining(`${file('unreadable')} is not read`),
+    ])
+    expect(warnings[2]).toContain('(cannot be read: EISDIR)')
+  })
+
+  it('refuses a configfile.repository.json that cannot be read or is a broken link', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
+    await mkdir(path.join(sandbox.repo, 'configfile.repository.json'))
+
+    await expect(modulesOf(sandbox)).rejects.toThrow('Cannot read')
+
+    const other = await createSandbox()
+    await other.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
+    await symlink(
+      path.join(other.root, 'nowhere.json'),
+      path.join(other.repo, 'configfile.repository.json'),
+    )
+
+    await expect(modulesOf(other)).rejects.toThrow('is a broken symbolic link')
   })
 
   it.each([

@@ -18,7 +18,7 @@ const validate = new Ajv2020({ allErrors: true }).compile(schema)
 const repositorySchema = await readSchema('repository.json')
 const validateRepository = new Ajv2020({ allErrors: true }).compile(repositorySchema)
 
-/** Whether configfile uses every entry of this settings.json, with no error. */
+/** Whether configfile uses every entry of these module settings, with no error. */
 async function configfileAccepts(settings: unknown): Promise<boolean> {
   const sandbox = await createSandbox()
   await sandbox.write('home/dotfiles/files/zsh/zshrc')
@@ -192,6 +192,8 @@ describe('configfile.repository.json schema', () => {
     ['a file that is not JSON', { module_settings: 'settings.yaml' }],
     ['its own name', { module_settings: 'configfile.repository.json' }],
     ['a name that is not a string', { module_settings: true }],
+    ['no name', { module_settings: null }],
+    ['a "$schema" that is not a string', { $schema: 1 }],
     ['a list', []],
   ])('refuses %s, as configfile does', async (_, settings) => {
     expect(await configfileAcceptsRepository(settings)).toBe(false)
