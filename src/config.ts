@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { chmod, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import { isProfileName } from './conditions.ts'
 import { CliError, NotInitializedError } from './errors.ts'
 import { describeJsonError, messageOf, writeFileAtomic } from './fsutil.ts'
 import { resolveUserPath } from './paths.ts'
@@ -16,6 +17,10 @@ export interface Config {
    * extension"), or `null` when every file of `scripts/` is a script.
    */
   readonly scriptExtensions: readonly string[] | null
+  /** Absolute path of the user's own clone of the repository (`working_copy`), or `null`. */
+  readonly workingCopy: string | null
+  /** This machine's profiles (`profiles`), which `"when"` conditions name. */
+  readonly profiles: readonly string[]
 }
 
 /** On-disk shape of `~/.configfilerc`. Unknown keys are preserved on write. */
@@ -23,6 +28,8 @@ interface RawConfig {
   repo_url?: unknown
   folder_path?: unknown
   script_extensions?: unknown
+  working_copy?: unknown
+  profiles?: unknown
   [key: string]: unknown
 }
 
@@ -34,9 +41,12 @@ class InvalidConfigError extends CliError {
 export class ConfigStore {
   readonly path: string
   readonly #home: string
+  readonly #warn: (message: string) => void
 
-  constructor(home: string) {
+  /** `warn` reports a configuration other users could read, made private on reading. */
+  constructor(home: string, { warn = () => {} }: { warn?: (message: string) => void } = {}) {
     this.#home = home
+    this.#warn = warn
     this.path = path.join(home, '.configfilerc')
   }
 
@@ -62,6 +72,8 @@ export class ConfigStore {
       // Hand-edited values such as "~/dotfiles" must not depend on the current folder.
       folderPath: resolveUserPath(raw.folder_path.trim(), { home: this.#home, cwd: this.#home }),
       scriptExtensions: this.#readExtensions(raw.script_extensions),
+      workingCopy: this.#readWorkingCopy(raw.working_copy),
+      profiles: this.#readProfiles(raw.profiles),
     }
   }
 
@@ -71,7 +83,13 @@ export class ConfigStore {
     const partial: { repoUrl?: string; folderPath?: string } = {}
 
     if (typeof raw?.repo_url === 'string') partial.repoUrl = raw.repo_url
-    if (typeof raw?.folder_path === 'string') partial.folderPath = raw.folder_path
+    if (typeof raw?.folder_path === 'string' && raw.folder_path.trim() !== '') {
+      // Resolved like `read` does: "~/dotfiles" must not become a folder named "~".
+      partial.folderPath = resolveUserPath(raw.folder_path.trim(), {
+        home: this.#home,
+        cwd: this.#home,
+      })
+    }
 
     return partial
   }
@@ -112,12 +130,24 @@ export class ConfigStore {
   /** Saves the configuration. Unknown keys of a valid existing file are kept. */
   async write(config: { repoUrl: string; folderPath: string }): Promise<void> {
     const previous = (await this.#readRaw().catch(ignoreInvalid)) ?? {}
-    const next: RawConfig = {
-      ...previous,
-      repo_url: config.repoUrl,
-      folder_path: config.folderPath,
-    }
+    await this.#save({ ...previous, repo_url: config.repoUrl, folder_path: config.folderPath })
+  }
 
+  /** Saves where the user's working copy is (`working_copy`), keeping the rest. */
+  async setWorkingCopy(folder: string): Promise<void> {
+    const previous = await this.#readRaw()
+    if (previous == null) throw new NotInitializedError(this.path)
+    await this.#save({ ...previous, working_copy: folder })
+  }
+
+  /** Saves this machine's profiles (`profiles`), keeping the rest. */
+  async setProfiles(profiles: readonly string[]): Promise<void> {
+    const previous = await this.#readRaw()
+    if (previous == null) throw new NotInitializedError(this.path)
+    await this.#save({ ...previous, profiles: [...profiles] })
+  }
+
+  async #save(next: RawConfig): Promise<void> {
     try {
       // Readable by the user only: the repository URL may contain credentials.
       await writeFileAtomic(this.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
@@ -127,6 +157,27 @@ export class ConfigStore {
         { cause: error },
       )
     }
+  }
+
+  #readWorkingCopy(value: unknown): string | null {
+    if (value === undefined || value === null) return null
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new InvalidConfigError(
+        `Invalid configuration in ${this.path}: "working_copy" must be the path of a folder.`,
+      )
+    }
+    return resolveUserPath(value.trim(), { home: this.#home, cwd: this.#home })
+  }
+
+  #readProfiles(value: unknown): readonly string[] {
+    if (value === undefined || value === null) return []
+    if (!Array.isArray(value) || !value.every(isProfileName)) {
+      throw new InvalidConfigError(
+        `Invalid configuration in ${this.path}: "profiles" must be a list of profile names ` +
+          '(letters, digits, ".", "_" and "-"), such as ["work"].',
+      )
+    }
+    return [...new Set(value)]
   }
 
   #readExtensions(value: unknown): readonly string[] | null {
@@ -163,7 +214,28 @@ export class ConfigStore {
     if (data == null || typeof data !== 'object' || Array.isArray(data)) {
       throw new InvalidConfigError(`Invalid configuration in ${this.path}: not a JSON object.`)
     }
+    await this.#makePrivate()
     return data as RawConfig
+  }
+
+  /**
+   * The repository URL may contain credentials: a configuration other users
+   * can read (written by hand, or by configfile 0.3) is made readable by its
+   * owner only, with a warning.
+   */
+  async #makePrivate(): Promise<void> {
+    const stats = await stat(this.path).catch(() => null)
+    if (stats == null || (stats.mode & 0o077) === 0) return
+
+    try {
+      await chmod(this.path, stats.mode & 0o700)
+      this.#warn(`${this.path} was readable by other users. It is now only readable by you.`)
+    } catch (error) {
+      this.#warn(
+        `${this.path} is readable by other users, and cannot be made private (${messageOf(error)}). ` +
+          `Run "chmod 600 ${this.path}".`,
+      )
+    }
   }
 }
 

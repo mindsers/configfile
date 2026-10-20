@@ -57,9 +57,12 @@ export class Output {
   }
 }
 
-/** `plural(1, 'file')` → "1 file", `plural(2, 'file')` → "2 files". */
-export function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
+/**
+ * `plural(1, 'file')` → "1 file", `plural(2, 'file')` → "2 files". Irregular
+ * plurals are given: `plural(2, 'entry', 'entries')` → "2 entries".
+ */
+export function plural(count: number, noun: string, nouns = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : nouns}`
 }
 
 /**

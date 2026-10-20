@@ -329,11 +329,16 @@ describe('parseHistoryLine', () => {
         { kind: 'synced', folder: '/f', upstream: 'origin/main', from: 1, to: 2 },
         { kind: 'failed', reason: 'neither a target nor a module' },
         { kind: 'saved-patch', file: '/p' },
+        { kind: 'saved-patch', file: '/p', paths: ['files/a'] },
+        { kind: 'saved-patch', file: '/p', paths: 'files/a' },
       ],
     })
 
-    expect(entry?.line?.changes).toEqual([{ kind: 'saved-patch', file: '/p' }])
-    expect(entry?.unreadableChanges).toBe(6)
+    expect(entry?.line?.changes).toEqual([
+      { kind: 'saved-patch', file: '/p' },
+      { kind: 'saved-patch', file: '/p', paths: ['files/a'] },
+    ])
+    expect(entry?.unreadableChanges).toBe(7)
   })
 })
 

@@ -63,3 +63,7 @@ dist/
 
 # macOS
 .DS_Store
+
+# Astro (docs/)
+.astro/
+release/

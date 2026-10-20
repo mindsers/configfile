@@ -3,6 +3,7 @@ import { constants, type Stats } from 'node:fs'
 import { access, open, readFile, stat } from 'node:fs/promises'
 import { constants as osConstants } from 'node:os'
 import path from 'node:path'
+import { isSea } from 'node:sea'
 
 import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
@@ -15,15 +16,25 @@ import type { Script } from './repository.ts'
  * them to both processes) and SIGTERM / SIGHUP are forwarded to it, so the
  * child is not left running when configfile is asked to stop, and its own exit
  * code is reported. (Nothing can be done if configfile is killed with SIGKILL.)
+ *
+ * `env` is merged over configfile's own environment, which the child inherits:
+ * its values replace variables of the same name. `onSignal` is told about each
+ * of these signals configfile receives meanwhile, for callers that have more
+ * to do once the child ends.
  */
-export function run(command: string, args: string[], { cwd }: { cwd: string }): Promise<number> {
+export function run(
+  command: string,
+  args: string[],
+  { cwd, env, onSignal }: RunOptions,
+): Promise<number> {
   return new Promise((resolve, reject) => {
     // Installed before the child starts: a signal arriving in between would
     // otherwise end configfile and leave the script running on its own.
     let child: ChildProcess | undefined
     let pending: NodeJS.Signals | undefined
-    const ignore = () => {}
+    const ignore = (signal: NodeJS.Signals) => onSignal?.(signal)
     const forward = (signal: NodeJS.Signals) => {
+      onSignal?.(signal)
       if (child == null) pending = signal
       else child.kill(signal)
     }
@@ -39,7 +50,11 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
     }
 
     try {
-      child = spawn(command, args, { cwd, stdio: 'inherit' })
+      child = spawn(command, args, {
+        cwd,
+        stdio: 'inherit',
+        ...(env != null && { env: { ...process.env, ...env } }),
+      })
     } catch (error) {
       cleanup()
       reject(error)
@@ -64,11 +79,23 @@ export function run(command: string, args: string[], { cwd }: { cwd: string }): 
   })
 }
 
+interface RunOptions {
+  cwd: string
+  env?: Readonly<Record<string, string>> | undefined
+  onSignal?: ((signal: NodeJS.Signals) => void) | undefined
+}
+
+/**
+ * The Node.js that runs JavaScript scripts: configfile's own, or in a
+ * standalone binary (which runs nothing but configfile) the `node` in PATH.
+ */
+const NODE = isSea() ? 'node' : process.execPath
+
 /** Used for scripts that have no shebang line. */
 const INTERPRETERS: Record<string, string> = {
-  '.js': process.execPath,
-  '.mjs': process.execPath,
-  '.cjs': process.execPath,
+  '.js': NODE,
+  '.mjs': NODE,
+  '.cjs': NODE,
   '.sh': 'sh',
 }
 
@@ -78,20 +105,21 @@ const INTERPRETERS: Record<string, string> = {
  * - a script with a shebang line (`#!/usr/bin/env python3`) is run directly
  *   when executable, otherwise with that interpreter (arguments of the
  *   shebang line are split on spaces);
- * - a `.js` or `.sh` script without shebang line is run with node or sh;
+ * - a `.js` (`.mjs`, `.cjs`) or `.sh` script without shebang line is run with
+ *   Node.js (see `NODE`) or sh;
  * - any other executable file (such as a compiled program) is run directly.
  */
 export async function runScript(
   script: Script,
   args: string[],
-  { cwd }: { cwd: string },
+  { cwd, env, onSignal }: RunOptions,
 ): Promise<number> {
   const executable = await isExecutable(script.path)
   const shebang = await readShebang(script)
 
   const launch = async (command: string, commandArgs: string[]) => {
     try {
-      return await run(command, commandArgs, { cwd })
+      return await run(command, commandArgs, { cwd, env, onSignal })
     } catch (error) {
       throw launchError(script, shebang?.[0], error)
     }
@@ -105,6 +133,23 @@ export async function runScript(
   }
 
   const interpreter = INTERPRETERS[path.extname(script.path)]
+  if (interpreter === 'node') {
+    try {
+      return await run(interpreter, [script.path, ...args], { cwd, env, onSignal })
+    } catch (error) {
+      if (errnoCode(error) === 'EACCES') {
+        throw new CliError(
+          `Cannot run script "${script.name}": the node found in PATH cannot be executed ` +
+            '(permission denied).',
+        )
+      }
+      if (errnoCode(error) !== 'ENOENT') throw launchError(script, undefined, error)
+      throw new CliError(
+        `Script "${script.name}" needs Node.js, which is not installed. Install it, or add a ` +
+          'shebang line (such as "#!/bin/sh") to run it with another program.',
+      )
+    }
+  }
   if (interpreter != null) return launch(interpreter, [script.path, ...args])
   if (executable) return launch(script.path, args)
 
@@ -249,6 +294,9 @@ function capture(
       resolve({ ...end, stdout, stderr })
     }
 
+    // Decoded as a stream, so that a character split between two chunks stays whole.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     child.stdout.on('data', chunk => {
       stdout += chunk
     })
@@ -285,7 +333,75 @@ export async function gitOutput(
 
   if (result.code === 0) return result.stdout
   if (allowFailure) return null
-  throw new CliError(`git ${args[0]} failed: ${result.stderr.trim() || describeEnd(result)}`)
+  throw new CliError(
+    `git ${subcommandOf(args)} failed: ${result.stderr.trim() || describeEnd(result)}`,
+  )
+}
+
+/** The git command run (`status`), after options such as `--no-optional-locks`. */
+function subcommandOf(args: readonly string[]): string {
+  return args.find(arg => !arg.startsWith('-')) ?? 'command'
+}
+
+/**
+ * Runs git and returns its output as bytes, for content that may not be
+ * text (a patch). Fails with git's own message when git exits with an error.
+ */
+export async function gitBuffer(args: string[], { cwd }: { cwd: string }): Promise<Buffer> {
+  const run = new Promise<{ code: number | null; stdout: Buffer; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+      const chunks: Buffer[] = []
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+      child.stderr.setEncoding('utf8')
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk
+      })
+      child.once('error', reject)
+      child.once('close', code => resolve({ code, stdout: Buffer.concat(chunks), stderr }))
+    },
+  )
+  const result = await run.catch(async error => {
+    throw await startFailure(error, cwd)
+  })
+  if (result.code === 0) return result.stdout
+  throw new CliError(
+    `git ${subcommandOf(args)} failed: ${result.stderr.trim() || `exit code ${result.code ?? 'unknown'}`}`,
+  )
+}
+
+/**
+ * Runs git with `input` on its standard input, and returns its exit code and
+ * output, for commands whose exit code means something (`git check-ignore`).
+ * Git that cannot be started fails.
+ */
+export async function gitResult(
+  args: string[],
+  { cwd, input }: { cwd: string; input: string },
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  type Result = { code: number | null; stdout: string; stderr: string }
+  const run = new Promise<Result>((resolve, reject) => {
+    const child = spawn('git', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, stdout, stderr }))
+    // git may exit before reading everything (EPIPE): its exit code says why.
+    child.stdin.on('error', () => {})
+    child.stdin.end(input)
+  })
+  return run.catch(async error => {
+    throw await startFailure(error, cwd)
+  })
 }
 
 /** Time allowed to `git --version`: it answers at once unless something is wrong. */

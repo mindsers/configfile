@@ -2,6 +2,14 @@ import type { Dirent, Stats } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import {
+  type Condition,
+  combine,
+  type Machine,
+  profilesOf,
+  readWhen,
+  whyNotFor,
+} from './conditions.ts'
 import { ConfigStore } from './config.ts'
 import type { Context } from './context.ts'
 import { CliError } from './errors.ts'
@@ -13,14 +21,18 @@ export interface ModuleFile {
   readonly source: string
   /** Absolute path where the file is deployed. Never inside the repository. */
   readonly target: string
-  /** `global`: symlinked by a regular deploy. `local`: copied by `deploy --local`. */
+  /** `global`: deployed into the home folder by a regular deploy. `local`: copied by `deploy --local`. */
   readonly strategy: 'global' | 'local'
+  /** How it is deployed: global files are copied unless `"method": "link"`; local files are always copied. */
+  readonly method: 'link' | 'copy'
   /** Absolute path of the dotfiles repository the file comes from. */
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
   readonly module: string
-  /** The module file entry of the file, recorded when it is deployed. */
+  /** The settings.json entry of the file, recorded when it is deployed. */
   readonly entry?: Entry
+  /** The machines it is for: its entry's `"when"` with its module's; everywhere when missing. */
+  readonly condition?: Condition
 }
 
 /**
@@ -47,20 +59,35 @@ export type Module = ModuleBase &
   (
     | {
         readonly error: null
-        /** Files to deploy. `"deploy": "none"`, invalid and undecided entries are left out. */
+        /**
+         * Files to deploy on this machine. `"deploy": "none"`, invalid and
+         * undecided entries, and those for other machines are left out.
+         */
         readonly files: readonly ModuleFile[]
+        /** The module's own `"when"`, or `null`. */
+        readonly when: Condition | null
+        /** Why the module is not for this machine (its own `"when"`), or `null`. */
+        readonly notHere: string | null
+        /** Valid entries for other machines, and why: every entry when the module is not for this one. */
+        readonly elsewhere: readonly { readonly file: ModuleFile; readonly reason: string }[]
         /** `source_path` of entries that define no deployment strategy (not deployed). */
         readonly undecided: readonly string[]
-        /** Why some entries of the module file are ignored. */
+        /** Why some entries of settings.json are ignored. */
         readonly invalidEntries: readonly string[]
-        /** Deprecated settings used by the module. */
-        readonly deprecations: readonly string[]
+        /** The names of the scripts run before and after the module is deployed or undeployed. */
+        readonly hooks: Readonly<Partial<Record<Hook, string>>>
+        /** Why some of these settings cannot be used (not a string, or empty). */
+        readonly hookProblems: Readonly<Partial<Record<Hook, string>>>
       }
     | {
-        /** Why the module file could not be used. Such a module has no files. */
+        /** Why settings.json could not be used. Such a module has no files. */
         readonly error: string
       }
   )
+
+/** The settings that name a script run when the module is deployed or undeployed. */
+export const HOOKS = ['pre_deploy', 'post_deploy', 'pre_undeploy', 'post_undeploy'] as const
+export type Hook = (typeof HOOKS)[number]
 
 export interface Script {
   readonly name: string
@@ -69,31 +96,89 @@ export interface Script {
   readonly path: string
 }
 
-type Environment = Pick<Context, 'home' | 'cwd'> & { warn(message: string): void }
+type Environment = Pick<Context, 'home' | 'cwd'> & {
+  warn(message: string): void
+  /** What `"when"` is checked against; without it, entries with a condition are for no machine. */
+  machine?: Machine
+}
 
-/** The modules, and the folder of the repository they come from. */
+/**
+ * The modules, the folder of the repository they come from, and the machine
+ * their conditions were checked against: this one, or what `preview` gives
+ * instead (`--os`, `--profile`), for that run only.
+ */
 export async function loadRepository(
   ctx: Context,
-): Promise<{ repository: string; modules: Module[] }> {
-  const { folderPath } = await new ConfigStore(ctx.home).read()
+  preview: Partial<Machine> = {},
+): Promise<{ repository: string; modules: Module[]; machine: Machine }> {
+  const { folderPath, profiles } = await new ConfigStore(ctx.home, {
+    warn: message => ctx.output.warn(message),
+  }).read()
+  const machine: Machine = {
+    os: preview.os ?? systemName(ctx.platform),
+    profiles: preview.profiles ?? profiles,
+  }
   const modules = await listModules(folderPath, {
     home: ctx.home,
     cwd: ctx.cwd,
     warn: message => ctx.output.warn(message),
+    machine,
   })
-  return { repository: folderPath, modules }
+  return { repository: folderPath, modules, machine }
+}
+
+/** The profiles the conditions of the repository name, sorted. */
+export function knownProfiles(modules: readonly Module[]): string[] {
+  const names = new Set<string>()
+  for (const module of modules) {
+    if (module.error != null) continue
+    for (const name of profilesOf(module.when)) names.add(name)
+    for (const file of [...module.files, ...module.elsewhere.map(item => item.file)]) {
+      for (const name of profilesOf(file.condition ?? null)) names.add(name)
+    }
+  }
+  return [...names].sort()
+}
+
+/** The scripts, and the folder of the repository they come from. */
+export async function loadScripts(ctx: Context): Promise<{
+  repository: string
+  scripts: Script[]
+  otherSystems: string[]
+  /** This machine's profiles, given to the scripts. */
+  profiles: readonly string[]
+}> {
+  const warn = (message: string) => ctx.output.warn(message)
+  const config = await new ConfigStore(ctx.home, { warn }).read()
+  const listed = await listScripts(config.folderPath, config.scriptExtensions, ctx.platform, {
+    warn,
+  })
+  return { repository: config.folderPath, ...listed, profiles: config.profiles }
 }
 
 /**
- * Names of the file that describes a module, by preference. `configfile.json`
- * lets a module deploy an app's own `settings.json`.
+ * The variables every script gets. Scripts run in the current folder, and a
+ * folder script is one level deeper: this gives them the repository's path,
+ * and the system whose versions run. Documented in
+ * docs/src/content/docs/reference/scripts.md.
  */
-const MODULE_FILE_NAMES = ['configfile.json', 'settings.json'] as const
+export function scriptEnvironment(
+  script: Script,
+  repository: string,
+  platform: NodeJS.Platform,
+  profiles: readonly string[],
+): Record<string, string> {
+  return {
+    CONFIGFILE_REPO: repository,
+    CONFIGFILE_SCRIPT: script.name,
+    CONFIGFILE_OS: systemName(platform),
+    CONFIGFILE_PROFILES: profiles.join(','),
+  }
+}
 
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`
- * (symlinks to folders included) that contains a `configfile.json` or a
- * `settings.json`.
+ * (symlinks to folders included) that contains a `settings.json`.
  */
 export async function listModules(folderPath: string, env: Environment): Promise<Module[]> {
   const filesDir = path.join(folderPath, 'files')
@@ -106,44 +191,27 @@ export async function listModules(folderPath: string, env: Environment): Promise
     const stats = await statEntry(entry, modulePath, env)
     if (!stats?.isDirectory()) continue
 
-    const found: { fileName: string; stats: Stats | string }[] = []
-    for (const fileName of MODULE_FILE_NAMES) {
-      const stats = await stat(path.join(modulePath, fileName)).catch(errorCode)
-      if (stats !== 'ENOENT') found.push({ fileName, stats })
-    }
-    const [settingsFile] = found
-    if (settingsFile == null) continue
+    const settingsPath = path.join(modulePath, 'settings.json')
+    const settingsStats = await stat(settingsPath).catch(errorCode)
+    if (settingsStats === 'ENOENT') continue
 
     const name = slugify(entry.name)
     if (!isUsableName(name, entry.name, modules, 'module', env)) continue
 
-    if (typeof settingsFile.stats === 'string') {
+    if (typeof settingsStats === 'string') {
       modules.push({
         name,
         path: modulePath,
-        error: `${settingsFile.fileName} cannot be read (${settingsFile.stats})`,
+        error: `settings.json cannot be read (${settingsStats})`,
       })
       continue
     }
 
-    const content = await readModuleFiles(modulePath, settingsFile.fileName, folderPath, env)
-    // Deploying the app's own settings.json is why configfile.json exists: only
-    // warn when the other file is not one of the module's files.
-    const ignored = found.slice(1).map(file => path.join(modulePath, file.fileName))
-    const listed =
-      content.error == null
-        ? [
-            ...content.files.map(file => file.source),
-            ...content.undecided.map(source => path.resolve(modulePath, source)),
-          ]
-        : []
-    for (const ignoredPath of ignored.filter(ignoredPath => !listed.includes(ignoredPath))) {
-      env.warn(
-        `${ignoredPath} is ignored: the "${name}" module is described by ${settingsFile.fileName}.`,
-      )
-    }
-
-    modules.push({ name, path: modulePath, ...content })
+    modules.push({
+      name,
+      path: modulePath,
+      ...(await readModuleFiles(modulePath, settingsPath, folderPath, env)),
+    })
   }
 
   return modules
@@ -152,48 +220,79 @@ export async function listModules(folderPath: string, env: Environment): Promise
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const
 type DeployStrategy = (typeof DEPLOY_STRATEGIES)[number]
 
-/**
- * Reads `"deploy": "global" | "local" | "none"`, or its older spelling
- * `"global": true | false`.
- */
-function readStrategy(entry: Record<string, unknown>): DeployStrategy | 'unset' | 'invalid' {
-  const { deploy, global } = entry
+const METHODS = ['link', 'copy'] as const
 
-  if (deploy !== undefined) {
-    if (global !== undefined) return 'invalid'
-    return DEPLOY_STRATEGIES.find(strategy => strategy === deploy) ?? 'invalid'
+/**
+ * Reads `"method": "link" | "copy"`: global files are copied unless they ask
+ * for a link, local files are always copied. Returns why it cannot be used.
+ */
+function readMethod(
+  entry: Record<string, unknown>,
+  strategy: 'global' | 'local',
+): 'link' | 'copy' | { invalid: string } {
+  const { method } = entry
+  if (method === undefined) return 'copy'
+  const known = METHODS.find(value => value === method)
+  if (known == null) return { invalid: 'use "method": "link" or "copy"' }
+  if (known === 'link' && strategy === 'local') {
+    return {
+      invalid: '"method": "link" only applies to global files (local files are always copied)',
+    }
   }
-  if (global === undefined) return 'unset'
-  if (typeof global !== 'boolean') return 'invalid'
-  return global ? 'global' : 'local'
+  return known
+}
+
+/** Reads `"deploy": "global" | "local" | "none"`. */
+function readStrategy(entry: Record<string, unknown>): DeployStrategy | 'unset' | 'invalid' {
+  const { deploy } = entry
+  if (deploy === undefined) return 'unset'
+  return DEPLOY_STRATEGIES.find(strategy => strategy === deploy) ?? 'invalid'
 }
 
 type ModuleContent = Exclude<Module, { error: string }>
 
 async function readModuleFiles(
   modulePath: string,
-  fileName: string,
+  settingsPath: string,
   repository: string,
   env: Environment,
 ): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
   let settings: unknown
   try {
-    settings = JSON.parse(await readFile(path.join(modulePath, fileName), 'utf8'))
+    settings = JSON.parse(await readFile(settingsPath, 'utf8'))
   } catch (error) {
-    return { error: `${fileName} is not valid JSON (${describeJsonError(error)})` }
+    return { error: `settings.json is not valid JSON (${describeJsonError(error)})` }
   }
 
-  // configfile 0.3.1 wrote the list of files at the top level of settings.json.
-  const legacyList = Array.isArray(settings)
-  const entries: unknown = legacyList ? settings : (settings as { files?: unknown } | null)?.files
-  if (!Array.isArray(entries)) {
-    return { error: `${fileName} has no "files" list` }
+  // configfile 0.3 wrote the list of files at the top level of settings.json.
+  if (Array.isArray(settings)) {
+    return {
+      error:
+        'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+        'Put the list in a "files" key: { "files": [ ... ] }',
+    }
   }
+  const entries: unknown = (settings as { files?: unknown } | null)?.files
+  if (!Array.isArray(entries)) {
+    return { error: 'settings.json has no "files" list' }
+  }
+
+  // A module whose condition cannot be read is for no machine: never deployed everywhere.
+  const rawWhen = (settings as Record<string, unknown>).when
+  const when = rawWhen === undefined ? null : readWhen(rawWhen)
+  if (when != null && 'invalid' in when) return { error: when.invalid }
+  const whyNotHere = (condition: Condition | null) =>
+    env.machine == null
+      ? condition == null
+        ? null
+        : 'no machine to check "when" against'
+      : whyNotFor(condition, env.machine)
+  const moduleReason = whyNotHere(when)
 
   const files: ModuleFile[] = []
+  const elsewhere: { file: ModuleFile; reason: string }[] = []
   const undecided: string[] = []
   const invalidEntries: string[] = []
-  let usesLegacyKey = false
 
   for (const [index, entry] of (entries as unknown[]).entries()) {
     const invalid = (reason: string) =>
@@ -206,8 +305,12 @@ async function readModuleFiles(
 
     const fields = entry as Record<string, unknown>
     const { source_path: source, target_path: target } = fields
+    // Its older spelling, gone in 2.0: never guessed, so the entry is never deployed by mistake.
+    if (fields.global !== undefined) {
+      invalid('"global" is no longer read (configfile 2.0): use "deploy": "global" or "local"')
+      continue
+    }
     const strategy = readStrategy(fields)
-    if (typeof fields.global === 'boolean' && fields.deploy === undefined) usesLegacyKey = true
 
     if (strategy === 'none') continue
     if (typeof source !== 'string' || source.trim() === '') {
@@ -226,7 +329,7 @@ async function readModuleFiles(
 
     switch (strategy) {
       case 'invalid':
-        invalid('use "deploy": "global", "local" or "none" (or "global": true or false, not both)')
+        invalid('use "deploy": "global", "local" or "none"')
         continue
       case 'unset':
         undecided.push(source)
@@ -237,6 +340,17 @@ async function readModuleFiles(
       invalid('"target_path" is missing')
       continue
     }
+    const method = readMethod(fields, strategy)
+    if (typeof method !== 'string') {
+      invalid(method.invalid)
+      continue
+    }
+    const entryWhen = fields.when === undefined ? null : readWhen(fields.when)
+    if (entryWhen != null && 'invalid' in entryWhen) {
+      invalid(entryWhen.invalid)
+      continue
+    }
+    const condition = combine(when, entryWhen)
 
     // Global files belong to the user's home; local files to the current folder.
     const resolvedTarget = resolveUserPath(target.trim(), {
@@ -244,16 +358,25 @@ async function readModuleFiles(
       cwd: strategy === 'global' ? env.home : env.cwd,
     })
 
-    const problem = unsafeTarget(resolvedTarget, { ...env, repository, module: modulePath })
+    // A copy is kept up to date in place, so it may hold the current folder:
+    // replacing or removing it whole is checked when it happens (see `Guard`).
+    const copied = strategy === 'global' && method === 'copy'
+    const problem = unsafeTarget(resolvedTarget, {
+      ...env,
+      cwd: copied ? null : env.cwd,
+      repository,
+      module: modulePath,
+    })
     if (problem != null) {
       invalid(`"target_path" (${target}) ${problem}`)
       continue
     }
 
-    files.push({
+    const file: ModuleFile = {
       source: resolvedSource,
       target: resolvedTarget,
       strategy,
+      method,
       repository,
       module: modulePath,
       entry: {
@@ -262,24 +385,34 @@ async function readModuleFiles(
         target: target.trim(),
         folder: strategy === 'global' ? env.home : env.cwd,
       },
-    })
+      ...(condition != null && { condition }),
+    }
+    const reason = moduleReason ?? whyNotHere(condition)
+    if (reason == null) files.push(file)
+    else elsewhere.push({ file, reason })
   }
 
-  const deprecations: string[] = []
-  if (legacyList) {
-    deprecations.push(
-      `${fileName} is a list (configfile 0.3 format), which is deprecated and will stop ` +
-        'working in 2.0. Put the list in a "files" key: { "files": [ ... ] }',
-    )
-  }
-  if (usesLegacyKey) {
-    deprecations.push(
-      '"global": true | false is deprecated and will stop working in 2.0. ' +
-        'Use "deploy": "global" | "local" instead',
-    )
+  const hooks: Partial<Record<Hook, string>> = {}
+  const hookProblems: Partial<Record<Hook, string>> = {}
+  for (const hook of HOOKS) {
+    const name = (settings as Record<string, unknown>)[hook]
+    if (name === undefined) continue
+    if (typeof name === 'string' && name.trim() !== '') hooks[hook] = name.trim()
+    else
+      hookProblems[hook] = `"${hook}" is ignored: it must be the name of a script of the repository`
   }
 
-  return { error: null, files, undecided, invalidEntries, deprecations }
+  return {
+    error: null,
+    files,
+    when,
+    notHere: moduleReason,
+    elsewhere,
+    undecided,
+    invalidEntries,
+    hooks,
+    hookProblems,
+  }
 }
 
 /**
@@ -297,13 +430,13 @@ export function unsafeTarget(
     cwd,
     repository,
     module,
-  }: { home: string; cwd: string; repository: string; module: string },
+  }: { home: string; cwd: string | null; repository: string; module: string },
 ): string | null {
   const own = configfilePaths(home)
 
   for (const [folder, label] of [
     [home, 'the home folder'],
-    [cwd, 'the current folder'],
+    ...(cwd == null ? [] : [[cwd, 'the current folder'] as const]),
     [repository, 'the dotfiles repository'],
     [module, 'the module folder'],
     [own.rc, "configfile's configuration"],
@@ -327,16 +460,25 @@ export function unsafeTarget(
  * Hidden files are ignored. When `extensions` is set, only files with one of
  * these extensions count (`''` means "no extension").
  *
- * A script is named after its file name up to the first dot: `setup.macos.sh`
- * is the `setup` script.
+ * A script is named after its file name up to the first dot: `setup.sh` is the
+ * `setup` script. A second part naming a system (`setup.macos.sh`,
+ * `setup.linux/`) makes it that system's version: used instead of `setup.sh`
+ * on that system, and ignored on the others.
+ *
+ * `otherSystems` names the scripts that only have versions for other systems:
+ * they are not scripts here, but their name is not a mistake either.
  */
 export async function listScripts(
   folderPath: string,
   extensions: readonly string[] | null,
+  platform: NodeJS.Platform,
   env: Pick<Environment, 'warn'>,
-): Promise<Script[]> {
+): Promise<{ scripts: Script[]; otherSystems: string[] }> {
   const scriptsDir = path.join(folderPath, 'scripts')
   const scripts: Script[] = []
+  /** Names of the scripts that are this system's version. */
+  const forSystem = new Set<string>()
+  const elsewhere = new Set<string>()
   const allowed = (name: string) => extensions == null || extensions.includes(path.extname(name))
 
   for (const entry of await readDirOrFail(scriptsDir)) {
@@ -353,15 +495,50 @@ export async function listScripts(
     }
     if (file == null) continue
 
-    const [baseName = ''] = entry.name.split('.')
+    const [baseName = '', tag] = entry.name.split('.')
+    const system = tag == null ? undefined : SCRIPT_SYSTEMS.get(tag)
     const name = slugify(baseName)
+    if (system != null && system !== platform) {
+      elsewhere.add(name)
+      continue
+    }
+    const script = { name, file, path: path.join(scriptsDir, file) }
+
+    // This system's version replaces the generic one, whichever comes first.
+    const current = scripts.findIndex(other => other.name === name)
+    if (current !== -1 && forSystem.has(name) !== (system != null)) {
+      if (system != null) {
+        scripts[current] = script
+        forSystem.add(name)
+      }
+      continue
+    }
     if (!isUsableName(name, file, scripts, 'script', env)) continue
 
-    scripts.push({ name, file, path: path.join(scriptsDir, file) })
+    scripts.push(script)
+    if (system != null) forSystem.add(name)
   }
 
-  return scripts
+  const otherSystems = [...elsewhere].filter(name => !scripts.some(script => script.name === name))
+  return { scripts, otherSystems }
 }
+
+/** The platform a system name stands for (`macos` is `darwin`), or the name itself. */
+export function platformOf(system: string): NodeJS.Platform {
+  return SCRIPT_SYSTEMS.get(system) ?? (system as NodeJS.Platform)
+}
+
+/** The name of `platform` in script names (`macos`, `linux`), or the platform itself. */
+export function systemName(platform: NodeJS.Platform): string {
+  for (const [name, system] of SCRIPT_SYSTEMS) if (system === platform) return name
+  return platform
+}
+
+/** The systems a script can be made for, by the second part of its name. */
+const SCRIPT_SYSTEMS: ReadonlyMap<string, NodeJS.Platform> = new Map([
+  ['macos', 'darwin'],
+  ['linux', 'linux'],
+])
 
 /** The `index` file of a script folder (`index`, `index.sh`, …), relative to `scriptsDir`. */
 async function findIndex(

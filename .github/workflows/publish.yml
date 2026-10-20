@@ -1,10 +1,26 @@
 name: Publish
 
-# Publishes to npm when a version tag (such as 1.0.0) is pushed on a commit of
-# master, the release branch of git-flow. Uses npm trusted publishing: no npm
-# token is stored, and the package gets a provenance statement. Set it up once
-# on npmjs.com (package settings > Trusted publishing): repository
-# mindsers/configfile, workflow publish.yml, environment npm.
+# Releases a version when its tag (such as 1.0.0) is pushed on a commit of
+# master, the release branch of git-flow:
+#
+# - build: checks the tag, runs the checks and packs the package once;
+# - binaries: builds the standalone binary on each system it is made for
+#   (tools/build-binary.ts), and runs the end-to-end tests with it;
+# - github-release: publishes that tarball, the binaries, their SHA256SUMS
+#   and the CHANGELOG section as a GitHub release, with a build provenance
+#   attestation for each archive (`gh attestation verify <archive> --repo
+#   mindsers/configfile`).
+#   The binaries keep the same names from one release to the next, so that
+#   docs/public/install.sh finds the latest one at releases/latest/download/;
+# - npm: publishes the same tarball to npm, with npm trusted publishing (no
+#   token stored, provenance statement). It only runs when the repository
+#   variable NPM_PUBLISH is "true", once trusted publishing is set up on
+#   npmjs.com (package settings > Trusted publishing): repository
+#   mindsers/configfile, workflow publish.yml, environment npm. To publish a
+#   version released while it was off, set the variable and re-run this
+#   workflow for its tag: an existing GitHub release keeps its notes and the
+#   files it already has (a rebuilt archive is not byte for byte the same, and
+#   would break the checksums users have); only missing files are added.
 
 on:
   push:
@@ -14,12 +30,8 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment: npm
-    permissions:
-      contents: read
-      id-token: write # npm trusted publishing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +51,149 @@ jobs:
           version=$(node -p "require('./package.json').version")
           [ "$version" = "$TAG" ] || {
             echo "::error::package.json is $version, the tag is $TAG."; exit 1; }
-      - run: pnpm install --frozen-lockfile
+      # The CLI only: the documentation site (docs/) is not part of a release.
+      - run: pnpm install --frozen-lockfile --filter configfile
       - run: pnpm check
-      # npm (not pnpm) publishes: trusted publishing needs npm 11.5.1 or later.
-      - run: npm publish --access public
+      - name: Pack the package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir release
+          npm pack --pack-destination release
+          [ -f "release/configfile-$TAG.tgz" ] || {
+            echo "::error::npm pack did not produce configfile-$TAG.tgz."; exit 1; }
+      - name: Extract the release notes from the CHANGELOG
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          awk -v heading="## [$TAG]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release/notes.md
+          [ -s release/notes.md ] || {
+            echo "::error::CHANGELOG.md has no \"## [$TAG]\" section."; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+
+  binaries:
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No cache: nothing restored from another run can end up in a release.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+          cache: false
+      - run: pnpm install --frozen-lockfile --filter configfile
+      - run: pnpm build:binary
+      - name: Run the end-to-end tests with the binary
+        run: |
+          mkdir "$RUNNER_TEMP/binary"
+          tar -xzf release/configfile-*.tar.gz -C "$RUNNER_TEMP/binary"
+          CONFIGFILE_BINARY="$RUNNER_TEMP/binary/configfile" pnpm vitest run tests/e2e.test.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-${{ matrix.os }}
+          path: release/configfile-*.tar.gz
+          if-no-files-found: error
+
+  github-release:
+    needs: [build, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          merge-multiple: true
+      - name: Keep the files of an existing release
+        id: keep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' > published.txt 2> /dev/null || : > published.txt
+          # Kept aside until attested: only what this run built is attested.
+          mkdir published
+          grep '^configfile-' published.txt | while read -r name; do
+            rm -f "$name"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir published
+            echo "::notice::$name is kept as published."
+          done
+          if ls configfile-* > /dev/null 2>&1; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Attests the files built by this run only: a published file, which may
+      # have been uploaded by hand, keeps the attestation it has (if any).
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.keep.outputs.built == 'true'
+        with:
+          subject-path: configfile-*
+      - name: Compute the checksums
+        run: |
+          find published -type f -exec mv {} . \;
+          sha256sum configfile-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A release created by hand, or by an earlier run: its notes and files
+          # are kept, the missing files added, and SHA256SUMS (which covers the
+          # files as published) replaced.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            for file in configfile-*; do
+              grep -qxF "$file" published.txt ||
+                gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY"
+            done
+            gh release upload "$TAG" SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+            echo "::notice::The $TAG release already existed: its notes and files are kept, missing files added."
+            exit 0
+          fi
+          gh release create "$TAG" configfile-* SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$TAG" --notes-file notes.md
+
+  npm:
+    needs: build
+    if: vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # For the npm of the project's toolchain: trusted publishing needs 11.5.1 or later.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.18 # mise version, updated by Renovate
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+      # The tarball the GitHub release has, not a new build.
+      - run: npm publish "$RUNNER_TEMP/release/configfile-$TAG.tgz" --access public
+        env:
+          TAG: ${{ github.ref_name }}

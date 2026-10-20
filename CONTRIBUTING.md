@@ -69,7 +69,7 @@ Everyone taking part in the project follows the [code of conduct](CODE_OF_CONDUC
 
 ### Do you want to contribute to the documentation?
 
-The documentation lives with the source code: the [README](README.md) for users, and this file for contributors.
+The documentation lives with the source code: the [documentation site](docs/) for users (published at [docs.configfile.sh](https://docs.configfile.sh), run it locally with `pnpm docs:dev`), and this file for contributors. Each page of the site is a Markdown file in `docs/src/content/docs/`. The README only introduces configfile and links to the site: document behavior on the site. The usage lines and option tables of the commands page are generated from the commands' definitions: after adding or changing a command, an argument or an option, run `pnpm docs:commands` (a test fails until the page is up to date). A new command first needs its section and an empty `<!-- generated: configfile <command> -->` / `<!-- /generated -->` block on the page, which the script then fills. The format of `settings.json` is also described by a JSON Schema, `docs/public/schemas/settings.json`: when configfile starts accepting or refusing something new there, update the schema and the examples of `tests/settings-schema.test.ts`, which check that both agree.
 
 * Please refer to the "Do you intend to add a new feature or change an existing one?" section.
 
@@ -97,7 +97,7 @@ The project uses [git-flow](https://nvie.com/posts/a-successful-git-branching-mo
 
 * Create your branch from `develop`: `feature/<name>` for a feature or a documentation change, `bugfix/<name>` for a fix.
 
-* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer: a version tag pushed on `master` publishes the package to npm, with provenance (`.github/workflows/publish.yml`).
+* Open the pull request against `develop`, never `master`. Releases are handled by the maintainer: a version tag pushed on `master` publishes the package as a GitHub release, with a build provenance attestation, and to npm when it is turned on (`.github/workflows/publish.yml`).
 
 * Describe the change for a reviewer who doesn't know the code: why it is needed, what changes for users, how to test it. The pull request template has the sections.
 

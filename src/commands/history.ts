@@ -102,9 +102,19 @@ function describeRun(line: HistoryLine): string {
   if (typeof options.script === 'string') words.push(options.script)
   if (typeof options.repo === 'string') words.push('--repo', options.repo)
   if (typeof options.folder === 'string') words.push('--folder', options.folder)
+  if (typeof options.workingCopy === 'string') words.push('--working-copy', options.workingCopy)
+  if (typeof options.paths === 'number') words.push(`(${plural(options.paths, 'path')})`)
+  if (typeof options.module === 'string') words.push('--module', options.module)
   for (const flag of ['local', 'all', 'force', 'removed'] as const) {
     if (options[flag] === true) words.push(`--${flag}`)
   }
+  if (options.keepGoing === true) words.push('--keep-going')
+  if (typeof options.os === 'string') words.push('--os', options.os)
+  if (Array.isArray(options.profile)) {
+    for (const name of options.profile) words.push('--profile', String(name))
+  }
+  if (options.hooks === false) words.push('--no-hooks')
+  if (options.push === false) words.push('--no-push')
   if (typeof options.argCount === 'number' && options.argCount > 0) {
     words.push(`(${plural(options.argCount, 'argument')})`)
   }
@@ -118,10 +128,17 @@ function describeChange(change: Change): string {
   switch (change.kind) {
     case 'deployed': {
       const moved = change.backup == null ? '' : `  (previous file moved to ${change.backup})`
-      return line(change.how === 'link' ? 'linked' : 'copied', `${change.target}${moved}`)
+      if (change.replaced === 'copy' && change.how === 'copy') {
+        return line('updated', `${change.target}${moved}`)
+      }
+      const was = change.replaced == null ? '' : `  (was a ${change.replaced})`
+      return line(change.how === 'link' ? 'linked' : 'copied', `${change.target}${moved}${was}`)
     }
-    case 'skipped':
-      return line('skipped', `${change.target}  (it already existed)`)
+    case 'skipped': {
+      const reason =
+        change.reason === 'conflict' ? 'changed here and in the repository' : 'it already existed'
+      return line('skipped', `${change.target}  (${reason})`)
+    }
     case 'removed': {
       const backup =
         change.backup == null
@@ -132,10 +149,12 @@ function describeChange(change: Change): string {
               changed: `  (its backup ${change.backup.path} had changed, not restored)`,
             }[change.backup.status]
       const leftover = change.leftover == null ? '' : `  (left at ${change.leftover})`
-      return line('removed', `${change.target}${backup}${leftover}`)
+      const moved = change.movedTo == null ? '' : `  (yours moved to ${change.movedTo})`
+      return line('removed', `${change.target}${backup}${leftover}${moved}`)
     }
     case 'kept': {
       const reason: Record<KeptReason, string> = {
+        changed: 'changed on this machine',
         foreign: 'not deployed by configfile',
         modified: 'modified since it was copied',
         identical: 'not copied by configfile',
@@ -156,16 +175,39 @@ function describeChange(change: Change): string {
           ? `${change.folder}  (already up to date with ${change.upstream})`
           : `${change.folder}  with ${change.upstream} (${short(change.from)} → ${short(change.to)})`,
       )
-    case 'saved-patch':
-      return line('saved', `local changes to ${change.file}`)
+    case 'saved-patch': {
+      const paths = change.paths == null ? '' : `  (${change.paths.join(', ')})`
+      return line('saved', `local changes to ${change.file}${paths}`)
+    }
     case 'script':
-      return line('script', `${change.name}  exit ${change.exitCode}`)
+      return line(
+        'script',
+        `${change.name}  exit ${change.exitCode}` +
+          (change.module == null ? '' : `  (${change.hook ?? 'hook'} of ${change.module})`),
+      )
+    case 'script-skipped':
+      return line(
+        'skipped',
+        `${change.name}  (${change.hook} of ${change.module}: ${change.reason})`,
+      )
     case 'cloned':
       return line('cloned', `${change.repository} into ${change.folder}`)
     case 'reused':
       return line('reused', `${change.folder} for ${change.repository}`)
     case 'configured':
       return line('saved', `configuration ${change.file}`)
+    case 'adopted':
+      return line(
+        'adopted',
+        `${change.target}  (committed as ${change.source} in ${change.folder})`,
+      )
+    case 'pushed':
+      return line(
+        'pushed',
+        `${change.folder}  ${change.branch} (${short(change.from)} → ${short(change.to)})`,
+      )
+    case 'recorded':
+      return line('recorded', `${change.target}  (configfile's copy of ${change.source})`)
   }
 }
 

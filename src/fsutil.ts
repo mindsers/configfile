@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto'
-import type { Stats } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { constants, type Stats } from 'node:fs'
 import { chmod, lstat, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -85,7 +85,7 @@ export function siblingName(target: string, purpose: string): string {
  */
 export async function writeFileAtomic(
   file: string,
-  content: string,
+  content: string | Buffer,
   { mode }: { mode: number },
 ): Promise<void> {
   const temporary = siblingName(file, 'write')
@@ -113,4 +113,41 @@ export async function removeTree(target: string): Promise<void> {
     }
   }
   await rm(target, { recursive: true, force: true })
+}
+
+/** The content of a file: its SHA-256 (hexadecimal) and size. */
+export interface ContentHash {
+  readonly sha256: string
+  readonly size: number
+}
+
+export function hashContent(content: Buffer): ContentHash {
+  return { sha256: createHash('sha256').update(content).digest('hex'), size: content.length }
+}
+
+/**
+ * The hash of a regular file, read in chunks. `follow: false` fails with
+ * `ELOOP` when the file itself is a symbolic link; its parent folders are
+ * the caller's to check.
+ */
+export async function hashFile(
+  file: string,
+  { follow }: { follow: boolean },
+): Promise<ContentHash> {
+  const flags = constants.O_RDONLY | (follow ? 0 : constants.O_NOFOLLOW)
+  await using handle = await open(file, flags)
+  const hash = createHash('sha256')
+  const buffer = Buffer.alloc(64 * 1024)
+  let size = 0
+  for (;;) {
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+    if (bytesRead === 0) break
+    hash.update(buffer.subarray(0, bytesRead))
+    size += bytesRead
+  }
+  return { sha256: hash.digest('hex'), size }
+}
+
+export function sameHash(a: ContentHash | null | undefined, b: ContentHash | null | undefined) {
+  return a != null && b != null && a.size === b.size && a.sha256 === b.sha256
 }
