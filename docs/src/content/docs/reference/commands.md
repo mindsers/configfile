@@ -138,7 +138,7 @@ Short form: `configfile m adopt`.
 | `--as <name>` | the name of the file in the module (one path only) |
 | `--message <text>` | the commit message |
 | `--no-push` | commit without pushing ("configfile update" pushes it later) |
-| `--os <system>` | the files are only for this system (macos or linux): written as "when" in settings.json |
+| `--os <system>` | the files are only for this system (macos or linux): written as "when" in the module's settings |
 | `--profile <name>` | the files are only for machines with this profile (repeatable): written as "when" |
 | `-n, --dry-run` | show what would be done, without changing anything |
 <!-- /generated -->

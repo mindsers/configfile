@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { inspect } from 'node:util'
 
 import { Command, CommanderError } from 'commander'
@@ -12,18 +11,7 @@ import type { Context } from './context.ts'
 import { CliError, isPromptExit } from './errors.ts'
 import { messageOf } from './fsutil.ts'
 import { describeInvocation, type Invocation, shouldRecord } from './history.ts'
-
-/** Set by tools/build-binary.ts: a standalone binary has no package.json to read. */
-declare const CONFIGFILE_VERSION: string | undefined
-
-const version =
-  typeof CONFIGFILE_VERSION === 'string'
-    ? CONFIGFILE_VERSION
-    : (
-        JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-          version: string
-        }
-      ).version
+import { version } from './version.ts'
 
 export function buildProgram(ctx: Context): Command {
   // showHelpAfterError, exitOverride and configureOutput are copied to

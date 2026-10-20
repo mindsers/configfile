@@ -54,7 +54,7 @@ export interface Deployed {
   readonly strategy: 'global' | 'local'
   readonly source: string
   readonly identity: Identity
-  /** The settings.json entry it was deployed for (missing in records made before it was kept). */
+  /** The entry of its module's settings it was deployed for (missing in records made before it was kept). */
   readonly entry?: Entry
   /**
    * Global files only: it was copied, and this is its base. A global file

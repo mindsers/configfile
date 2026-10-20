@@ -22,7 +22,7 @@ async function writeModule(
 ) {
   await sandbox.write(`home/dotfiles/files/${name}/${name}`, name)
   await sandbox.write(
-    `home/dotfiles/files/${name}/settings.json`,
+    `home/dotfiles/files/${name}/configfile.module.json`,
     JSON.stringify({
       ...(when !== undefined && { when }),
       ...hooks,
@@ -91,7 +91,7 @@ describe('modules for some machines', () => {
   it('skips the entries for other machines inside a module', async () => {
     const sandbox = await createSandbox()
     await sandbox.configure()
-    await sandbox.write('home/dotfiles/files/code/settings.json.mac', 'mac')
+    await sandbox.write('home/dotfiles/files/code/configfile.module.json.mac', 'mac')
     await writeModule(sandbox, 'code', {
       files: [
         {
@@ -244,7 +244,7 @@ describe('update', () => {
     const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/aws/aws', 'aws')
     await commitInRemote(
-      'files/aws/settings.json',
+      'files/aws/configfile.module.json',
       JSON.stringify({
         when: { profiles: 'work' },
         files: [{ source_path: 'aws', target_path: '~/.aws', deploy: 'global' }],
@@ -284,7 +284,7 @@ describe('init and profiles', () => {
     const remote = await createRemote(sandbox)
     await sandbox.write('remote/files/aws/aws', 'aws')
     await sandbox.write(
-      'remote/files/aws/settings.json',
+      'remote/files/aws/configfile.module.json',
       JSON.stringify({ when: { profiles: ['work', 'client'] }, files: [] }),
     )
     git(remote, 'add', '.')
@@ -351,7 +351,7 @@ describe('adopt --os and --profile', () => {
     return { sandbox, remote, work }
   }
   const settingsOf = async (remote: string, module: string) =>
-    JSON.parse(await readFile(path.join(remote, `files/${module}/settings.json`), 'utf8'))
+    JSON.parse(await readFile(path.join(remote, `files/${module}/configfile.module.json`), 'utf8'))
 
   it('writes "when" on the module it creates, or on the entries it adds', async () => {
     const { sandbox, remote } = await setUpAdopt()
@@ -382,7 +382,7 @@ describe('adopt --os and --profile', () => {
     expect(created.stderr).toBe('')
     expect(added.stderr).toBe('')
     expect(await settingsOf(remote, 'cloud')).toEqual({
-      $schema: 'https://docs.configfile.sh/schemas/settings.json',
+      $schema: 'https://docs.configfile.sh/schemas/module.json',
       when: { os: 'linux', profiles: 'work' },
       files: [
         { source_path: 'aws', target_path: '~/.aws', deploy: 'global' },
@@ -401,7 +401,7 @@ describe('adopt --os and --profile', () => {
     const { sandbox, work } = await setUpAdopt(['personal'])
     await sandbox.write('home/.zshrc', 'zshrc')
     await sandbox.write(
-      'work/files/aws/settings.json',
+      'work/files/aws/configfile.module.json',
       JSON.stringify({
         when: { profiles: 'work' },
         files: [{ source_path: 'config', target_path: '~/.zshrc', deploy: 'global' }],
@@ -508,7 +508,7 @@ describe('after the review', () => {
     const sandbox = await createSandbox()
     const remote = await createRemote(sandbox)
     await sandbox.write(
-      'remote/files/aws/settings.json',
+      'remote/files/aws/configfile.module.json',
       JSON.stringify({ when: { profiles: 'work' }, files: [] }),
     )
     git(remote, 'add', '.')
@@ -533,7 +533,7 @@ describe('after the review', () => {
     const { commitInRemote } = await createMirror(sandbox)
     await commitInRemote('files/editor/editorconfig', 'root = true')
     await commitInRemote(
-      'files/editor/settings.json',
+      'files/editor/configfile.module.json',
       JSON.stringify({
         files: [
           {

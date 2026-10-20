@@ -1353,7 +1353,7 @@ async function prepare(
     for (const source of module.undecided) {
       output.warn(
         `${module.name}: "${source}" was not ${verb}ed because no deployment strategy is defined. ` +
-          'Set "deploy" to "global", "local" or "none" in settings.json.',
+          `Set "deploy" to "global", "local" or "none" in ${module.settingsFile}.`,
       )
     }
   }

@@ -5,6 +5,7 @@ import { CliError } from './errors.ts'
 import { errnoCode, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { git, gitOutput, gitResult } from './process.ts'
+import { readRepositorySettings } from './repository.ts'
 import { upstreamOf } from './sync.ts'
 
 /**
@@ -19,7 +20,7 @@ export interface WorkingCopy {
   readonly branch: string
 }
 
-/** An entry of a settings.json: its module folder (`files/zsh`) and `source_path`, normalized. */
+/** An entry of a module's settings: its module folder (`files/zsh`) and `source_path`, normalized. */
 export interface EntryKey {
   readonly module: string
   readonly source: string
@@ -206,7 +207,7 @@ export async function push(copy: WorkingCopy): Promise<Pushed | null> {
 }
 
 /**
- * The global entries copied (not linked) that the settings.json of the
+ * The global entries copied (not linked) that the settings files of the
  * modules have at commit `to` and did not have at `from`, in the repository
  * in `folder`: those whose target an identical file may already hold (see
  * `modules adopt`).
@@ -215,6 +216,8 @@ export async function addedCopyEntries(
   folder: string,
   { from, to }: { from: string; to: string },
 ): Promise<EntryKey[]> {
+  // The modules are described by the files the repository names now.
+  const { moduleSettings } = await readRepositorySettings(folder)
   const cwd = folder
   const changed = await gitOutput(
     ['diff', '--name-only', '--no-renames', '-z', from, to, '--', 'files'],
@@ -222,9 +225,10 @@ export async function addedCopyEntries(
       cwd,
     },
   )
-  const settings = (changed ?? '')
-    .split('\0')
-    .filter(file => /^files\/[^/]+\/settings\.json$/.test(file))
+  const settings = (changed ?? '').split('\0').filter(file => {
+    const parts = file.split('/')
+    return parts.length === 3 && parts[0] === 'files' && parts[2] === moduleSettings
+  })
 
   const added: EntryKey[] = []
   for (const file of settings) {
@@ -277,7 +281,7 @@ export async function isAncestor(cwd: string, ancestor: string, commit: string):
   )
 }
 
-/** The global entries of a settings.json that are copied, or none when it cannot be read. */
+/** The global entries of a module's settings that are copied, or none when they cannot be read. */
 function copiedEntries(content: string | null): { source: string; target: string }[] {
   if (content == null) return []
   let settings: unknown

@@ -15,6 +15,7 @@ import type { Context } from './context.ts'
 import { CliError } from './errors.ts'
 import { describeJsonError } from './fsutil.ts'
 import { configfilePaths, contains, resolveUserPath, slugify } from './paths.ts'
+import { version } from './version.ts'
 
 export interface ModuleFile {
   /** Absolute path of the file inside its module folder. */
@@ -29,7 +30,7 @@ export interface ModuleFile {
   readonly repository: string
   /** Absolute path of the module folder (it may be a symbolic link to elsewhere). */
   readonly module: string
-  /** The settings.json entry of the file, recorded when it is deployed. */
+  /** The entry of the file in its module's settings, recorded when it is deployed. */
   readonly entry?: Entry
   /** The machines it is for: its entry's `"when"` with its module's; everywhere when missing. */
   readonly condition?: Condition
@@ -53,6 +54,8 @@ export interface Entry {
 interface ModuleBase {
   readonly name: string
   readonly path: string
+  /** The name of its settings file (`module_settings` of the repository). */
+  readonly settingsFile: string
 }
 
 export type Module = ModuleBase &
@@ -72,7 +75,7 @@ export type Module = ModuleBase &
         readonly elsewhere: readonly { readonly file: ModuleFile; readonly reason: string }[]
         /** `source_path` of entries that define no deployment strategy (not deployed). */
         readonly undecided: readonly string[]
-        /** Why some entries of settings.json are ignored. */
+        /** Why some entries of the module's settings are ignored. */
         readonly invalidEntries: readonly string[]
         /** The names of the scripts run before and after the module is deployed or undeployed. */
         readonly hooks: Readonly<Partial<Record<Hook, string>>>
@@ -80,7 +83,7 @@ export type Module = ModuleBase &
         readonly hookProblems: Readonly<Partial<Record<Hook, string>>>
       }
     | {
-        /** Why settings.json could not be used. Such a module has no files. */
+        /** Why the module's settings could not be used. Such a module has no files. */
         readonly error: string
       }
   )
@@ -176,11 +179,79 @@ export function scriptEnvironment(
   }
 }
 
+/** The settings of the repository itself, at its root: the same on every machine. */
+export const REPOSITORY_SETTINGS = 'configfile.repository.json'
+
+/** The settings file of each module, unless the repository names another. */
+export const DEFAULT_MODULE_SETTINGS = 'configfile.module.json'
+
+/** The settings file of each module in configfile 1.x. */
+const LEGACY_MODULE_SETTINGS = 'settings.json'
+
+export interface RepositorySettings {
+  /** The name of the settings file of each module (`module_settings`). */
+  readonly moduleSettings: string
+}
+
+const REPOSITORY_KEYS = ['$schema', 'module_settings']
+
+/**
+ * Reads `configfile.repository.json`, at the root of the repository, or
+ * gives the defaults without it. Fails on a key configfile doesn't know:
+ * ignoring it could read the repository the wrong way.
+ */
+export async function readRepositorySettings(folder: string): Promise<RepositorySettings> {
+  const file = path.join(folder, REPOSITORY_SETTINGS)
+  let content: string
+  try {
+    content = await readFile(file, 'utf8')
+  } catch (error) {
+    // A repository that is missing, or not a folder, is said so when its modules are read.
+    if (['ENOENT', 'ENOTDIR'].includes(errorCode(error))) {
+      return { moduleSettings: DEFAULT_MODULE_SETTINGS }
+    }
+    throw new CliError(`Cannot read ${file}: ${(error as Error).message}`, { cause: error })
+  }
+
+  let settings: unknown
+  try {
+    settings = JSON.parse(content)
+  } catch (error) {
+    throw new CliError(`${file} is not valid JSON (${describeJsonError(error)}).`)
+  }
+  if (settings == null || typeof settings !== 'object' || Array.isArray(settings)) {
+    throw new CliError(`${file} is not a JSON object.`)
+  }
+  const fields = settings as Record<string, unknown>
+  const unknown = Object.keys(fields).filter(key => !REPOSITORY_KEYS.includes(key))
+  if (unknown.length > 0) {
+    throw new CliError(
+      `${file} has ${unknown.map(key => `"${key}"`).join(', ')}, which configfile ${version} ` +
+        "doesn't know: this repository may need a newer configfile.",
+    )
+  }
+
+  const moduleSettings = fields.module_settings ?? DEFAULT_MODULE_SETTINGS
+  if (
+    typeof moduleSettings !== 'string' ||
+    !/^[^/\\]+\.json$/.test(moduleSettings) ||
+    moduleSettings === REPOSITORY_SETTINGS
+  ) {
+    throw new CliError(
+      `"module_settings" in ${file} must be the name of a JSON file in each module folder, ` +
+        `such as "${DEFAULT_MODULE_SETTINGS}".`,
+    )
+  }
+  return { moduleSettings }
+}
+
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`
- * (symlinks to folders included) that contains a `settings.json`.
+ * (symlinks to folders included) that contains the settings file its
+ * repository names (`configfile.module.json` by default).
  */
 export async function listModules(folderPath: string, env: Environment): Promise<Module[]> {
+  const { moduleSettings } = await readRepositorySettings(folderPath)
   const filesDir = path.join(folderPath, 'files')
   const modules: Module[] = []
 
@@ -191,30 +262,57 @@ export async function listModules(folderPath: string, env: Environment): Promise
     const stats = await statEntry(entry, modulePath, env)
     if (!stats?.isDirectory()) continue
 
-    const settingsPath = path.join(modulePath, 'settings.json')
+    const settingsPath = path.join(modulePath, moduleSettings)
     const settingsStats = await stat(settingsPath).catch(errorCode)
-    if (settingsStats === 'ENOENT') continue
+    const legacy =
+      settingsStats === 'ENOENT' &&
+      moduleSettings !== LEGACY_MODULE_SETTINGS &&
+      (await isModuleSettings(path.join(modulePath, LEGACY_MODULE_SETTINGS)))
+    if (settingsStats === 'ENOENT' && !legacy) continue
 
     const name = slugify(entry.name)
     if (!isUsableName(name, entry.name, modules, 'module', env)) continue
+    const base = { name, path: modulePath, settingsFile: moduleSettings }
 
-    if (typeof settingsStats === 'string') {
+    if (legacy) {
+      // A module of configfile 1.x: said, never skipped without a word.
+      const from = path.join('files', entry.name, LEGACY_MODULE_SETTINGS)
+      const to = path.join('files', entry.name, moduleSettings)
       modules.push({
-        name,
-        path: modulePath,
-        error: `settings.json cannot be read (${settingsStats})`,
+        ...base,
+        error:
+          `it has ${LEGACY_MODULE_SETTINGS}, but this repository's modules are described by ` +
+          `${moduleSettings}: rename it ("git mv ${from} ${to}" in your working copy), or set ` +
+          `"module_settings": "${LEGACY_MODULE_SETTINGS}" in ${REPOSITORY_SETTINGS}`,
       })
+      continue
+    }
+    if (typeof settingsStats === 'string') {
+      modules.push({ ...base, error: `${moduleSettings} cannot be read (${settingsStats})` })
       continue
     }
 
     modules.push({
-      name,
-      path: modulePath,
+      ...base,
       ...(await readModuleFiles(modulePath, settingsPath, folderPath, env)),
     })
   }
 
   return modules
+}
+
+/**
+ * Whether a file is the settings file of a module (a JSON object with a
+ * `"files"` list, or the list of configfile 0.3), not an app's own
+ * `settings.json` that a module deploys.
+ */
+async function isModuleSettings(file: string): Promise<boolean> {
+  try {
+    const content: unknown = JSON.parse(await readFile(file, 'utf8'))
+    return Array.isArray(content) || Array.isArray((content as { files?: unknown } | null)?.files)
+  } catch {
+    return false
+  }
 }
 
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const
@@ -257,24 +355,25 @@ async function readModuleFiles(
   repository: string,
   env: Environment,
 ): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
+  const fileName = path.basename(settingsPath)
   let settings: unknown
   try {
     settings = JSON.parse(await readFile(settingsPath, 'utf8'))
   } catch (error) {
-    return { error: `settings.json is not valid JSON (${describeJsonError(error)})` }
+    return { error: `${fileName} is not valid JSON (${describeJsonError(error)})` }
   }
 
-  // configfile 0.3 wrote the list of files at the top level of settings.json.
+  // configfile 0.3 wrote the list of files at the top level of the file.
   if (Array.isArray(settings)) {
     return {
       error:
-        'settings.json is a list, the format of configfile 0.3, which 2.0 no longer reads. ' +
+        `${fileName} is a list, the format of configfile 0.3, which 2.0 no longer reads. ` +
         'Put the list in a "files" key: { "files": [ ... ] }',
     }
   }
   const entries: unknown = (settings as { files?: unknown } | null)?.files
   if (!Array.isArray(entries)) {
-    return { error: 'settings.json has no "files" list' }
+    return { error: `${fileName} has no "files" list` }
   }
 
   // A module whose condition cannot be read is for no machine: never deployed everywhere.
