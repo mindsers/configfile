@@ -1,11 +1,11 @@
 ---
-title: Modules and settings.json
-description: Module folders, the settings.json format, and how files are deployed and undeployed.
+title: Modules and their settings
+description: Module folders, the format of their settings, the repository's settings, and how files are deployed and undeployed.
 ---
 
-Every folder of `files/` (or symbolic link to a folder) that contains a `settings.json` is a **module**. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than ASCII letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
+Every folder of `files/` (or symbolic link to a folder) that contains a `configfile.module.json` is a **module** (the repository can name another file: see [Repository settings](#repository-settings)). A module can therefore deploy an app's own `settings.json` under its real name. Its name is the folder name, lowercased, with spaces replaced by `-` and other characters than ASCII letters, digits, `_` and `-` removed: `My Zsh.d` is the `my-zshd` module. Hidden folders are ignored.
 
-`settings.json` lists the files of the module:
+`configfile.module.json` lists the files of the module:
 
 ```json
 {
@@ -26,7 +26,7 @@ Every folder of `files/` (or symbolic link to a folder) that contains a `setting
 | `method` | How a global file is deployed. `"copy"` (the default): the file is **copied**, and *configfile* keeps the copy up to date with the repository while keeping the changes made on this machine (see [Global files](#global-files)). `"link"`: the file is a **symbolic link** to *configfile*'s copy of the repository, so whatever writes to it writes there ([Changes made through links](/concepts/how-it-works/#changes-made-through-links)). Local files are always copied: `"link"` is an error for them. Copies follow the symbolic links of the source, so they never point into the repository. |
 | `when` | The machines the file is for, in addition to its module's `when`: see [Deploy on some machines only](#deploy-on-some-machines-only). |
 
-An entry without `deploy` is not deployed, and `modules deploy` warns about it. The `"global": true | false` key of *configfile* 1.x, and a `settings.json` that is a plain list (the format of *configfile* 0.3), are no longer read: [Upgrading from 1.x](/guides/upgrading-from-1/#settings-20-no-longer-reads) says how to update them.
+An entry without `deploy` is not deployed, and `modules deploy` warns about it. The `"global": true | false` key of *configfile* 1.x, and settings that are a plain list (the format of *configfile* 0.3), are no longer read: [Upgrading from 1.x](/guides/upgrading-from-1/#settings-20-no-longer-reads) says how to update them.
 
 When a global file is deployed and something else already exists at its target (a file, a folder or another link), it is moved to `<target>.old` (or `<target>.old.1`, …). A copy or a link already in place is left as is, so deploying twice is safe.
 
@@ -91,7 +91,7 @@ When a local file already exists and differs from the one in the repository, *co
 
 When an entry leaves the repository (removed, set to `"deploy": "none"`, given another `target_path`, or its module deleted), what *configfile* deployed for it stays in place until it is undeployed: `modules status` lists these files, `update` warns about them, and `modules undeploy --removed` (or `--all`) removes them and restores the files they replaced. Local copies are handled from the folder they were copied into, like `modules deploy --local`. A removed file that *configfile* cannot remove safely (replaced by your own file, a modified copy, a local copy whose source is gone) is left where it is, and *configfile* stops tracking it.
 
-To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose `settings.json` cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
+To stay safe, *configfile* never undeploys a file when it cannot tell whether the repository still deploys it: files of a module whose settings cannot be used or has invalid entries, of a module folder that is not usable (a broken symbolic link, a name another folder uses), and entries without a deployment strategy. `modules status` lists them separately. Links deployed by 0.3 and not deployed again since were not recorded, so they are not found either.
 
 `modules deploy` and `modules undeploy` change files one at a time across processes: while one runs, another one (except a dry run) waits for it, saying `Waiting for another configfile (process N) to finish…`, up to 10 seconds, then stops with an error (the lock is `~/.configfile/lock`). Both take the lock for the files of each module in turn, and release it while a [script of the module](#run-scripts-when-a-module-is-deployed-or-undeployed) runs: another deployment can take its turn between two modules, and a deployment that cannot take the lock again stops there, saying which modules were left out. `update` and `init` take the same lock while they change configfile's copy of the repository or its configuration, so files are never deployed from a repository being synced. The modules and their settings are read when the deployment starts, before it takes the lock.
 
@@ -137,16 +137,35 @@ Each one is a script's name, as `configfile scripts list` shows it: here `script
 
 No script runs for the files the repository no longer deploys (`modules undeploy --removed`, or `--all`): their module or entry is gone, with its settings. With `--all`, they are undeployed after the modules; when a script stops the command before that, they are left in place, and the command says so.
 
+## Repository settings
+
+`configfile.repository.json`, at the root of the repository, holds the settings of the repository itself: they are the same on every machine, unlike `~/.configfilerc`, which describes this machine ([Configuration](/reference/configuration/)). The file is optional:
+
+```json title="configfile.repository.json"
+{
+  "$schema": "https://docs.configfile.sh/schemas/repository.json",
+  "module_settings": "settings.json"
+}
+```
+
+| Key | Description |
+| --- | --- |
+| `module_settings` | The name of the settings file of each module, in its folder: `configfile.module.json` by default. A plain `.json` file name, without a folder. |
+
+A key *configfile* doesn't know is an error, which names it: ignoring it could read the repository the wrong way, so a repository that uses a newer setting needs a newer *configfile*.
+
+The modules of *configfile* 1.x are described by `settings.json`. Rename those files (`git mv files/zsh/settings.json files/zsh/configfile.module.json`), or set `"module_settings": "settings.json"` to keep them: until then, such a module cannot be used, and *configfile* says how to fix it ([Upgrading from 1.x](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)).
+
 ## Completion and validation in your editor
 
-A [JSON Schema](https://docs.configfile.sh/schemas/settings.json) describes `settings.json`. Add it at the top of the file, and editors that support JSON Schema (VS Code, Zed, JetBrains IDEs, and others) suggest the keys and their values, show their descriptions, and flag mistakes as you type:
+A [JSON Schema](https://docs.configfile.sh/schemas/module.json) describes the settings of a module, and [another one](https://docs.configfile.sh/schemas/repository.json) describes `configfile.repository.json`. Add it at the top of the file, and editors that support JSON Schema (VS Code, Zed, JetBrains IDEs, and others) suggest the keys and their values, show their descriptions, and flag mistakes as you type:
 
 ```json
 {
-  "$schema": "https://docs.configfile.sh/schemas/settings.json",
+  "$schema": "https://docs.configfile.sh/schemas/module.json",
   "files": []
 }
 ```
 
-*configfile* ignores the `$schema` key. The schema checks the structure of the file; the rules about where paths may point are checked by *configfile* when it reads the module. It is also stricter, to catch typos: it flags keys *configfile* doesn't know (such as `target-path`), which *configfile* ignores.
+*configfile* ignores the `$schema` key. The address `https://docs.configfile.sh/schemas/settings.json`, used by *configfile* 1.x, serves the same schema. The schema checks the structure of the file; the rules about where paths may point are checked by *configfile* when it reads the module. It is also stricter, to catch typos: it flags keys *configfile* doesn't know (such as `target-path`), which *configfile* ignores.
 

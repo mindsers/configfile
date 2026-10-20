@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Breaking:** the settings of a module are read from `configfile.module.json` instead of
+  `settings.json`, so that a module can deploy an app's own `settings.json` (Zed, VS Code…) under
+  its real name. A module that still has `settings.json` cannot be used, and configfile says how
+  to rename it, or to keep the name with `configfile.repository.json`; see
+  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/#rename-the-settings-of-your-modules)
+  ([#299](https://github.com/mindsers/configfile/issues/299), thanks @geoggrigori).
 - **Breaking:** global files are copied into the home folder instead of linked, unless their
   entry sets `"method": "link"`. configfile records the repository's version each copy holds:
   `update` and `modules deploy` update a copy when the repository changed it and nothing
@@ -40,8 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
   no longer accepts either.
 ### Added
+- `configfile.repository.json`, at the root of the repository, holds the settings of the
+  repository itself, the same on every machine (`~/.configfilerc` describes this machine).
+  `"module_settings"` names the settings file of the modules. A key configfile doesn't know is
+  an error. JSON Schemas: `https://docs.configfile.sh/schemas/repository.json`, and
+  `https://docs.configfile.sh/schemas/module.json` for the settings of a module
+  ([#299](https://github.com/mindsers/configfile/issues/299)).
 - Modules and their files can be for some machines only, with `"when": { "os": "macos",
-  "profiles": "work" }` in `settings.json`. A machine's profiles are `"profiles"` in
+  "profiles": "work" }` in their settings. A machine's profiles are `"profiles"` in
   `~/.configfilerc`, set by `init --profile` or by `init`'s question. `modules deploy` skips
   what is not for this machine, scripts included, and still succeeds; `modules status` says why,
   and warns about a profile no module uses. `--os` and `--profile` on `modules status` and
@@ -52,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#302](https://github.com/mindsers/configfile/issues/302)).
 - `configfile modules adopt <path…> --module <name>` adds files or folders of this machine to a
   module: in your own working copy (given with `--into`, then remembered as `"working_copy"`),
-  it copies them into the module, adds their entries to its `settings.json`, commits, pushes,
+  it copies them into the module, adds their entries to its settings, commits, pushes,
   syncs, and keeps the files in place as configfile's copies. It refuses a working copy with
   uncommitted changes, and brings one that is behind up to date. `--no-push` stops after the
   commit ([#296](https://github.com/mindsers/configfile/issues/296)).

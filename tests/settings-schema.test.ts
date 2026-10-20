@@ -137,9 +137,15 @@ describe('settings.json schema', () => {
     )
     const documented = [...page.matchAll(/^\| `(\w+)` \|/gm)].map(match => match[1])
 
-    // The keys of an entry, and those of the file itself next to "files".
+    // The keys of an entry, those of the file itself next to "files", and those of the
+    // repository's settings.
     const { $schema, files, ...settings } = schema.properties
-    const described = [...Object.keys(schema.$defs.entry.properties), ...Object.keys(settings)]
+    const { $schema: _, ...repository } = repositorySchema.properties
+    const described = [
+      ...Object.keys(schema.$defs.entry.properties),
+      ...Object.keys(settings),
+      ...Object.keys(repository),
+    ]
 
     expect(described.sort()).toEqual(documented.sort())
   })

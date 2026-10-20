@@ -24,12 +24,22 @@ Until you deploy again, links keep working as in 1.x, and `update` reminds you o
 
 To bring a change made on this machine to your other machines, make it in your working copy, then commit and push: `update` then finds that the copy is the repository's version again.
 
+## Rename the settings of your modules
+
+*configfile* 2.0 reads the settings of a module from `configfile.module.json`, so that a module can deploy an app's own `settings.json`. In your working copy, rename the `settings.json` of each module, then commit and push:
+
+```sh
+for file in files/*/settings.json; do git mv "$file" "${file%settings.json}configfile.module.json"; done
+```
+
+To keep `settings.json` instead, add `configfile.repository.json` at the root of the repository, with `{ "module_settings": "settings.json" }` ([Repository settings](/reference/modules/#repository-settings)). Until you do either, *configfile* 2.0 says, for each module, how to fix it, and doesn't use it. Rename after upgrading every machine: *configfile* 1.x only reads `settings.json`.
+
 ## Settings 2.0 no longer reads
 
 Two older spellings, deprecated since 1.0, are gone. *configfile* says so, and leaves the files they describe as they are, until the settings are updated:
 
 - `"global": true` and `"global": false` in an entry: write `"deploy": "global"` and `"deploy": "local"` instead. An entry that still has `"global"` is invalid: it is not deployed, and the command fails.
-- A `settings.json` that is a plain list (the format of *configfile* 0.3): put the list in a `"files"` key, `{ "files": [ ... ] }`. Until then, the module cannot be used.
+- Settings that are a plain list (the format of *configfile* 0.3): put the list in a `"files"` key, `{ "files": [ ... ] }`. Until then, the module cannot be used.
 
 ## Keep a link
 

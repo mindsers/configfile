@@ -26,7 +26,7 @@ Scripts get these environment variables, in addition to *configfile*'s own envir
 | `CONFIGFILE_OS` | the system: `macos` or `linux`, as in the names of script versions |
 | `CONFIGFILE_PROFILES` | the profiles of this machine (`"profiles"` in `~/.configfilerc`), separated by commas: `work,client`, or empty |
 
-A module can name scripts to run each time it is deployed or undeployed, with [`pre_deploy`, `post_deploy`, `pre_undeploy` and `post_undeploy`](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) in its `settings.json`. [Run scripts when a module is deployed](/guides/module-scripts/) shows how. Their exit code is not forwarded: when one fails, `modules deploy` or `modules undeploy` exits with `1`. Such a script gets no arguments, and three more variables:
+A module can name scripts to run each time it is deployed or undeployed, with [`pre_deploy`, `post_deploy`, `pre_undeploy` and `post_undeploy`](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) in its `configfile.module.json`. [Run scripts when a module is deployed](/guides/module-scripts/) shows how. Their exit code is not forwarded: when one fails, `modules deploy` or `modules undeploy` exits with `1`. Such a script gets no arguments, and three more variables:
 
 | Variable | Value |
 | --- | --- |
