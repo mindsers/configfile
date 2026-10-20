@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { isAncestor, repositoryKey } from '../src/working-copy.ts'
 
 import {
+  createMirror,
   createRemote,
   createSandbox,
   createWorkingCopy,
@@ -789,6 +790,119 @@ describe('repository settings, end to end', () => {
 
     expect(result.code).toBe(0)
     expect(result.stdout).toContain(`Pushed main from ${work} to origin.`)
+    expect(result.stderr).not.toContain("is not the repository's version")
+    expect(await isRecordedCopy(sandbox, zshrc)).toBe(false)
+  })
+})
+
+describe('upgrading a repository of configfile 1.x', () => {
+  /** A mirror with module zsh deployed as a copy, then the remote back to settings.json. */
+  async function deployedThenRenamedBack() {
+    const sandbox = await createSandbox()
+    const { remote, commitInRemote } = await createMirror(sandbox)
+    const entry = { source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }
+    await commitInRemote('files/zsh/zshrc', 'zshrc')
+    await commitInRemote('files/zsh/configfile.module.json', JSON.stringify({ files: [entry] }))
+    await runCli(sandbox, ['update'])
+    await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+    git(remote, 'mv', 'files/zsh/configfile.module.json', 'files/zsh/settings.json')
+    git(remote, 'commit', '--quiet', '-m', 'back to 1.x')
+    return { sandbox, remote, commitInRemote, zshrc: path.join(sandbox.home, '.zshrc') }
+  }
+
+  it('leaves the deployed files alone until the settings are renamed or declared', async () => {
+    const { sandbox, commitInRemote, zshrc } = await deployedThenRenamedBack()
+
+    const updated = await runCli(sandbox, ['update'])
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const undeployed = await runCli(sandbox, ['modules', 'undeploy', '--removed'])
+
+    expect(updated.code).toBe(0)
+    expect(updated.stderr).toContain(
+      `${zshrc} was not updated: module "zsh" cannot be used: it has settings.json, but this ` +
+        "repository's modules are described by configfile.module.json: rename it " +
+        '("git mv files/zsh/settings.json files/zsh/configfile.module.json" in your working copy)',
+    )
+    expect(status.stdout).toContain(
+      `Deployed, but configfile cannot tell whether the repository still deploys them:\n  ${zshrc}`,
+    )
+    expect(undeployed.stderr).toContain(`${zshrc} was not checked`)
+    expect(await readFile(zshrc, 'utf8')).toBe('zshrc')
+    expect(await isRecordedCopy(sandbox, zshrc)).toBe(true)
+
+    await commitInRemote('configfile.repository.json', '{ "module_settings": "settings.json" }')
+    const declared = await runCli(sandbox, ['update'])
+    const clean = await runCli(sandbox, ['modules', 'status'])
+
+    expect(declared.stderr).toBe('')
+    expect(clean.stdout).toContain(`zsh:\n  ${zshrc} (copied)`)
+    expect(clean.stdout).not.toContain('cannot tell')
+  })
+
+  it('says when a module folder has no settings it can read', async () => {
+    const { sandbox, remote, zshrc } = await deployedThenRenamedBack()
+    // An app's own settings.json in place of the module's settings.
+    await sandbox.write('remote/files/zsh/settings.json', '{ "theme": "dark" }')
+    git(remote, 'commit', '--quiet', '-am', 'only the app settings')
+
+    const updated = await runCli(sandbox, ['update'])
+
+    expect(updated.code).toBe(0)
+    expect(updated.stderr).toContain(
+      `${path.join(sandbox.repo, 'files/zsh/settings.json')} is not read: this repository's ` +
+        'modules are described by configfile.module.json.',
+    )
+    expect(updated.stderr).toContain(
+      `${zshrc} was not updated: files/zsh is in the repository but is not a usable module.`,
+    )
+
+    git(remote, 'rm', '--quiet', '-r', 'files/zsh')
+    git(remote, 'commit', '--quiet', '-m', 'no more zsh')
+    const removed = await runCli(sandbox, ['update'])
+    expect(removed.stderr).not.toContain('was not updated')
+  })
+})
+
+describe('adopt and the settings of the modules', () => {
+  it('says why an existing folder is not a module', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    await sandbox.write('work/files/zsh/settings.json', '{')
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'broken')
+    await sandbox.write('home/.zshrc', 'zshrc')
+
+    const result = await runCli(sandbox, ['modules', 'adopt', '~/.zshrc', '-m', 'zsh'])
+
+    expect(result.stderr).toContain(
+      `${path.join(work, 'files/zsh')} exists and is not a module (it has no ` +
+        `configfile.module.json). ${path.join(work, 'files/zsh/settings.json')} is not read`,
+    )
+  })
+
+  it('keeps nothing new from a commit that only changes the name of the settings', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    await sandbox.write('work/configfile.repository.json', '{ "module_settings": "dot.json" }')
+    await sandbox.write('work/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'work/files/zsh/dot.json',
+      JSON.stringify({
+        files: [{ source_path: 'zshrc', target_path: '~/.zshrc', deploy: 'global' }],
+      }),
+    )
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'zsh, in dot.json')
+    git(work, 'push', '--quiet', 'origin', 'main')
+    const zshrc = await sandbox.write('home/.zshrc', 'mine')
+    await runCli(sandbox, ['update'])
+    git(work, 'rm', '--quiet', 'configfile.repository.json')
+    git(work, 'mv', 'files/zsh/dot.json', 'files/zsh/configfile.module.json')
+    git(work, 'commit', '--quiet', '-m', 'the default name')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
     expect(result.stderr).not.toContain("is not the repository's version")
     expect(await isRecordedCopy(sandbox, zshrc)).toBe(false)
   })

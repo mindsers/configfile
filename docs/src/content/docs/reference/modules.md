@@ -154,7 +154,7 @@ No script runs for the files the repository no longer deploys (`modules undeploy
 
 A key *configfile* doesn't know is an error, which names it: ignoring it could read the repository the wrong way, so a repository that uses a newer setting needs a newer *configfile*.
 
-The modules of *configfile* 1.x are described by `settings.json`. Rename those files (`git mv files/zsh/settings.json files/zsh/configfile.module.json`), or set `"module_settings": "settings.json"` to keep them: until then, *configfile* says how to fix each module whose `settings.json` it can read (valid JSON with a `"files"` list), and doesn't use it ([Upgrading from 1.x](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)).
+The modules of *configfile* 1.x are described by `settings.json`. Rename those files (`git mv files/zsh/settings.json files/zsh/configfile.module.json`), or set `"module_settings": "settings.json"` to keep them. Until then, *configfile* doesn't use them: for a `settings.json` with a `"files"` list (or the list of 0.3), it lists the module as unusable and says how to rename it; for any other one (invalid JSON, unreadable, or an app's own settings), it warns that the file is not read ([Upgrading from 1.x](/guides/upgrading-from-1/#rename-the-settings-of-your-modules)).
 
 ## Completion and validation in your editor
 

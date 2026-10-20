@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "$schema": {
-      "description": "The JSON Schema of this file, for editor completion and validation. configfile ignores it.",
+      "description": "The JSON Schema of this file, for editor completion and validation. configfile only checks that it is text.",
       "type": "string"
     },
     "module_settings": {

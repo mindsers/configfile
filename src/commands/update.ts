@@ -291,9 +291,10 @@ async function refreshCopies(
       refresh.waiting.push({ target, reason: `module "${module.name}" has invalid entries` })
     } else if (
       module == null &&
-      (await lstatOrNull(path.join(repository, deployed.entry.module)).catch(() => null)) != null
+      // A folder that cannot be checked is not proven gone, as in findRemovedFiles.
+      (await lstatOrNull(path.join(repository, deployed.entry.module)).catch(() => true)) != null
     ) {
-      // Its folder is there, without settings the repository can read (see the warnings above).
+      // Its folder is there, but no module was read from it (the warnings above say why, if any).
       refresh.waiting.push({
         target,
         reason: `${deployed.entry.module} is in the repository but is not a usable module`,

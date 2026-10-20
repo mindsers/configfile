@@ -6,7 +6,7 @@ import { errnoCode, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { git, gitOutput, gitResult } from './process.ts'
 import {
-  DEFAULT_MODULE_SETTINGS,
+  DEFAULT_REPOSITORY_SETTINGS,
   KNOWN_MODULE_SETTINGS,
   parseRepositorySettings,
   REPOSITORY_SETTINGS,
@@ -223,19 +223,25 @@ export async function addedCopyEntries(
 ): Promise<EntryKey[]> {
   const cwd = folder
   // Each commit names its own module settings file: one may have renamed them.
+  // A configfile.repository.json that git stores as a symbolic link reads as
+  // the path it points to: not valid JSON, so reported like any other error.
   const settingsAt = async (commit: string) => {
     const content = await gitOutput(['show', `${commit}:${REPOSITORY_SETTINGS}`], {
       cwd,
       allowFailure: true,
     })
-    return content == null
-      ? DEFAULT_MODULE_SETTINGS
-      : parseRepositorySettings(content, `${REPOSITORY_SETTINGS} at ${commit.slice(0, 7)}`)
-          .moduleSettings
+    const settings =
+      content == null
+        ? DEFAULT_REPOSITORY_SETTINGS
+        : parseRepositorySettings(content, `${REPOSITORY_SETTINGS} at ${commit.slice(0, 7)}`)
+    return settings.moduleSettings
   }
   const moduleSettings = await settingsAt(to)
-  // Settings it cannot read at the previous commit only make more entries look new.
-  const previousSettings = await settingsAt(from).catch(() => DEFAULT_MODULE_SETTINGS)
+  // Settings it cannot use at the previous commit only make more entries look new.
+  const previousSettings = await settingsAt(from).catch(error => {
+    if (!(error instanceof CliError)) throw error
+    return DEFAULT_REPOSITORY_SETTINGS.moduleSettings
+  })
   const changed = await gitOutput(
     ['diff', '--name-only', '--no-renames', '-z', from, to, '--', 'files'],
     {

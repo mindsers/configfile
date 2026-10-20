@@ -32,7 +32,7 @@ To bring a change made on this machine to your other machines, make it in your w
 for file in files/*/settings.json; do git mv "$file" "${file%settings.json}configfile.module.json"; done
 ```
 
-To keep `settings.json` instead, add `configfile.repository.json` at the root of the repository, with `{ "module_settings": "settings.json" }` ([Repository settings](/reference/modules/#repository-settings)). Until you do either, *configfile* 2.0 says how to fix each module whose `settings.json` it can read, and doesn't use it. For a module folder that is a symbolic link, rename the file where the link points. Rename after upgrading every machine: *configfile* 1.x only reads `settings.json`.
+To keep `settings.json` instead, add `configfile.repository.json` at the root of the repository, with `{ "module_settings": "settings.json" }` ([Repository settings](/reference/modules/#repository-settings)). Until you do either, *configfile* 2.0 doesn't use them: it says how to rename each `settings.json` that has a `"files"` list, and warns about any other one (invalid JSON, for example), which it cannot read. For a module folder that is a symbolic link, rename the file where the link points. Rename after upgrading every machine: *configfile* 1.x only reads `settings.json`.
 
 ## Settings 2.0 no longer reads
 

@@ -576,6 +576,7 @@ describe('init with repository settings it cannot use', () => {
 
     expect(result.code).toBe(0)
     expect(result.stderr).toContain('The modules cannot be read, to check the profiles:')
+    expect(result.stderr).not.toContain('No module is for profile')
     expect(JSON.parse(await readFile(home(sandbox, '.configfilerc'), 'utf8')).profiles).toEqual([
       'work',
     ])

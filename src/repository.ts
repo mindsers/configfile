@@ -188,16 +188,28 @@ export const DEFAULT_MODULE_SETTINGS = 'configfile.module.json'
 /** The settings file of each module in configfile 1.x. */
 const LEGACY_MODULE_SETTINGS = 'settings.json'
 
+/** Every name configfile knows for the settings of a module: the default, and configfile 1.x's. */
+export const KNOWN_MODULE_SETTINGS: readonly string[] = [
+  DEFAULT_MODULE_SETTINGS,
+  LEGACY_MODULE_SETTINGS,
+]
+
 export interface RepositorySettings {
   /** The name of the settings file of each module (`module_settings`). */
   readonly moduleSettings: string
+}
+
+/** The settings of a repository without `configfile.repository.json`. */
+export const DEFAULT_REPOSITORY_SETTINGS: RepositorySettings = {
+  moduleSettings: DEFAULT_MODULE_SETTINGS,
 }
 
 const REPOSITORY_KEYS = ['$schema', 'module_settings']
 
 /**
  * Reads `configfile.repository.json`, at the root of the repository, or
- * gives the defaults without it. Fails on a key configfile doesn't know:
+ * gives the defaults when it is missing (a broken symbolic link is an
+ * error). Fails on a key configfile doesn't know:
  * ignoring it could read the repository the wrong way.
  */
 export async function readRepositorySettings(folder: string): Promise<RepositorySettings> {
@@ -209,10 +221,10 @@ export async function readRepositorySettings(folder: string): Promise<Repository
     // A repository that is missing, or not a folder, is said so when its modules are read.
     if (['ENOENT', 'ENOTDIR'].includes(errorCode(error))) {
       // A symbolic link to nothing is a mistake: the defaults could misread the repository.
-      if ((await lstat(file).catch(() => null))?.isSymbolicLink()) {
+      if (await isBrokenLink(file)) {
         throw new CliError(`${file} is a broken symbolic link.`)
       }
-      return { moduleSettings: DEFAULT_MODULE_SETTINGS }
+      return DEFAULT_REPOSITORY_SETTINGS
     }
     throw new CliError(`Cannot read ${file}: ${(error as Error).message}`, { cause: error })
   }
@@ -263,11 +275,18 @@ export function parseRepositorySettings(content: string, file: string): Reposito
 /**
  * Reads the modules of a dotfiles repository: every folder of `files/`
  * (symlinks to folders included) that contains the settings file its
- * repository names (`configfile.module.json` by default), and, as unusable,
- * those that only have the `settings.json` of configfile 1.x.
+ * repository names (`configfile.module.json` by default). Those whose
+ * settings are under another known name are unusable modules, with how to
+ * rename them; any other file under those names is skipped with a warning.
+ * A folder is never left out without a word when it has one of these files.
  */
-export async function listModules(folderPath: string, env: Environment): Promise<Module[]> {
-  const { moduleSettings } = await readRepositorySettings(folderPath)
+export async function listModules(
+  folderPath: string,
+  env: Environment,
+  /** The repository's settings, when the caller has read them already. */
+  settings?: RepositorySettings,
+): Promise<Module[]> {
+  const { moduleSettings } = settings ?? (await readRepositorySettings(folderPath))
   const filesDir = path.join(folderPath, 'files')
   const modules: Module[] = []
 
@@ -279,7 +298,11 @@ export async function listModules(folderPath: string, env: Environment): Promise
     if (!stats?.isDirectory()) continue
 
     const settingsPath = path.join(modulePath, moduleSettings)
-    const settingsStats = await stat(settingsPath).catch(errorCode)
+    let settingsStats = await stat(settingsPath).catch(errorCode)
+    // A link to nothing is not a missing file: it is said, as for other files.
+    if (settingsStats === 'ENOENT' && (await isBrokenLink(settingsPath))) {
+      settingsStats = 'a broken symbolic link'
+    }
     // Settings under another name: those of configfile 1.x, or the default
     // one when the repository names another. Said, never skipped without a word.
     const misplaced =
@@ -300,14 +323,18 @@ export async function listModules(folderPath: string, env: Environment): Promise
     const base = { name, path: modulePath, settingsFile: moduleSettings }
 
     if (misplaced?.kind === 'module') {
-      const from = path.join('files', entry.name, misplaced.file)
-      const to = path.join('files', entry.name, moduleSettings)
+      const folder = path.join('files', entry.name)
+      // git cannot rename a file through a link: it is renamed where the link points.
+      const rename = entry.isSymbolicLink()
+        ? `rename it to ${moduleSettings} where ${folder} links to`
+        : `rename it ("git mv ${shellQuote(path.join(folder, misplaced.file))} ` +
+          `${shellQuote(path.join(folder, moduleSettings))}" in your working copy)`
       modules.push({
         ...base,
         error:
           `it has ${misplaced.file}, but this repository's modules are described by ` +
-          `${moduleSettings}: rename it ("git mv ${from} ${to}" in your working copy), or set ` +
-          `"module_settings": "${misplaced.file}" in ${REPOSITORY_SETTINGS}`,
+          `${moduleSettings}: ${rename}, or set "module_settings": "${misplaced.file}" in ` +
+          REPOSITORY_SETTINGS,
       })
       continue
     }
@@ -318,35 +345,43 @@ export async function listModules(folderPath: string, env: Environment): Promise
 
     modules.push({
       ...base,
-      ...(await readModuleFiles(modulePath, settingsPath, folderPath, env)),
+      ...(await readModuleFiles(modulePath, moduleSettings, folderPath, env)),
     })
   }
 
   return modules
 }
 
-/** The names a module's settings may have instead: configfile 1.x's, and the default. */
-export const KNOWN_MODULE_SETTINGS = [DEFAULT_MODULE_SETTINGS, LEGACY_MODULE_SETTINGS]
+/**
+ * A file under another known name than the repository's for the settings of
+ * a module: `module` when it is a module's settings (a JSON object with a
+ * `"files"` list, or the list of configfile 0.3), `other` with why it is not
+ * one (an app's own `settings.json`, or a file that cannot be read).
+ */
+type MisplacedSettings =
+  | { readonly file: string; readonly kind: 'module' }
+  | { readonly file: string; readonly kind: 'other'; readonly problem: string }
 
 /**
- * Settings of the module under another known name than the repository's:
- * `module` when the file is a module's settings (a JSON object with a
- * `"files"` list, or the list of configfile 0.3), `other` with why it is
- * not one (an app's own `settings.json`, or settings that cannot be read).
+ * The settings of a module under another known name, or `null` when there
+ * are none. A module's settings win over a file that is not one.
  */
 async function findMisplacedSettings(
   folder: string,
   moduleSettings: string,
-): Promise<
-  { file: string; kind: 'module' } | { file: string; kind: 'other'; problem: string } | null
-> {
-  let other: { file: string; kind: 'other'; problem: string } | null = null
+): Promise<MisplacedSettings | null> {
+  let other: MisplacedSettings | null = null
   for (const file of KNOWN_MODULE_SETTINGS.filter(name => name !== moduleSettings)) {
     let content: unknown
     try {
       content = JSON.parse(await readFile(path.join(folder, file), 'utf8'))
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') continue
+      if (errorCode(error) === 'ENOENT') {
+        if (await isBrokenLink(path.join(folder, file))) {
+          other ??= { file, kind: 'other', problem: 'it is a broken symbolic link' }
+        }
+        continue
+      }
       other ??= {
         file,
         kind: 'other',
@@ -363,6 +398,15 @@ async function findMisplacedSettings(
     other ??= { file, kind: 'other', problem: 'it has no "files" list' }
   }
   return other
+}
+
+async function isBrokenLink(file: string): Promise<boolean> {
+  return (await lstat(file).catch(() => null))?.isSymbolicLink() === true
+}
+
+/** A path as a shell reads it: quoted when it holds anything but plain characters. */
+function shellQuote(value: string): string {
+  return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const
@@ -401,14 +445,13 @@ type ModuleContent = Exclude<Module, { error: string }>
 
 async function readModuleFiles(
   modulePath: string,
-  settingsPath: string,
+  fileName: string,
   repository: string,
   env: Environment,
 ): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
-  const fileName = path.basename(settingsPath)
   let settings: unknown
   try {
-    settings = JSON.parse(await readFile(settingsPath, 'utf8'))
+    settings = JSON.parse(await readFile(path.join(modulePath, fileName), 'utf8'))
   } catch (error) {
     return { error: `${fileName} is not valid JSON (${describeJsonError(error)})` }
   }

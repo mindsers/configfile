@@ -1,4 +1,4 @@
-import { chmod, mkdir, symlink } from 'node:fs/promises'
+import { chmod, mkdir, readFile, symlink } from 'node:fs/promises'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -509,6 +509,74 @@ describe('listModules', () => {
     await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', settings([]))
 
     await expect(modulesOf(sandbox)).rejects.toThrow(message)
+  })
+
+  it('quotes the rename hint for the shell, and says where to rename through a link', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/files/My Zsh.d/settings.json', settings([]))
+    await sandbox.write('elsewhere/git/settings.json', settings([]))
+    await symlink(path.join(sandbox.root, 'elsewhere/git'), path.join(sandbox.repo, 'files/git'))
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules.map(module => module.error)).toEqual([
+      expect.stringContaining('rename it to configfile.module.json where files/git links to,'),
+      expect.stringContaining(
+        `"git mv 'files/My Zsh.d/settings.json' 'files/My Zsh.d/configfile.module.json'"`,
+      ),
+    ])
+  })
+
+  it('says when the settings of a module, or a file under another name, are a broken link', async () => {
+    const sandbox = await createSandbox()
+    await mkdir(path.join(sandbox.repo, 'files/zsh'), { recursive: true })
+    await symlink(
+      path.join(sandbox.root, 'nowhere.json'),
+      path.join(sandbox.repo, 'files/zsh/configfile.module.json'),
+    )
+    await mkdir(path.join(sandbox.repo, 'files/old'), { recursive: true })
+    await symlink(
+      path.join(sandbox.root, 'nowhere.json'),
+      path.join(sandbox.repo, 'files/old/settings.json'),
+    )
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules.map(module => [module.name, module.error])).toEqual([
+      ['zsh', 'configfile.module.json cannot be read (a broken symbolic link)'],
+    ])
+    expect(warnings).toEqual([
+      expect.stringContaining('fix it (it is a broken symbolic link), then rename it'),
+    ])
+  })
+
+  it('prefers the settings of a module among the other names, when the repository names its own', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write(
+      'home/dotfiles/configfile.repository.json',
+      JSON.stringify({ module_settings: 'dot.json' }),
+    )
+    await sandbox.write('home/dotfiles/files/zsh/configfile.module.json', '{')
+    await sandbox.write('home/dotfiles/files/zsh/settings.json', settings([]))
+
+    const { modules, warnings } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toContain(
+      "it has settings.json, but this repository's modules are described by dot.json",
+    )
+    expect(warnings).toEqual([])
+  })
+
+  it('names its own version when the repository settings have a key it does not know', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write('home/dotfiles/configfile.repository.json', '{ "hooks": {} }')
+    const { version } = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+
+    await expect(modulesOf(sandbox)).rejects.toThrow(
+      `has "hooks", which configfile ${version} doesn't know`,
+    )
   })
 
   it('returns nothing when files/ does not exist', async () => {
