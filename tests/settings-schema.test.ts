@@ -1,5 +1,5 @@
 // The JSON Schemas of a module's settings (docs/public/schemas/module.json, served at
-// https://docs.configfile.sh/schemas/module.json; settings.json is the same, for the
+// https://docs.configfile.sh/schemas/module.json; settings.json is the same except for its $id, for the
 // "$schema" of configfile 1.x) and of configfile.repository.json must accept what
 // configfile accepts and refuse what it refuses: each example below goes through both.
 

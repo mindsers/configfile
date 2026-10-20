@@ -579,6 +579,26 @@ describe('listModules', () => {
     )
   })
 
+  it('quotes an apostrophe in the rename hint', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.write("home/dotfiles/files/Bob's zsh/settings.json", settings([]))
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toContain(
+      `"git mv 'files/Bob'\\''s zsh/settings.json' 'files/Bob'\\''s zsh/configfile.module.json'"`,
+    )
+  })
+
+  it('says when the settings of a module cannot be read, apart from invalid JSON', async () => {
+    const sandbox = await createSandbox()
+    await mkdir(path.join(sandbox.repo, 'files/zsh/configfile.module.json'), { recursive: true })
+
+    const { modules } = await modulesOf(sandbox)
+
+    expect(modules[0]?.error).toBe('configfile.module.json cannot be read (EISDIR)')
+  })
+
   it('returns nothing when files/ does not exist', async () => {
     const sandbox = await createSandbox()
     await sandbox.write('home/dotfiles/README.md')

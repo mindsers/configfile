@@ -853,7 +853,7 @@ describe('upgrading a repository of configfile 1.x', () => {
         'modules are described by configfile.module.json.',
     )
     expect(updated.stderr).toContain(
-      `${zshrc} was not updated: files/zsh is in the repository but is not a usable module.`,
+      `${zshrc} was not updated: files/zsh is in the repository, or cannot be checked, but is not a usable module.`,
     )
 
     git(remote, 'rm', '--quiet', '-r', 'files/zsh')
@@ -878,6 +878,56 @@ describe('adopt and the settings of the modules', () => {
       `${path.join(work, 'files/zsh')} exists and is not a module (it has no ` +
         `configfile.module.json). ${path.join(work, 'files/zsh/settings.json')} is not read`,
     )
+  })
+
+  it('says when the folder of the module is a broken symbolic link', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    await symlink(path.join(sandbox.root, 'nowhere'), path.join(work, 'files/zsh'))
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'a link to a repository not cloned here')
+    await sandbox.write('home/.zshrc', 'zshrc')
+
+    const result = await runCli(sandbox, ['modules', 'adopt', '~/.zshrc', '-m', 'zsh'])
+
+    expect(result.stderr).toContain(
+      `exists and is not a module (it has no configfile.module.json). ` +
+        `${path.join(work, 'files/zsh')} is a broken symbolic link. It is ignored.`,
+    )
+  })
+
+  it('keeps what a commit adds after settings it cannot use, taking them for the defaults', async () => {
+    const { sandbox, work } = await setUp()
+    await sandbox.configure({ working_copy: work })
+    const entry = (name: string) => ({
+      source_path: name,
+      target_path: `~/.${name}`,
+      deploy: 'global',
+    })
+    await sandbox.write('work/configfile.repository.json', '{ "future": true }')
+    await sandbox.write('work/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'work/files/zsh/configfile.module.json',
+      JSON.stringify({ files: [entry('zshrc')] }),
+    )
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'settings of a newer configfile')
+    git(work, 'push', '--quiet', 'origin', 'main')
+    await runCli(sandbox, ['update'])
+    const zprofile = await sandbox.write('home/.zprofile', 'zprofile')
+    git(work, 'rm', '--quiet', 'configfile.repository.json')
+    await sandbox.write('work/files/zsh/zprofile', 'zprofile')
+    await sandbox.write(
+      'work/files/zsh/configfile.module.json',
+      JSON.stringify({ files: [entry('zshrc'), entry('zprofile')] }),
+    )
+    git(work, 'add', '.')
+    git(work, 'commit', '--quiet', '-m', 'zprofile')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.stderr).not.toContain('Cannot tell which files')
+    expect(result.stdout).toContain(`- ${zprofile} (configfile's copy now)`)
   })
 
   it('keeps nothing new from a commit that only changes the name of the settings', async () => {

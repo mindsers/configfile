@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `settings.json`, so that a module can deploy an app's own `settings.json` (Zed, VS Code…) under
   its real name. A module that still has `settings.json` cannot be used: configfile says how
   to rename it, or to keep the name with `configfile.repository.json`, and warns about a
-  `settings.json` it cannot read; see
+  `settings.json` it doesn't use; see
   [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/#rename-the-settings-of-your-modules)
   ([#299](https://github.com/mindsers/configfile/issues/299), thanks @geoggrigori).
 - **Breaking:** global files are copied into the home folder instead of linked, unless their

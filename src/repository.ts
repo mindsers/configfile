@@ -103,6 +103,11 @@ type Environment = Pick<Context, 'home' | 'cwd'> & {
   warn(message: string): void
   /** What `"when"` is checked against; without it, entries with a condition are for no machine. */
   machine?: Machine
+  /**
+   * Told about each folder of `files/` left out with a warning, and the
+   * warning: for callers that say why a given folder is not a module.
+   */
+  skipped?(folder: string, warning: string): void
 }
 
 /**
@@ -278,7 +283,8 @@ export function parseRepositorySettings(content: string, file: string): Reposito
  * repository names (`configfile.module.json` by default). Those whose
  * settings are under another known name are unusable modules, with how to
  * rename them; any other file under those names is skipped with a warning.
- * A folder is never left out without a word when it has one of these files.
+ * A folder whose name does not start with `.` is never left out without a
+ * word when it has one of these files.
  */
 export async function listModules(
   folderPath: string,
@@ -294,7 +300,11 @@ export async function listModules(
     if (entry.name.startsWith('.')) continue
 
     const modulePath = path.join(filesDir, entry.name)
-    const stats = await statEntry(entry, modulePath, env)
+    const skip = (warning: string) => {
+      env.warn(warning)
+      env.skipped?.(modulePath, warning)
+    }
+    const stats = await statEntry(entry, modulePath, { warn: skip })
     if (!stats?.isDirectory()) continue
 
     const settingsPath = path.join(modulePath, moduleSettings)
@@ -309,7 +319,7 @@ export async function listModules(
       settingsStats === 'ENOENT' ? await findMisplacedSettings(modulePath, moduleSettings) : null
     if (settingsStats === 'ENOENT' && misplaced?.kind !== 'module') {
       if (misplaced != null) {
-        env.warn(
+        skip(
           `${path.join(modulePath, misplaced.file)} is not read: this repository's modules are ` +
             `described by ${moduleSettings}. If it holds the settings of a module, fix it ` +
             `(${misplaced.problem}), then rename it to ${moduleSettings}.`,
@@ -363,8 +373,9 @@ type MisplacedSettings =
   | { readonly file: string; readonly kind: 'other'; readonly problem: string }
 
 /**
- * The settings of a module under another known name, or `null` when there
- * are none. A module's settings win over a file that is not one.
+ * The file under another known name, a module's settings or not, or `null`
+ * when the folder has none (a broken symbolic link counts as one). A
+ * module's settings win over a file that is not one.
  */
 async function findMisplacedSettings(
   folder: string,
@@ -400,6 +411,7 @@ async function findMisplacedSettings(
   return other
 }
 
+/** Called after ENOENT: a symbolic link there points to nothing. */
 async function isBrokenLink(file: string): Promise<boolean> {
   return (await lstat(file).catch(() => null))?.isSymbolicLink() === true
 }
@@ -449,9 +461,16 @@ async function readModuleFiles(
   repository: string,
   env: Environment,
 ): Promise<Omit<ModuleContent, keyof ModuleBase> | { error: string }> {
+  let content: string
+  try {
+    content = await readFile(path.join(modulePath, fileName), 'utf8')
+  } catch (error) {
+    // It exists (see listModules): a folder of that name, or no permission.
+    return { error: `${fileName} cannot be read (${errorCode(error)})` }
+  }
   let settings: unknown
   try {
-    settings = JSON.parse(await readFile(path.join(modulePath, fileName), 'utf8'))
+    settings = JSON.parse(content)
   } catch (error) {
     return { error: `${fileName} is not valid JSON (${describeJsonError(error)})` }
   }

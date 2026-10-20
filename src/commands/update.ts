@@ -294,10 +294,11 @@ async function refreshCopies(
       // A folder that cannot be checked is not proven gone, as in findRemovedFiles.
       (await lstatOrNull(path.join(repository, deployed.entry.module)).catch(() => true)) != null
     ) {
-      // Its folder is there, but no module was read from it (the warnings above say why, if any).
+      // Its folder is there, or cannot be checked, but no module was read
+      // from it (the warnings above say why, if any).
       refresh.waiting.push({
         target,
-        reason: `${deployed.entry.module} is in the repository but is not a usable module`,
+        reason: `${deployed.entry.module} is in the repository, or cannot be checked, but is not a usable module`,
       })
     }
   }

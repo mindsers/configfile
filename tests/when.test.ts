@@ -582,3 +582,23 @@ describe('init with repository settings it cannot use', () => {
     ])
   })
 })
+
+describe('a module settings file the repository names', () => {
+  it('is named in the hint about entries without a deployment strategy', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write(
+      'home/dotfiles/configfile.repository.json',
+      '{ "module_settings": "dot.json" }',
+    )
+    await sandbox.write('home/dotfiles/files/zsh/zshrc', 'zshrc')
+    await sandbox.write(
+      'home/dotfiles/files/zsh/dot.json',
+      JSON.stringify({ files: [{ source_path: 'zshrc', target_path: '~/.zshrc' }] }),
+    )
+
+    const result = await runCli(sandbox, ['modules', 'deploy', 'zsh'])
+
+    expect(result.stderr).toContain('Set "deploy" to "global", "local" or "none" in dot.json.')
+  })
+})

@@ -296,12 +296,18 @@ async function findModule(
   machine: Machine,
 ): Promise<ModuleFolder> {
   const settings = await readRepositorySettings(copy.folder)
-  // Shown once, when the targets are checked (see `nameAdoptions`), unless
-  // they say why the module's folder cannot be used (below).
-  const warnings: string[] = []
+  // Warnings are shown once, when the targets are checked (see
+  // `nameAdoptions`); those about the module's own folder say, below, why it
+  // cannot be used.
+  const skipped = new Map<string, string[]>()
   const modules = await listModules(
     copy.folder,
-    { home: copy.folder, cwd: copy.folder, warn: message => warnings.push(message) },
+    {
+      home: copy.folder,
+      cwd: copy.folder,
+      warn: () => {},
+      skipped: (folder, warning) => skipped.set(folder, [...(skipped.get(folder) ?? []), warning]),
+    },
     settings,
   )
   const found = modules.find(module => module.name === name)
@@ -333,7 +339,7 @@ async function findModule(
   const modulePath = path.join(copy.folder, 'files', name)
   const { moduleSettings } = settings
   if ((await lstatOrNull(modulePath)) != null) {
-    const why = warnings.filter(warning => warning.startsWith(`${modulePath}${path.sep}`))
+    const why = skipped.get(modulePath) ?? []
     throw new CliError(
       `${modulePath} exists and is not a module (it has no ${moduleSettings}).` +
         why.map(warning => ` ${warning}`).join(''),
