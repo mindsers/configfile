@@ -152,6 +152,21 @@ export function knownProfiles(modules: readonly Module[]): string[] {
   return [...names].sort()
 }
 
+/** Where a script a setting names is: found, only made for other systems, or missing. */
+export function findScript(
+  name: string,
+  { scripts, otherSystems }: { scripts: readonly Script[]; otherSystems: readonly string[] },
+): Script | 'other-system' | 'missing' {
+  const script = scripts.find(candidate => candidate.name === name)
+  if (script != null) return script
+  return otherSystems.includes(name) ? 'other-system' : 'missing'
+}
+
+/** Why a script only made for other systems is not run: `no version for linux`. */
+export function noVersionFor(platform: NodeJS.Platform): string {
+  return `no version for ${systemName(platform)}`
+}
+
 /** The scripts, and the folder of the repository they come from. */
 export async function loadScripts(ctx: Context): Promise<{
   repository: string

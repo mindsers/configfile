@@ -165,10 +165,10 @@ Some steps belong to the whole repository, not to one module: installing what th
 }
 ```
 
-- `post_update` runs at the end of `configfile update`, only when the remote changed, and not after `modules adopt`, which also syncs. `update --no-hooks` skips it.
-- `post_init` runs at the end of every `configfile init`, a new clone or not, once the configuration and profiles are saved. It is the repository's code, maybe just cloned: in a terminal, `init` asks first; without one, it runs the script only with `--hooks` and otherwise says how to run it. `--no-hooks` never runs it.
+- `post_update` runs at the end of `configfile update`, only when the sync brought changes. `update --no-hooks` skips it. `modules adopt`, which also syncs, doesn't run it: when its sync also brought changes from other machines, it says to run the script.
+- `post_init` runs at the end of each `configfile init` that saves the configuration, a new clone or not, once the configuration and profiles are saved. It is the repository's code, maybe just cloned: in a terminal, `init` asks first; without one, it runs the script only with `--hooks` and otherwise says how to run it. `--no-hooks` never runs it.
 
-They run like [module scripts](#run-scripts-when-a-module-is-deployed-or-undeployed): versions for each system, `CONFIGFILE_HOOK` set to `post_update` or `post_init`, recorded in the history. They run once *configfile* is done with its own files, so they can run *configfile* themselves (`configfile modules deploy --all`). A script that doesn't exist or fails makes the command fail, after saying what it already did. `modules status` lists them.
+They run like [module scripts](#run-scripts-when-a-module-is-deployed-or-undeployed): versions for each system, `CONFIGFILE_HOOK` set to `post_update` or `post_init`, recorded in the history. They run once *configfile* is done with its own files, so they can run *configfile* themselves (`configfile modules deploy --all`). A script that doesn't exist, cannot start or fails, and a `configfile.repository.json` that cannot be read, make the command fail, after saying what it already did. `modules status`, without module names, lists them.
 
 A key *configfile* doesn't know is an error, which names it: ignoring it could read the repository the wrong way, so a repository that uses a newer setting needs a newer *configfile*.
 

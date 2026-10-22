@@ -55,11 +55,11 @@ files/            one folder per module
     git/
         configfile.module.json
         gitconfig
-scripts/          scripts, run with configfile scripts run <name>, or when a module is deployed
+scripts/          scripts, run with configfile scripts run <name>, when a module is deployed, or after update and init
     setup.sh
 ```
 
-A **module** is a folder of `files/` that groups the configuration of one tool. Its `configfile.module.json` lists the module's files: each **entry** names a file of the module, where it goes, and how it's deployed. Scripts in `scripts/` do what files alone can't, such as installing tools: you run them yourself, or a module names the ones to [run when it is deployed or undeployed](/guides/module-scripts/). The [modules](/reference/modules/) and [scripts](/reference/scripts/) references describe both folders in detail, and [Your first dotfiles repository](/getting-started/tutorial/) builds one step by step.
+A **module** is a folder of `files/` that groups the configuration of one tool. Its `configfile.module.json` lists the module's files: each **entry** names a file of the module, where it goes, and how it's deployed. Scripts in `scripts/` do what files alone can't, such as installing tools: you run them yourself, a module names the ones to [run when it is deployed or undeployed](/guides/module-scripts/), or the repository names the ones to [run after `update` and `init`](/reference/modules/#run-scripts-after-update-and-init). The [modules](/reference/modules/) and [scripts](/reference/scripts/) references describe both folders in detail, and [Your first dotfiles repository](/getting-started/tutorial/) builds one step by step.
 
 ## How files are deployed
 

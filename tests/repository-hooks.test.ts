@@ -71,13 +71,14 @@ describe('post_update', () => {
       'The post_update script of the repository, "brew", exited with code 3.',
     )
     expect(failed.stderr).toContain(
-      'The repository is synced, but its post_update script did not run to the end: once ' +
-        'fixed, run it with "configfile scripts run brew".',
+      'The repository is synced, but the post_update script of the repository, "brew", exited ' +
+        'with code 3: once fixed, run it with "configfile scripts run brew".',
     )
     expect(existsSync(path.join(failing.sandbox.repo, 'scripts/brew.sh'))).toBe(true)
     expect(notFound.code).toBe(1)
     expect(notFound.stderr).toContain(
-      'The post_update script of the repository, "brew", is not in scripts/.',
+      'The post_update script of the repository, "brew", is not in scripts/ (run ' +
+        '"configfile scripts list" to see available scripts).',
     )
   })
 
@@ -149,7 +150,7 @@ describe('post_init', () => {
     const hooks = await init('--hooks', '--profile', 'work')
 
     expect(quiet.code).toBe(0)
-    expect(quiet.stdout).toContain(
+    expect(quiet.stderr).toContain(
       'The repository names a post_init script, "setup", not run without a terminal: run it ' +
         'with "configfile scripts run setup" when you want, or use "configfile init --hooks".',
     )
@@ -171,7 +172,7 @@ describe('post_init', () => {
     expect(result.code).toBe(1)
     expect(result.stderr).toContain(
       `configfile is configured (${path.join(sandbox.home, '.configfilerc')}), but the ` +
-        'post_init script of the repository did not run to the end',
+        'post_init script of the repository, "setup", exited with code 2',
     )
     expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(true)
   })
@@ -192,6 +193,124 @@ describe('modules status and the repository scripts', () => {
 
     expect(result.stdout).toContain(
       'Repository scripts: post_update "brew", post_init "setup" (not found in scripts/)',
+    )
+  })
+})
+
+describe('repository scripts, after the review', () => {
+  it('records a script skipped for other systems, and shows it in the history', async () => {
+    const { sandbox } = await withPostUpdate(RECORDING, 'scripts/brew.macos.sh')
+
+    await runCli(sandbox, ['update'])
+
+    // readHistory fails on a line it cannot read back.
+    expect((await readHistory(sandbox)).at(-1)?.changes).toContainEqual({
+      kind: 'script-skipped',
+      name: 'brew',
+      hook: 'post_update',
+      reason: 'no version for linux',
+    })
+    expect((await runCli(sandbox, ['history', '-n', '1'])).stdout).toContain(
+      'brew  (post_update of the repository: no version for linux)',
+    )
+  })
+
+  it('runs the scripts once configfile released its lock, so they can run configfile', async () => {
+    const check = `[ -e "$CONFIGFILE_REPO/../.configfile/lock" ] && exit 9\n${RECORDING}`
+    const { sandbox } = await withPostUpdate(check)
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(0)
+    expect(await ran(sandbox)).toBe('post_update \n')
+  })
+
+  it('fails update, once synced, when it cannot tell whether a post_update script is named', async () => {
+    const sandbox = await createSandbox()
+    const { commitInRemote } = await createMirror(sandbox)
+    await commitInRemote('configfile.repository.json', '{ "post_update": 1 }')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'The repository is synced, but whether it names a post_update script cannot be told: ' +
+        '"post_update" in',
+    )
+  })
+
+  it('fails when its script cannot be started, saying why', async () => {
+    const { sandbox } = await withPostUpdate('echo no shebang\n', 'scripts/brew')
+
+    const result = await runCli(sandbox, ['update'])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'The repository is synced, but the post_update script of the repository, "brew", cannot ' +
+        'be run: Script "brew" has no shebang line',
+    )
+  })
+
+  it('runs post_init without asking with --hooks, and records a skipped one', async () => {
+    const sandbox = await createSandbox()
+    const remote = await createRemote(sandbox)
+    await sandbox.write('remote/scripts/setup.sh', RECORDING)
+    await sandbox.write('remote/configfile.repository.json', '{ "post_init": "setup" }')
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', 'post_init')
+
+    const hooks = await runCli(sandbox, ['init', '--repo', remote, '--hooks'])
+    const declined = await runCli(sandbox, ['init', '--force', '--repo', remote], [false])
+
+    expect(hooks).toMatchObject({ code: 0, asked: [] })
+    expect(await ran(sandbox, '.configfile')).toBe('post_init \n')
+    expect(declined.code).toBe(0)
+    expect((await readHistory(sandbox)).at(-1)?.changes).toContainEqual({
+      kind: 'script-skipped',
+      name: 'setup',
+      hook: 'post_init',
+      reason: 'declined',
+    })
+  })
+
+  it('lists the scripts in status even without modules, with what it cannot check', async () => {
+    const sandbox = await createSandbox()
+    await sandbox.configure()
+    await sandbox.write('home/dotfiles/files/.gitkeep')
+    await sandbox.write('home/dotfiles/scripts/setup.macos.sh', RECORDING)
+    await sandbox.write('home/dotfiles/configfile.repository.json', '{ "post_init": "setup" }')
+    const unreadable = await createSandbox()
+    await unreadable.configure()
+    await unreadable.write('home/dotfiles/files/.gitkeep')
+    await unreadable.write('home/dotfiles/scripts', 'not a folder')
+    await unreadable.write('home/dotfiles/configfile.repository.json', '{ "post_update": "brew" }')
+
+    const status = await runCli(sandbox, ['modules', 'status'])
+    const unchecked = await runCli(unreadable, ['modules', 'status'])
+
+    expect(status.stdout).toContain(
+      'Repository scripts: post_init "setup" (no version for this system)',
+    )
+    expect(status.stdout).toContain('No module found.')
+    expect(unchecked.stdout).toContain('Repository scripts: post_update "brew" (cannot be checked:')
+  })
+
+  it('says after adopt when the sync brought changes the post_update script did not see', async () => {
+    const sandbox = await createSandbox()
+    const { work, commitInRemote } = await createWorkingCopy(sandbox)
+    await sandbox.configure({ working_copy: work })
+    await commitInRemote('scripts/brew.sh', RECORDING)
+    await commitInRemote('configfile.repository.json', '{ "post_update": "brew" }')
+    await runCli(sandbox, ['update'])
+    await commitInRemote('Brewfile', 'brew "git"')
+    await sandbox.write('home/.zshrc', 'zshrc')
+
+    const result = await runCli(sandbox, ['modules', 'adopt', '~/.zshrc', '-m', 'zsh'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain(
+      "The sync also brought changes from other machines, and the repository's post_update " +
+        'script was not run: run "configfile scripts run brew" if they need it.',
     )
   })
 })

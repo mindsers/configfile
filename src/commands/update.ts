@@ -21,7 +21,7 @@ import {
   type ModuleFile,
   readRepositorySettings,
 } from '../repository.ts'
-import { runRepositoryHook } from '../repository-hooks.ts'
+import { failedHook, runRepositoryHook } from '../repository-hooks.ts'
 import { DeploymentRecord } from '../state.ts'
 import { syncMirror } from '../sync.ts'
 import {
@@ -62,9 +62,9 @@ async function update({ hooks }: { hooks: boolean }, ctx: Context): Promise<void
   await ensureGit()
   // Before syncing, so that the mirror gets what the working copy commits.
   const copy = workingCopy == null ? null : await pushWorkingCopy(ctx, workingCopy, folderPath)
-  const { moved } = await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
+  const { before, after } = await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
   // After the lock: the script may run configfile itself.
-  if (hooks && moved) await runPostUpdate(ctx, folderPath)
+  if (hooks && before !== after) await runPostUpdate(ctx, folderPath)
 }
 
 /**
@@ -72,23 +72,22 @@ async function update({ hooks }: { hooks: boolean }, ctx: Context): Promise<void
  * Fails after saying so when the script does: the sync is done.
  */
 async function runPostUpdate(ctx: Context, folderPath: string): Promise<void> {
+  const done = 'The repository is synced'
   let name: string | undefined
   try {
     name = (await readRepositorySettings(folderPath)).hooks.post_update
   } catch (error) {
     if (!(error instanceof CliError)) throw error
-    ctx.output.warn(
-      `Cannot tell whether the repository names a post_update script: ${messageOf(error)}`,
+    // Failed, not only warned: the next update would not try again.
+    throw new CliError(
+      `${done}, but whether it names a post_update script cannot be told: ${messageOf(error)} ` +
+        'Once fixed, run that script with "configfile scripts run <name>".',
+      { cause: error },
     )
-    return
   }
   if (name == null) return
-  if (!(await runRepositoryHook('post_update', name, ctx))) {
-    throw new CliError(
-      `The repository is synced, but its post_update script did not run to the end: once fixed, ` +
-        `run it with "configfile scripts run ${name}".`,
-    )
-  }
+  const outcome = await runRepositoryHook('post_update', name, ctx)
+  if (!outcome.ok) throw failedHook(outcome, { done, hook: 'post_update', name })
 }
 
 /**
@@ -161,7 +160,7 @@ export async function syncAndRefresh(
   ctx: Context,
   folderPath: string,
   { workingCopy, deployHint = true }: { workingCopy: WorkingCopy | null; deployHint?: boolean },
-): Promise<Refresh & { moved: boolean }> {
+): Promise<{ before: string | null; after: string }> {
   const { output } = ctx
   // Deployments read the mirror, which the sync replaces: they never overlap.
   const { result, refreshed } = await withCommandLock(ctx, async () => {
@@ -204,7 +203,7 @@ export async function syncAndRefresh(
   } else if (refreshed.problem != null) {
     output.warn(`Cannot check for files the repository no longer deploys: ${refreshed.problem}`)
   }
-  return { ...refreshed, moved: result.before !== result.after }
+  return { before: result.before, after: result.after }
 }
 
 /** What following the repository did to the copies of global files. */

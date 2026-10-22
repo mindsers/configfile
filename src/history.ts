@@ -70,24 +70,16 @@ export type Change =
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
   /** `paths`: the files of the repository whose changes the patch holds (missing in older lines). */
   | { kind: 'saved-patch'; file: string; paths?: string[] }
-  /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
-  /** Without `module`, `hook` is a setting of the repository (`post_update`, `post_init`). */
-  | {
-      kind: 'script'
-      name: string
-      file: string
-      exitCode: number
-      hook?: Hook | RepositoryHook
-      module?: string
-    }
-  /** A script a module names was not run, without this being a failure. */
-  | {
-      kind: 'script-skipped'
-      name: string
-      hook: Hook | RepositoryHook
-      module?: string
-      reason: string
-    }
+  /**
+   * `hook` and `module`: the script ran as that setting (`pre_deploy`,
+   * `post_undeploy`…) of that module. Neither: run by `configfile scripts run`.
+   */
+  | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
+  /** The script ran as that setting of the repository (`post_update`, `post_init`). */
+  | { kind: 'script'; name: string; file: string; exitCode: number; hook: RepositoryHook }
+  /** A script a module or the repository names was not run, without this being a failure. */
+  | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
+  | { kind: 'script-skipped'; name: string; hook: RepositoryHook; reason: string }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }
   /** `modules adopt` committed the file into `source`, in the working copy. */
@@ -587,14 +579,18 @@ function isChange(value: unknown): value is Change {
       return (
         areStrings(value.name, value.file) &&
         Number.isInteger(value.exitCode) &&
-        (value.module === undefined || typeof value.module === 'string') &&
-        (value.hook === undefined || isHookName(value.hook))
+        // A module's setting with its module (or neither), the repository's without one.
+        (isRepositoryHook(value.hook)
+          ? value.module === undefined
+          : (value.hook === undefined || HOOKS.includes(value.hook as Hook)) &&
+            (value.module === undefined || typeof value.module === 'string'))
       )
     case 'script-skipped':
       return (
         areStrings(value.name, value.reason) &&
-        (value.module === undefined || typeof value.module === 'string') &&
-        isHookName(value.hook)
+        (isRepositoryHook(value.hook)
+          ? value.module === undefined
+          : HOOKS.includes(value.hook as Hook) && typeof value.module === 'string')
       )
     case 'cloned':
     case 'reused':
@@ -604,8 +600,8 @@ function isChange(value: unknown): value is Change {
   }
 }
 
-function isHookName(value: unknown): boolean {
-  return [...HOOKS, ...REPOSITORY_HOOKS].includes(value as Hook | RepositoryHook)
+function isRepositoryHook(value: unknown): value is RepositoryHook {
+  return REPOSITORY_HOOKS.includes(value as RepositoryHook)
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

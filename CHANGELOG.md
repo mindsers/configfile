@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"post_init"` in `configfile.repository.json`. `post_update` runs when `update` brought
   changes, unless `--no-hooks` is given. `post_init` runs at the end of `init`: in a terminal it
   asks first, and without one it runs only with `--hooks` (`--no-hooks` never runs it).
-  `modules status` lists them ([#317](https://github.com/mindsers/configfile/issues/317)).
+  `modules status`, without module names, lists them ([#317](https://github.com/mindsers/configfile/issues/317)).
 - `configfile.repository.json`, at the root of the repository, holds the settings of the
   repository itself, the same on every machine (`~/.configfilerc` describes this machine).
   `"module_settings"` names the settings file of the modules. A key configfile doesn't know is

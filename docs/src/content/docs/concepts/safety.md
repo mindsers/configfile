@@ -9,7 +9,7 @@ sidebar:
 
 ## Deploying a repository means trusting it
 
-The files of a repository end up in your shell's and your tools' configuration, and its scripts run on your machine with your permissions, including the scripts a module names, which `modules deploy` and `modules undeploy` run by themselves (`--dry-run` lists them, `--no-hooks` skips them). Treat deploying a dotfiles repository like running its code: only deploy repositories you trust, and read a shared one before using it.
+The files of a repository end up in your shell's and your tools' configuration, and its scripts run on your machine with your permissions, including the scripts a module names, which `modules deploy` and `modules undeploy` run by themselves (`--dry-run` lists them, `--no-hooks` skips them), and the scripts the repository names: `update` runs its `post_update` script by itself (`--no-hooks` skips it), and `init` asks before running its `post_init` script. Treat deploying a dotfiles repository like running its code: only deploy repositories you trust, and read a shared one before using it.
 
 ## A copy of what is replaced
 
@@ -33,7 +33,7 @@ Everything else stays: files it didn't create, even when they are identical to t
 
 ## What update changes in your home folder
 
-`update` syncs *configfile*'s copy of the repository, then updates the global copies the repository changed. It only rewrites or deletes files that are still what *configfile* copied: it never moves anything aside, never asks a question, never runs a module's scripts, and keeps the files changed on this machine and the conflicts as they are, saying so. Each file is written through a temporary file, so a tool never reads half of one, and a file written on this machine while `update` runs is kept.
+`update` syncs *configfile*'s copy of the repository, then updates the global copies the repository changed. It only rewrites or deletes files that are still what *configfile* copied: it never moves anything aside, never asks a question, never runs a module's scripts (only the repository's `post_update` script, once done), and keeps the files changed on this machine and the conflicts as they are, saying so. Each file is written through a temporary file, so a tool never reads half of one, and a file written on this machine while `update` runs is kept.
 
 ## When in doubt, nothing is removed
 

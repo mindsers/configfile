@@ -56,7 +56,7 @@ Links suit files that nothing but you rewrites, and files that must stay in the 
 - `modules status` says `copied` or `linked` for global files, instead of `deployed`, and lists the files of a copy that changed on this machine, in the repository, or on both sides.
 - `modules deploy` says `(copied)` or `(linked)`. A file changed both on this machine and in the repository is a conflict: `modules deploy` asks whether to replace it with the repository's version (yours is moved to `.old`); answering no keeps it. Without a terminal, it keeps it and the command fails; `--force` replaces it. `--force` also replaces the files changed on this machine.
 - `modules status` exits with 1 when it cannot check some files, after showing all of them.
-- `update` writes in your home folder: it updates *configfile*'s copies the repository changed, and nothing else. It never moves a file aside, asks a question or runs a module's scripts ([What update changes in your home folder](/concepts/safety/#what-update-changes-in-your-home-folder)).
+- `update` writes in your home folder: it updates *configfile*'s copies the repository changed, and nothing else. It never moves a file aside, asks a question or runs a module's scripts (a repository can name a `post_update` script, which it runs once done) ([What update changes in your home folder](/concepts/safety/#what-update-changes-in-your-home-folder)).
 - `modules undeploy` removes a copy only when it did not change on this machine. In a copied folder, it removes the files that did not change, and keeps the rest.
 - The history has `updated` lines for the files `update` and `modules deploy` updated, and `kept` lines for the files changed on this machine.
 
