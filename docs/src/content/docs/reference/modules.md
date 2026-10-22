@@ -151,6 +151,24 @@ No script runs for the files the repository no longer deploys (`modules undeploy
 | Key | Description |
 | --- | --- |
 | `module_settings` | The name of the settings file of each module, in its folder: `configfile.module.json` by default. A plain `.json` file name, without a folder, other than `configfile.repository.json`. |
+| `post_update` | A [script](/reference/scripts/) of the repository, run by `configfile update` once it has synced the repository, when the remote changed. See [Run scripts after update and init](#run-scripts-after-update-and-init). |
+| `post_init` | A script of the repository, run by `configfile init` once the configuration is saved. See [Run scripts after update and init](#run-scripts-after-update-and-init). |
+
+### Run scripts after update and init
+
+Some steps belong to the whole repository, not to one module: installing what the dotfiles need (`brew bundle`, `mise install`) after an `update` brings changes, or setting up a new machine after `init`. Name a script for them in `configfile.repository.json`:
+
+```json title="configfile.repository.json"
+{
+  "post_update": "packages",
+  "post_init": "setup"
+}
+```
+
+- `post_update` runs at the end of `configfile update`, only when the remote changed, and not after `modules adopt`, which also syncs. `update --no-hooks` skips it.
+- `post_init` runs at the end of every `configfile init`, a new clone or not, once the configuration and profiles are saved. It is the repository's code, maybe just cloned: in a terminal, `init` asks first; without one, it runs the script only with `--hooks` and otherwise says how to run it. `--no-hooks` never runs it.
+
+They run like [module scripts](#run-scripts-when-a-module-is-deployed-or-undeployed): versions for each system, `CONFIGFILE_HOOK` set to `post_update` or `post_init`, recorded in the history. They run once *configfile* is done with its own files, so they can run *configfile* themselves (`configfile modules deploy --all`). A script that doesn't exist or fails makes the command fail, after saying what it already did. `modules status` lists them.
 
 A key *configfile* doesn't know is an error, which names it: ignoring it could read the repository the wrong way, so a repository that uses a newer setting needs a newer *configfile*.
 

@@ -180,6 +180,7 @@ describe('configfile.repository.json schema', () => {
     ['a "$schema" key', { $schema: 'https://docs.configfile.sh/schemas/repository.json' }],
     ['the settings file of configfile 1.x', { module_settings: 'settings.json' }],
     ['another settings file', { module_settings: 'module.json' }],
+    ['scripts run after update and init', { post_update: 'brew', post_init: 'setup' }],
   ])('accepts %s, as configfile does', async (_, settings) => {
     expect(await configfileAcceptsRepository(settings)).toBe(true)
     expect(validateRepository(settings), JSON.stringify(validateRepository.errors)).toBe(true)
@@ -193,6 +194,8 @@ describe('configfile.repository.json schema', () => {
     ['its own name', { module_settings: 'configfile.repository.json' }],
     ['a name that is not a string', { module_settings: true }],
     ['no name', { module_settings: null }],
+    ['an empty post_init', { post_init: ' ' }],
+    ['a post_update that is not a string', { post_update: ['brew'] }],
     ['a "$schema" that is not a string', { $schema: 1 }],
     ['a list', []],
   ])('refuses %s, as configfile does', async (_, settings) => {

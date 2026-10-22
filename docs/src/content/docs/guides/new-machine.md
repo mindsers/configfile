@@ -86,7 +86,7 @@ configfile modules deploy --all
 configfile scripts run setup
 ```
 
-`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
+`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. If your repository names a [`post_init` script](/reference/modules/#run-scripts-after-update-and-init), add `--hooks` to `init` to run it without a terminal, instead of running it by hand. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
 
 ## Bring this machine's files into the repository
 

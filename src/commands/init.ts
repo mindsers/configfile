@@ -14,7 +14,8 @@ import { withCommandLock } from '../lock.ts'
 import { redactUrl } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
-import { knownProfiles, listModules } from '../repository.ts'
+import { knownProfiles, listModules, readRepositorySettings } from '../repository.ts'
+import { runRepositoryHook } from '../repository-hooks.ts'
 
 interface InitOptions {
   force?: boolean
@@ -22,6 +23,8 @@ interface InitOptions {
   folder?: string
   workingCopy?: string
   profile?: string[]
+  /** Run the post_init script without asking (`true`), never (`false`), or ask (unset). */
+  hooks?: boolean
 }
 
 export function registerInitCommand(program: Command, ctx: Context): void {
@@ -41,6 +44,8 @@ export function registerInitCommand(program: Command, ctx: Context): void {
       'a profile of this machine, which "when" conditions of the modules name (repeatable; skips the question)',
       (value: string, previous: string[] | undefined) => [...(previous ?? []), value],
     )
+    .option('--hooks', 'run the post_init script of the repository without asking')
+    .option('--no-hooks', 'do not run the post_init script of the repository')
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -124,7 +129,60 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   }
   const profiles = await chooseProfiles(options.profile, folderPath, store, ctx)
   if (profiles != null) await store.setProfiles(profiles)
+  // After the lock: the script may run configfile itself.
+  await runPostInit(options.hooks, folderPath, store, ctx)
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
+}
+
+/**
+ * Runs the post_init script the repository names. It is the repository's
+ * code, maybe cloned for the first time: asked first in a terminal, and run
+ * without one only with --hooks. Fails after saying so when the script does:
+ * the configuration is saved.
+ */
+async function runPostInit(
+  hooks: boolean | undefined,
+  folderPath: string,
+  store: ConfigStore,
+  ctx: Context,
+): Promise<void> {
+  if (hooks === false) return
+  let name: string | undefined
+  try {
+    name = (await readRepositorySettings(folderPath)).hooks.post_init
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error
+    ctx.output.warn(
+      `Cannot tell whether the repository names a post_init script: ${messageOf(error)}`,
+    )
+    return
+  }
+  if (name == null) return
+
+  const later = `run it with "configfile scripts run ${name}" when you want`
+  if (hooks !== true) {
+    if (!ctx.prompts.interactive) {
+      ctx.output.info(
+        `The repository names a post_init script, "${name}", not run without a terminal: ` +
+          `${later}, or use "configfile init --hooks".`,
+      )
+      return
+    }
+    const run = await ctx.prompts.confirm({
+      message: `Run "${name}", the post_init script of the repository?`,
+      default: true,
+    })
+    if (!run) {
+      ctx.output.info(`The post_init script was not run: ${later}.`)
+      return
+    }
+  }
+  if (!(await runRepositoryHook('post_init', name, ctx))) {
+    throw new CliError(
+      `configfile is configured (${store.path}), but the post_init script of the repository ` +
+        `did not run to the end: once fixed, run it with "configfile scripts run ${name}".`,
+    )
+  }
 }
 
 /**

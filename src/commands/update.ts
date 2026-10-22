@@ -15,7 +15,13 @@ import { plural } from '../output.ts'
 import { configfilePaths } from '../paths.ts'
 import { ensureGit } from '../process.ts'
 import { findRemovedFiles, type RecordedFile } from '../removed.ts'
-import { loadRepository, type Module, type ModuleFile } from '../repository.ts'
+import {
+  loadRepository,
+  type Module,
+  type ModuleFile,
+  readRepositorySettings,
+} from '../repository.ts'
+import { runRepositoryHook } from '../repository-hooks.ts'
 import { DeploymentRecord } from '../state.ts'
 import { syncMirror } from '../sync.ts'
 import {
@@ -35,10 +41,11 @@ export function registerUpdateCommand(program: Command, ctx: Context): void {
     .description(
       "sync configfile's copy of your dotfiles repository with the remote, and the global files copied from it",
     )
-    .action(() => update(ctx))
+    .option('--no-hooks', 'do not run the post_update script of the repository')
+    .action((options: { hooks: boolean }) => update(options, ctx))
 }
 
-async function update(ctx: Context): Promise<void> {
+async function update({ hooks }: { hooks: boolean }, ctx: Context): Promise<void> {
   const { folderPath, workingCopy } = await new ConfigStore(ctx.home, {
     warn: message => ctx.output.warn(message),
   }).read()
@@ -55,7 +62,33 @@ async function update(ctx: Context): Promise<void> {
   await ensureGit()
   // Before syncing, so that the mirror gets what the working copy commits.
   const copy = workingCopy == null ? null : await pushWorkingCopy(ctx, workingCopy, folderPath)
-  await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
+  const { moved } = await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
+  // After the lock: the script may run configfile itself.
+  if (hooks && moved) await runPostUpdate(ctx, folderPath)
+}
+
+/**
+ * Runs the post_update script the repository names, now that it is synced.
+ * Fails after saying so when the script does: the sync is done.
+ */
+async function runPostUpdate(ctx: Context, folderPath: string): Promise<void> {
+  let name: string | undefined
+  try {
+    name = (await readRepositorySettings(folderPath)).hooks.post_update
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error
+    ctx.output.warn(
+      `Cannot tell whether the repository names a post_update script: ${messageOf(error)}`,
+    )
+    return
+  }
+  if (name == null) return
+  if (!(await runRepositoryHook('post_update', name, ctx))) {
+    throw new CliError(
+      `The repository is synced, but its post_update script did not run to the end: once fixed, ` +
+        `run it with "configfile scripts run ${name}".`,
+    )
+  }
 }
 
 /**
@@ -128,7 +161,7 @@ export async function syncAndRefresh(
   ctx: Context,
   folderPath: string,
   { workingCopy, deployHint = true }: { workingCopy: WorkingCopy | null; deployHint?: boolean },
-): Promise<Refresh> {
+): Promise<Refresh & { moved: boolean }> {
   const { output } = ctx
   // Deployments read the mirror, which the sync replaces: they never overlap.
   const { result, refreshed } = await withCommandLock(ctx, async () => {
@@ -171,7 +204,7 @@ export async function syncAndRefresh(
   } else if (refreshed.problem != null) {
     output.warn(`Cannot check for files the repository no longer deploys: ${refreshed.problem}`)
   }
-  return refreshed
+  return { ...refreshed, moved: result.before !== result.after }
 }
 
 /** What following the repository did to the copies of global files. */

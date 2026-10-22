@@ -48,10 +48,13 @@ import {
   type Module,
   type ModuleFile,
   platformOf,
+  REPOSITORY_HOOKS,
+  readRepositorySettings,
   type Script,
   scriptEnvironment,
   systemName,
 } from '../repository.ts'
+import { findScript } from '../repository-hooks.ts'
 import { DeploymentRecord } from '../state.ts'
 import { registerAdoptCommand } from './adopt.ts'
 
@@ -400,6 +403,7 @@ async function status(names: string[], options: Options, given: Context): Promis
     }
   }
 
+  if (names.length === 0) await printRepositoryHooks(repo.repository, ctx)
   if (away.length > 0) {
     output.print(
       `Not for this machine: ${away.join(', ')} ("configfile modules status <module>" says why).`,
@@ -486,6 +490,35 @@ function reportMachine(
           : `the repository uses ${known.map(profile => `"${profile}"`).join(', ')}.`),
     )
   }
+}
+
+/**
+ * The scripts the repository runs after update and init, and whether they
+ * can run here, as for the scripts of the modules.
+ */
+async function printRepositoryHooks(repository: string, ctx: Context): Promise<void> {
+  // Read already, for the modules: it cannot fail here.
+  const { hooks } = await readRepositorySettings(repository)
+  const named = REPOSITORY_HOOKS.flatMap(hook => {
+    const name = hooks[hook]
+    return name == null ? [] : [{ hook, name }]
+  })
+  if (named.length === 0) return
+  const scripts = await loadScripts(ctx).catch(error => {
+    if (!(error instanceof CliError)) throw error
+    return null
+  })
+  const described = named.map(({ hook, name }) => {
+    const found = scripts == null ? null : findScript(name, scripts)
+    const note =
+      found === 'missing'
+        ? ' (not found in scripts/)'
+        : found === 'other-system'
+          ? ' (no version for this system)'
+          : ''
+    return `${hook} "${name}"${note}`
+  })
+  ctx.output.print(`Repository scripts: ${described.join(', ')}`)
 }
 
 /** What happened to a file of a linked source, seen from the mirror. */

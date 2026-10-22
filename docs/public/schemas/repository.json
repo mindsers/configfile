@@ -16,6 +16,16 @@
       "not": {
         "const": "configfile.repository.json"
       }
+    },
+    "post_update": {
+      "description": "The name of a script of the repository (as listed by configfile scripts list), run by configfile update once it has synced the repository, when the remote changed. configfile update --no-hooks skips it.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "post_init": {
+      "description": "The name of a script of the repository, run by configfile init once the repository is cloned (or reused) and the configuration saved. In a terminal, configfile init asks first; without one, it runs only with --hooks.",
+      "type": "string",
+      "pattern": "\\S"
     }
   },
   "additionalProperties": false

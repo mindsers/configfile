@@ -114,6 +114,7 @@ function describeRun(line: HistoryLine): string {
     for (const name of options.profile) words.push('--profile', String(name))
   }
   if (options.hooks === false) words.push('--no-hooks')
+  if (options.hooks === true) words.push('--hooks')
   if (options.push === false) words.push('--no-push')
   if (typeof options.argCount === 'number' && options.argCount > 0) {
     words.push(`(${plural(options.argCount, 'argument')})`)
@@ -183,12 +184,16 @@ function describeChange(change: Change): string {
       return line(
         'script',
         `${change.name}  exit ${change.exitCode}` +
-          (change.module == null ? '' : `  (${change.hook ?? 'hook'} of ${change.module})`),
+          (change.module != null
+            ? `  (${change.hook ?? 'hook'} of ${change.module})`
+            : change.hook != null
+              ? `  (${change.hook} of the repository)`
+              : ''),
       )
     case 'script-skipped':
       return line(
         'skipped',
-        `${change.name}  (${change.hook} of ${change.module}: ${change.reason})`,
+        `${change.name}  (${change.hook} of ${change.module ?? 'the repository'}: ${change.reason})`,
       )
     case 'cloned':
       return line('cloned', `${change.repository} into ${change.folder}`)

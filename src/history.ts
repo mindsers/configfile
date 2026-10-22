@@ -10,7 +10,7 @@ import { CliError, isPromptExit } from './errors.ts'
 import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { configfilePaths } from './paths.ts'
-import { HOOKS, type Hook } from './repository.ts'
+import { HOOKS, type Hook, REPOSITORY_HOOKS, type RepositoryHook } from './repository.ts'
 
 /** At most this many changes are written per run; the rest are counted. */
 const MAX_CHANGES = 1000
@@ -71,9 +71,23 @@ export type Change =
   /** `paths`: the files of the repository whose changes the patch holds (missing in older lines). */
   | { kind: 'saved-patch'; file: string; paths?: string[] }
   /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
-  | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
+  /** Without `module`, `hook` is a setting of the repository (`post_update`, `post_init`). */
+  | {
+      kind: 'script'
+      name: string
+      file: string
+      exitCode: number
+      hook?: Hook | RepositoryHook
+      module?: string
+    }
   /** A script a module names was not run, without this being a failure. */
-  | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
+  | {
+      kind: 'script-skipped'
+      name: string
+      hook: Hook | RepositoryHook
+      module?: string
+      reason: string
+    }
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
   | { kind: 'configured'; file: string }
   /** `modules adopt` committed the file into `source`, in the working copy. */
@@ -154,7 +168,7 @@ export function describeInvocation(action: Command): Invocation {
 
   switch (command) {
     case 'init':
-      copy('force', 'folder', 'workingCopy', 'profile')
+      copy('force', 'folder', 'workingCopy', 'profile', 'hooks')
       if (typeof given.repo === 'string') options.repo = redactUrl(given.repo)
       break
     case 'modules deploy':
@@ -169,6 +183,9 @@ export function describeInvocation(action: Command): Invocation {
       copy('module', 'dryRun', 'os', 'profile')
       options.paths = Array.isArray(args[0]) ? args[0].length : 0
       if (given.push === false) options.push = false
+      break
+    case 'update':
+      if (given.hooks === false) options.hooks = false
       break
     case 'scripts run':
       options.script = args[0]
@@ -571,11 +588,13 @@ function isChange(value: unknown): value is Change {
         areStrings(value.name, value.file) &&
         Number.isInteger(value.exitCode) &&
         (value.module === undefined || typeof value.module === 'string') &&
-        (value.hook === undefined || HOOKS.includes(value.hook as Hook))
+        (value.hook === undefined || isHookName(value.hook))
       )
     case 'script-skipped':
       return (
-        areStrings(value.name, value.module, value.reason) && HOOKS.includes(value.hook as Hook)
+        areStrings(value.name, value.reason) &&
+        (value.module === undefined || typeof value.module === 'string') &&
+        isHookName(value.hook)
       )
     case 'cloned':
     case 'reused':
@@ -583,6 +602,10 @@ function isChange(value: unknown): value is Change {
     default:
       return false
   }
+}
+
+function isHookName(value: unknown): boolean {
+  return [...HOOKS, ...REPOSITORY_HOOKS].includes(value as Hook | RepositoryHook)
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
