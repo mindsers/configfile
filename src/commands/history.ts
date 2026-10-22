@@ -4,6 +4,7 @@ import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
 import type { Change, HistoryLine, KeptReason } from '../history.ts'
 import { plural } from '../output.ts'
+import { REPOSITORY_HOOKS } from '../repository.ts'
 
 const DEFAULT_LIMIT = 20
 
@@ -114,6 +115,7 @@ function describeRun(line: HistoryLine): string {
     for (const name of options.profile) words.push('--profile', String(name))
   }
   if (options.hooks === false) words.push('--no-hooks')
+  if (options.hooks === true) words.push('--hooks')
   if (options.push === false) words.push('--no-push')
   if (typeof options.argCount === 'number' && options.argCount > 0) {
     words.push(`(${plural(options.argCount, 'argument')})`)
@@ -180,16 +182,11 @@ function describeChange(change: Change): string {
       return line('saved', `local changes to ${change.file}${paths}`)
     }
     case 'script':
-      return line(
-        'script',
-        `${change.name}  exit ${change.exitCode}` +
-          (change.module == null ? '' : `  (${change.hook ?? 'hook'} of ${change.module})`),
-      )
-    case 'script-skipped':
-      return line(
-        'skipped',
-        `${change.name}  (${change.hook} of ${change.module}: ${change.reason})`,
-      )
+      return line('script', `${change.name}  exit ${change.exitCode}${describeOwner(change)}`)
+    case 'script-skipped': {
+      const owner = 'module' in change ? change.module : 'the repository'
+      return line('skipped', `${change.name}  (${change.hook} of ${owner}: ${change.reason})`)
+    }
     case 'cloned':
       return line('cloned', `${change.repository} into ${change.folder}`)
     case 'reused':
@@ -209,6 +206,16 @@ function describeChange(change: Change): string {
     case 'recorded':
       return line('recorded', `${change.target}  (configfile's copy of ${change.source})`)
   }
+}
+
+/** `  (post_deploy of zsh)`, `  (post_update of the repository)`, or nothing for `scripts run`. */
+function describeOwner(change: Extract<Change, { kind: 'script' }>): string {
+  if ((REPOSITORY_HOOKS as readonly string[]).includes(change.hook ?? '')) {
+    return `  (${change.hook} of the repository)`
+  }
+  if ('module' in change && change.module != null)
+    return `  (${change.hook ?? 'hook'} of ${change.module})`
+  return ''
 }
 
 function short(commit: string | null): string {

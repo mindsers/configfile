@@ -175,8 +175,9 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
     return
   }
 
+  let pushed: Awaited<ReturnType<typeof push>>
   try {
-    const pushed = await push(copy)
+    pushed = await push(copy)
     if (pushed != null) {
       ctx.history.record({ kind: 'pushed', folder, branch: copy.branch, ...pushed })
     }
@@ -189,7 +190,25 @@ async function adopt(paths: string[], options: AdoptOptions, ctx: Context): Prom
   output.info(committed)
 
   // Says which files it could not keep as configfile's copies, and why.
-  await syncAndRefresh(ctx, config.folderPath, { workingCopy: copy, deployHint: false })
+  const { before } = await syncAndRefresh(ctx, config.folderPath, {
+    workingCopy: copy,
+    deployHint: false,
+  })
+  // The sync also brought commits of other machines (the working copy was
+  // brought up to date first): the next update will find nothing new, so
+  // their post_update script would never run. adopt doesn't run it: says so.
+  if (pushed?.from != null && before !== pushed.from) {
+    const name = await readRepositorySettings(config.folderPath).then(
+      settings => settings.hooks.post_update,
+      () => undefined,
+    )
+    if (name != null) {
+      output.warn(
+        `The sync also brought changes from other machines, and the repository's post_update ` +
+          `script was not run: run "configfile scripts run ${name}" if they need it.`,
+      )
+    }
+  }
 }
 
 /** Fails, listing them, when the working copy has changes that are not committed. */

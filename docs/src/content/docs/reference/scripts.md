@@ -33,3 +33,5 @@ A module can name scripts to run each time it is deployed or undeployed, with [`
 | `CONFIGFILE_HOOK` | the setting that named the script: `pre_deploy`, `post_deploy`, `pre_undeploy` or `post_undeploy` |
 | `CONFIGFILE_MODULE` | the name of the module being deployed or undeployed (`tmux`) |
 | `CONFIGFILE_DEPLOY` | `global` or `local` (with `--local`) |
+
+The repository can also name scripts to run after `update` and `init`, with [`post_update` and `post_init`](/reference/modules/#run-scripts-after-update-and-init) in `configfile.repository.json`. They get no arguments, and `CONFIGFILE_HOOK` set to `post_update` or `post_init`; a failure makes the command exit with `1`.

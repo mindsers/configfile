@@ -29,7 +29,7 @@ Avoid putting a token in the repository URL: *configfile* saves the URL in `~/.c
 configfile init
 ```
 
-*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When the repository's modules name profiles ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work` (without a terminal, give them with `--profile`).
+*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When the repository's modules name profiles ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work` (without a terminal, give them with `--profile`). When the repository names a [`post_init` script](/reference/modules/#run-scripts-after-update-and-init), it asks whether to run it.
 
 ## 4. Deploy your modules
 
@@ -86,7 +86,7 @@ configfile modules deploy --all
 configfile scripts run setup
 ```
 
-`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
+`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. If your repository names a [`post_init` script](/reference/modules/#run-scripts-after-update-and-init), add `--hooks` to `init` to run it without a terminal, instead of running it by hand: it then runs before `modules deploy`, so it deploys the modules itself if it needs their files. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
 
 ## Bring this machine's files into the repository
 

@@ -574,7 +574,11 @@ describe('init with repository settings it cannot use', () => {
       interactive: false,
     })
 
-    expect(result.code).toBe(0)
+    // Its post_init script cannot be told either: init fails, once configured.
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'whether the repository names a post_init script cannot be told',
+    )
     expect(result.stderr).toContain('The modules cannot be read, to check the profiles:')
     expect(result.stderr).not.toContain('No module is for profile')
     expect(JSON.parse(await readFile(home(sandbox, '.configfilerc'), 'utf8')).profiles).toEqual([

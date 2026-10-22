@@ -40,6 +40,7 @@ import { configfilePaths } from '../paths.ts'
 import { runScript } from '../process.ts'
 import { findRemovedFiles, type HeldBack, type RecordedFile } from '../removed.ts'
 import {
+  findScript,
   HOOKS,
   type Hook,
   knownProfiles,
@@ -47,10 +48,12 @@ import {
   loadScripts,
   type Module,
   type ModuleFile,
+  noVersionFor as noVersionForPlatform,
   platformOf,
+  REPOSITORY_HOOKS,
+  readRepositorySettings,
   type Script,
   scriptEnvironment,
-  systemName,
 } from '../repository.ts'
 import { DeploymentRecord } from '../state.ts'
 import { registerAdoptCommand } from './adopt.ts'
@@ -267,7 +270,19 @@ async function status(names: string[], options: Options, given: Context): Promis
       ? await removedFiles(record, repo, options.strategy, ctx)
       : { removed: [], heldBack: [] }
 
+  // The scripts, listed once, for the modules and the repository: why when they cannot be.
+  let listing: Promise<Scripts | string> | null = null
+  const listScripts = () =>
+    (listing ??= loadScripts(ctx).catch(error => {
+      if (!(error instanceof CliError)) throw error
+      return messageOf(error)
+    }))
+  // A repository may name scripts without having modules yet.
+  const repositoryHooks =
+    names.length === 0 ? await describeRepositoryHooks(repo, listScripts) : null
+
   if (selected.length === 0 && removed.length === 0 && heldBack.length === 0) {
+    if (repositoryHooks != null) output.print(repositoryHooks)
     output.info('No module found.')
     return
   }
@@ -277,12 +292,12 @@ async function status(names: string[], options: Options, given: Context): Promis
   if (
     selected.some(module => module.error == null && HOOKS.some(hook => module.hooks[hook] != null))
   ) {
-    try {
-      scripts = await loadScripts(ctx)
-    } catch (error) {
-      // Status still shows the files when the scripts cannot be listed.
-      if (!(error instanceof CliError)) throw error
-      output.warn(`The scripts the modules name cannot be checked: ${messageOf(error)}`)
+    const listed = await listScripts()
+    // Status still shows the files when the scripts cannot be listed.
+    if (typeof listed === 'string') {
+      output.warn(`The scripts the modules name cannot be checked: ${listed}`)
+    } else {
+      scripts = listed
     }
   }
 
@@ -400,6 +415,7 @@ async function status(names: string[], options: Options, given: Context): Promis
     }
   }
 
+  if (repositoryHooks != null) output.print(repositoryHooks)
   if (away.length > 0) {
     output.print(
       `Not for this machine: ${away.join(', ')} ("configfile modules status <module>" says why).`,
@@ -486,6 +502,38 @@ function reportMachine(
           : `the repository uses ${known.map(profile => `"${profile}"`).join(', ')}.`),
     )
   }
+}
+
+/**
+ * The line that lists the scripts the repository runs after update and
+ * init, and whether they can run here, as for the scripts of the modules;
+ * `null` when it names none.
+ */
+async function describeRepositoryHooks(
+  repo: Pick<Repository, 'repository'>,
+  listScripts: () => Promise<Scripts | string>,
+): Promise<string | null> {
+  // Read already, for the modules: it was usable a moment ago.
+  const { hooks } = await readRepositorySettings(repo.repository)
+  const named = REPOSITORY_HOOKS.flatMap(hook => {
+    const name = hooks[hook]
+    return name == null ? [] : [{ hook, name }]
+  })
+  if (named.length === 0) return null
+  const listed = await listScripts()
+  const described = named.map(({ hook, name }) => {
+    const found = typeof listed === 'string' ? null : findScript(name, listed)
+    const note =
+      typeof listed === 'string'
+        ? ` (cannot be checked: ${listed})`
+        : found === 'missing'
+          ? ' (not found in scripts/)'
+          : found === 'other-system'
+            ? ' (no version for this system)'
+            : ''
+    return `${hook} "${name}"${note}`
+  })
+  return `Repository scripts: ${described.join(', ')}`
 }
 
 /** What happened to a file of a linked source, seen from the mirror. */
@@ -986,12 +1034,10 @@ function describeHook(module: UsableModule, hook: Hook): string {
 function findHook(
   module: UsableModule,
   hook: Hook,
-  { scripts, otherSystems }: Scripts,
+  scripts: Scripts,
 ): Script | 'other-system' | 'missing' {
   const name = module.hooks[hook]
-  const script = scripts.find(candidate => candidate.name === name)
-  if (script != null) return script
-  return name != null && otherSystems.includes(name) ? 'other-system' : 'missing'
+  return name == null ? 'missing' : findScript(name, scripts)
 }
 
 /** A script that is not run on purpose: said in the history, without failing the run. */
@@ -1006,7 +1052,7 @@ function recordSkippedHook(module: UsableModule, hook: Hook, reason: string, ctx
 }
 
 function noVersionFor(ctx: Context): string {
-  return `no version for ${systemName(ctx.platform)}`
+  return noVersionForPlatform(ctx.platform)
 }
 
 function hookNotFound(module: UsableModule, hook: Hook): string {

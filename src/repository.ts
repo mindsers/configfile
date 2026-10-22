@@ -92,6 +92,10 @@ export type Module = ModuleBase &
 export const HOOKS = ['pre_deploy', 'post_deploy', 'pre_undeploy', 'post_undeploy'] as const
 export type Hook = (typeof HOOKS)[number]
 
+/** The settings of the repository that name a script run after `update` or `init`. */
+export const REPOSITORY_HOOKS = ['post_update', 'post_init'] as const
+export type RepositoryHook = (typeof REPOSITORY_HOOKS)[number]
+
 export interface Script {
   readonly name: string
   /** Path relative to the `scripts/` folder. */
@@ -148,6 +152,21 @@ export function knownProfiles(modules: readonly Module[]): string[] {
   return [...names].sort()
 }
 
+/** Where a script a setting names is: found, only made for other systems, or missing. */
+export function findScript(
+  name: string,
+  { scripts, otherSystems }: { scripts: readonly Script[]; otherSystems: readonly string[] },
+): Script | 'other-system' | 'missing' {
+  const script = scripts.find(candidate => candidate.name === name)
+  if (script != null) return script
+  return otherSystems.includes(name) ? 'other-system' : 'missing'
+}
+
+/** Why a script only made for other systems is not run: `no version for linux`. */
+export function noVersionFor(platform: NodeJS.Platform): string {
+  return `no version for ${systemName(platform)}`
+}
+
 /** The scripts, and the folder of the repository they come from. */
 export async function loadScripts(ctx: Context): Promise<{
   repository: string
@@ -202,14 +221,17 @@ export const KNOWN_MODULE_SETTINGS: readonly string[] = [
 export interface RepositorySettings {
   /** The name of the settings file of each module (`module_settings`). */
   readonly moduleSettings: string
+  /** The scripts run after `update` and `init` (`post_update`, `post_init`). */
+  readonly hooks: Readonly<Partial<Record<RepositoryHook, string>>>
 }
 
 /** The settings of a repository without `configfile.repository.json`. */
 export const DEFAULT_REPOSITORY_SETTINGS: RepositorySettings = {
   moduleSettings: DEFAULT_MODULE_SETTINGS,
+  hooks: {},
 }
 
-const REPOSITORY_KEYS = ['$schema', 'module_settings']
+const REPOSITORY_KEYS: readonly string[] = ['$schema', 'module_settings', ...REPOSITORY_HOOKS]
 
 /**
  * Reads `configfile.repository.json`, at the root of the repository, or
@@ -274,7 +296,16 @@ export function parseRepositorySettings(content: string, file: string): Reposito
         `such as "${DEFAULT_MODULE_SETTINGS}".`,
     )
   }
-  return { moduleSettings }
+  const hooks: Partial<Record<RepositoryHook, string>> = {}
+  for (const hook of REPOSITORY_HOOKS) {
+    const name = fields[hook]
+    if (name === undefined) continue
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new CliError(`"${hook}" in ${file} must be the name of a script of the repository.`)
+    }
+    hooks[hook] = name.trim()
+  }
+  return { moduleSettings, hooks }
 }
 
 /**
