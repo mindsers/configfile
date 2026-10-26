@@ -14,6 +14,7 @@ import { ConfigStore } from './config.ts'
 import type { Context } from './context.ts'
 import { CliError } from './errors.ts'
 import { describeJsonError } from './fsutil.ts'
+import { shellQuote } from './output.ts'
 import { configfilePaths, contains, resolveUserPath, slugify } from './paths.ts'
 import { version } from './version.ts'
 
@@ -445,11 +446,6 @@ async function findMisplacedSettings(
 /** Called after ENOENT: a symbolic link there points to nothing. */
 async function isBrokenLink(file: string): Promise<boolean> {
   return (await lstat(file).catch(() => null))?.isSymbolicLink() === true
-}
-
-/** A path as a shell reads it: quoted when it holds anything but plain characters. */
-function shellQuote(value: string): string {
-  return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 
 const DEPLOY_STRATEGIES = ['global', 'local', 'none'] as const

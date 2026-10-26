@@ -25,17 +25,21 @@ The repository is empty, so *configfile* offers to set it up, then asks where yo
 
 ```txt
  Info  Cloning git@github.com:me/dotfiles.git into ~/.configfile/dotfiles…
+Cloning into '/Users/me/.configfile/dotfiles'...
 warning: You appear to have cloned an empty repository.
 ✔ git@github.com:me/dotfiles.git is empty. Set up a new dotfiles repository in it? Yes
 ✔ Your working copy (the clone where you edit your dotfiles): ~/dotfiles
  Info  Cloning git@github.com:me/dotfiles.git into ~/dotfiles…
+Cloning into '/Users/me/dotfiles'...
+warning: You appear to have cloned an empty repository.
  Info  Set up a new dotfiles repository in ~/dotfiles, and pushed it to git@github.com:me/dotfiles.git.
  Info  Syncing ~/.configfile/dotfiles…
  Done  Synced with origin/main (3c9e2a1).
+ Info  Edit your dotfiles in ~/dotfiles, push, then run "configfile update" on each machine; or add files of this machine with "configfile modules adopt".
  Done  configfile is ready. Configuration saved to ~/.configfilerc.
 ```
 
-*configfile* committed a few files to start from in `~/dotfiles`, with your git name and email, and pushed them:
+*configfile* committed a few files to start from in `~/dotfiles`, with your git name and email, and pushed them. It remembers `~/dotfiles` as your working copy. (Set your name and email in git first: *configfile* never commits with one git would guess.)
 
 ```txt
 configfile.repository.json
@@ -51,7 +55,7 @@ scripts/
 It also keeps its own copy of the repository in `~/.configfile/dotfiles`, and deploys from it. You never edit that copy: you edit your working copy, push, and *configfile* follows. [How it works](/concepts/how-it-works/) explains why.
 
 :::note
-Your repository already has commits? Clone it as your working copy, and `init` only connects to it.
+Your repository already has commits? Clone it as your working copy, then run `configfile init --repo git@github.com:me/dotfiles.git --working-copy ~/dotfiles`: `init` only connects to it, and remembers your working copy.
 :::
 
 ## 3. Add a first module
@@ -78,7 +82,7 @@ Then tell *configfile* where this file goes, in the module's `configfile.module.
 `"deploy": "global"` means the file is copied into your home folder, and kept up to date with the repository. The `$schema` line lets your editor suggest the keys. The [modules reference](/reference/modules/) lists every option.
 
 :::tip
-`configfile modules adopt --module zsh ~/.zshrc` does all of this with the `~/.zshrc` you already have: it copies it into the module, commits and pushes.
+`configfile modules adopt --module zsh ~/.zshrc` does all of this with the `~/.zshrc` you already have: it copies it into the module, commits, pushes and syncs, and your `~/.zshrc` becomes *configfile*'s copy, so step 5 has nothing left to deploy.
 :::
 
 ## 4. Add a setup script
@@ -101,6 +105,14 @@ git push
 configfile update
 ```
 
+```txt
+ Info  Syncing ~/.configfile/dotfiles…
+ Done  Synced with origin/main (d33b70e). Run "configfile modules deploy --all" for new files.
+ Warn  ~/.zshrc is not the repository's version, so configfile left it as it is: "configfile modules deploy zsh" would move it to .old and copy the repository's version.
+```
+
+`update` never replaces a file of yours: the next step deploys the module.
+
 ## 5. Deploy the module
 
 Check where things stand:
@@ -113,7 +125,7 @@ configfile modules status
 example:
   no global file
 zsh:
-  ~/.zshrc (not deployed: a file is in the way)
+  ~/.zshrc (not deployed: a file is in the way (differs from the repository))
 ```
 
 You probably already have a `~/.zshrc`. Preview what deploying would do, without changing anything:

@@ -43,7 +43,15 @@ export async function syncMirror(
   const cwd = folder
   await git(['fetch', '--prune', '--quiet'], { cwd }, 'git fetch')
 
-  const upstream = await upstreamOf(folder)
+  // Just fetched: no commit and no remote branch means the remote has none either.
+  const branches = await gitOutput(['for-each-ref', '--count=1', 'refs/remotes'], { cwd })
+  if (!(await hasCommit(folder)) && (branches ?? '').trim() === '') {
+    throw new CliError(
+      'Your dotfiles repository is empty. Push a first commit to it from your own clone, or ' +
+        'set it up with "configfile init --force --repo <url> --new-repository", then try again.',
+    )
+  }
+  const upstream = await upstreamOf(folder, { fetched: true })
   const before = await revision('HEAD', folder)
 
   let saved: { file: string; paths: readonly string[] } | null = null
@@ -81,8 +89,15 @@ export async function syncMirror(
   return { upstream, before, after, saved: saved?.file ?? null, savedPaths: saved?.paths ?? [] }
 }
 
-/** The remote branch followed by the mirror: its upstream, or the remote's default branch. */
-export async function upstreamOf(folder: string): Promise<string> {
+/**
+ * The remote branch followed by the mirror: its upstream, or the remote's
+ * default branch. `fetched`: the mirror was just fetched, so its refs are the
+ * remote's; otherwise a mirror with no commit may only be behind.
+ */
+export async function upstreamOf(
+  folder: string,
+  { fetched = false }: { fetched?: boolean } = {},
+): Promise<string> {
   const cwd = folder
   const tracked = await gitOutput(
     ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
@@ -96,17 +111,23 @@ export async function upstreamOf(folder: string): Promise<string> {
   })
   if (remoteDefault != null && remoteDefault.trim() !== '') return remoteDefault.trim()
 
-  // Cloning it again would not help: the remote has no branch to follow yet.
-  const branches = await gitOutput(['for-each-ref', '--count=1', 'refs/remotes'], { cwd })
-  if ((await revision('HEAD', folder)) == null && (branches ?? '').trim() === '') {
+  if (!fetched && !(await hasCommit(folder))) {
     throw new CliError(
-      'Your dotfiles repository is empty. Push a first commit to it from your own clone, or ' +
-        'set it up with "configfile init --force --new-repository", then try again.',
+      `configfile's copy of your dotfiles repository (${folder}) has no commit yet: run ` +
+        '"configfile update" first, which syncs it.',
     )
   }
   throw new CliError(
     `${folder} follows no remote branch. Run "configfile init --force" to clone the repository again.`,
   )
+}
+
+/**
+ * Whether the mirror has a commit. One cloned from an empty repository has
+ * none until a sync brings the first one.
+ */
+export async function hasCommit(folder: string): Promise<boolean> {
+  return (await revision('HEAD', folder)) != null
 }
 
 async function revision(name: string, folder: string): Promise<string | null> {

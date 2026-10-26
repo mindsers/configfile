@@ -9,8 +9,9 @@ export interface StarterFile {
   readonly executable: boolean
 }
 
-/** The schemas the settings files point to, for editors. */
+/** The schema `configfile.repository.json` points to, for editors. */
 export const REPOSITORY_SCHEMA = 'https://docs.configfile.sh/schemas/repository.json'
+/** The schema the settings of a module point to, for editors. */
 export const MODULE_SCHEMA = 'https://docs.configfile.sh/schemas/module.json'
 
 /**
@@ -20,7 +21,7 @@ export const MODULE_SCHEMA = 'https://docs.configfile.sh/schemas/module.json'
  * settings name no script, so that none runs on its own. The README shows
  * the repository's `url` without its credentials, if any: it is pushed.
  */
-export function starterFiles(url: string): StarterFile[] {
+export function starterFiles(url: string): readonly StarterFile[] {
   const file = (path: string, content: string, executable = false) => ({
     path,
     content,
@@ -39,7 +40,7 @@ export function starterFiles(url: string): StarterFile[] {
     ),
     file(
       'files/example/example.conf',
-      '# A file of the example module. Its entry in configfile.module.json says\n' +
+      `# A file of the example module. Its entry in ${DEFAULT_MODULE_SETTINGS} says\n` +
         '# "deploy": "none": configfile keeps it here and never deploys it.\n',
     ),
     file(
@@ -78,6 +79,9 @@ Add a file of this machine to a module, which configfile commits here and pushes
 \`\`\`sh
 configfile modules adopt --module zsh ~/.zshrc
 \`\`\`
+
+On a machine where configfile doesn't know this clone yet, clone this repository first and add
+\`--into <your clone>\` the first time: it is remembered.
 
 Or edit this repository, commit and push, then run \`configfile update\` on each machine.
 

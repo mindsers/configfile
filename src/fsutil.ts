@@ -154,23 +154,24 @@ export function sameHash(a: ContentHash | null | undefined, b: ContentHash | nul
   return a != null && b != null && a.size === b.size && a.sha256 === b.sha256
 }
 
+/** What is at a folder to clone into or reuse (see `inspectFolder`). */
+export type FolderState = 'missing' | 'empty' | 'git-repository' | 'not-empty' | 'not-a-directory'
+
 /**
- * What is at `folderPath`, for a folder to clone into: nothing, an empty
- * folder, a git repository, or something else.
+ * What is at `folderPath`, for a folder to clone into or reuse: nothing, an
+ * empty folder, a git repository (a `.git` folder or file), or something
+ * else. Fails for a broken symbolic link, or a folder that cannot be read.
  */
-export async function inspectFolder(folderPath: string) {
+export async function inspectFolder(folderPath: string): Promise<FolderState> {
   const fail = (error: unknown): never => {
-    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`, { cause: error })
+    throw new CliError(`Cannot use ${folderPath}: ${messageOf(error)}`, { cause: error })
   }
 
-  const link = await lstat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    return fail(error)
-  })
+  const link = await lstatOrNull(folderPath).catch(fail)
   if (link == null) return 'missing'
 
   const stats = await stat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (errnoCode(error) === 'ENOENT') {
       throw new CliError(`${folderPath} is a broken symbolic link.`)
     }
     return fail(error)

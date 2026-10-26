@@ -23,7 +23,7 @@ import {
 } from '../repository.ts'
 import { failedHook, runRepositoryHook } from '../repository-hooks.ts'
 import { DeploymentRecord } from '../state.ts'
-import { syncMirror } from '../sync.ts'
+import { hasCommit, syncMirror } from '../sync.ts'
 import {
   addedCopyEntries,
   type EntryKey,
@@ -60,8 +60,13 @@ async function update({ hooks }: { hooks: boolean }, ctx: Context): Promise<void
   }
 
   await ensureGit()
-  // Before syncing, so that the mirror gets what the working copy commits.
-  const copy = workingCopy == null ? null : await pushWorkingCopy(ctx, workingCopy, folderPath)
+  // Before syncing, so that the mirror gets what the working copy commits. A
+  // mirror with no commit yet tells nothing to compare the working copy with:
+  // the sync says whether the repository is still empty.
+  const copy =
+    workingCopy == null || !(await hasCommit(folderPath))
+      ? null
+      : await pushWorkingCopy(ctx, workingCopy, folderPath)
   const { before, after } = await syncAndRefresh(ctx, folderPath, { workingCopy: copy })
   // After the lock: the script may run configfile itself.
   if (hooks && before !== after) await runPostUpdate(ctx, folderPath)
