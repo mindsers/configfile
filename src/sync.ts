@@ -96,6 +96,14 @@ export async function upstreamOf(folder: string): Promise<string> {
   })
   if (remoteDefault != null && remoteDefault.trim() !== '') return remoteDefault.trim()
 
+  // Cloning it again would not help: the remote has no branch to follow yet.
+  const branches = await gitOutput(['for-each-ref', '--count=1', 'refs/remotes'], { cwd })
+  if ((await revision('HEAD', folder)) == null && (branches ?? '').trim() === '') {
+    throw new CliError(
+      'Your dotfiles repository is empty. Push a first commit to it from your own clone, or ' +
+        'set it up with "configfile init --force --new-repository", then try again.',
+    )
+  }
   throw new CliError(
     `${folder} follows no remote branch. Run "configfile init --force" to clone the repository again.`,
   )

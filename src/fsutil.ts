@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { constants, type Stats } from 'node:fs'
+import { constants, existsSync, type Stats } from 'node:fs'
 import { chmod, lstat, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
+
+import { CliError } from './errors.ts'
 
 /** Identifies a file or folder independently of the path used to reach it. */
 export interface Identity {
@@ -150,4 +152,32 @@ export async function hashFile(
 
 export function sameHash(a: ContentHash | null | undefined, b: ContentHash | null | undefined) {
   return a != null && b != null && a.size === b.size && a.sha256 === b.sha256
+}
+
+/**
+ * What is at `folderPath`, for a folder to clone into: nothing, an empty
+ * folder, a git repository, or something else.
+ */
+export async function inspectFolder(folderPath: string) {
+  const fail = (error: unknown): never => {
+    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`, { cause: error })
+  }
+
+  const link = await lstat(folderPath).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    return fail(error)
+  })
+  if (link == null) return 'missing'
+
+  const stats = await stat(folderPath).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new CliError(`${folderPath} is a broken symbolic link.`)
+    }
+    return fail(error)
+  })
+
+  if (!stats.isDirectory()) return 'not-a-directory'
+  if (existsSync(path.join(folderPath, '.git'))) return 'git-repository'
+  if ((await readdir(folderPath).catch(fail)).length > 0) return 'not-empty'
+  return 'empty'
 }

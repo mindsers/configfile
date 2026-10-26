@@ -1,6 +1,4 @@
-import { existsSync } from 'node:fs'
-import { lstat, mkdir, readdir, stat } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 
 import type { Command } from 'commander'
 
@@ -8,7 +6,7 @@ import { isProfileName } from '../conditions.ts'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
-import { messageOf } from '../fsutil.ts'
+import { inspectFolder, messageOf } from '../fsutil.ts'
 import { checkRepositoryUrl } from '../git-url.ts'
 import { withCommandLock } from '../lock.ts'
 import { redactUrl } from '../output.ts'
@@ -16,6 +14,7 @@ import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
 import { knownProfiles, listModules, readRepositorySettings } from '../repository.ts'
 import { failedHook, runRepositoryHook } from '../repository-hooks.ts'
+import { type EmptyRemote, findEmptyRemote, offerNewRepository } from './new-repository.ts'
 
 interface InitOptions {
   force?: boolean
@@ -28,6 +27,11 @@ interface InitOptions {
    * ask in a terminal and skip it without one (unset).
    */
   hooks?: boolean
+  /**
+   * Set up an empty repository without asking (`true`), never (`false`), or
+   * ask in a terminal and only say it is empty without one (unset).
+   */
+  newRepository?: boolean
 }
 
 export function registerInitCommand(program: Command, ctx: Context): void {
@@ -49,6 +53,12 @@ export function registerInitCommand(program: Command, ctx: Context): void {
     )
     .option('--hooks', 'run the post_init script of the repository without asking')
     .option('--no-hooks', 'do not run the post_init script of the repository')
+    .option(
+      '--new-repository',
+      'when the repository is empty, set it up in your working copy without asking: commit ' +
+        'starter files, and push them',
+    )
+    .option('--no-new-repository', 'when the repository is empty, do not offer to set it up')
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -132,9 +142,44 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   }
   const profiles = await chooseProfiles(options.profile, folderPath, store, ctx)
   if (profiles != null) await store.setProfiles(profiles)
+  await setUpIfEmpty(options, folderPath, store, ctx)
   // After the lock: the script may run configfile itself.
   await runPostInit(options.hooks, folderPath, store, ctx)
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
+}
+
+/** Offers to set up the repository when it has no commit yet (see `offerNewRepository`). */
+async function setUpIfEmpty(
+  options: InitOptions,
+  folderPath: string,
+  store: ConfigStore,
+  ctx: Context,
+): Promise<void> {
+  let empty: EmptyRemote | null
+  try {
+    empty = await findEmptyRemote(folderPath)
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error
+    ctx.output.warn(`Cannot tell whether the repository is empty: ${messageOf(error)}`)
+    return
+  }
+  if (empty == null) {
+    if (options.newRepository === true) {
+      ctx.output.info('The repository is not empty: there is no new repository to set up.')
+    }
+    return
+  }
+  await offerNewRepository(
+    {
+      wanted: options.newRepository,
+      workingCopy: options.workingCopy,
+      mirror: folderPath,
+      empty,
+      done: `configfile is configured (${store.path})`,
+    },
+    store,
+    ctx,
+  )
 }
 
 /**
@@ -326,28 +371,4 @@ async function setUp(
     )
   }
   ctx.history.record({ kind: 'configured', file: store.path })
-}
-
-async function inspectFolder(folderPath: string) {
-  const fail = (error: unknown): never => {
-    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`, { cause: error })
-  }
-
-  const link = await lstat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    return fail(error)
-  })
-  if (link == null) return 'missing'
-
-  const stats = await stat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new CliError(`${folderPath} is a broken symbolic link.`)
-    }
-    return fail(error)
-  })
-
-  if (!stats.isDirectory()) return 'not-a-directory'
-  if (existsSync(path.join(folderPath, '.git'))) return 'git-repository'
-  if ((await readdir(folderPath).catch(fail)).length > 0) return 'not-empty'
-  return 'empty'
 }
