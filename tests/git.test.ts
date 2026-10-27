@@ -175,7 +175,13 @@ describe('ensureGit', () => {
       expect(Date.now() - started).toBeLessThan(3000)
     } finally {
       const pid = Number(await readFile(pidFile, 'utf8').catch(() => ''))
-      if (pid > 0) process.kill(pid, 'SIGKILL')
+      if (pid > 0) {
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          // Already gone: the group kill reached it before it left the group.
+        }
+      }
     }
   })
 
