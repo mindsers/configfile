@@ -22,7 +22,7 @@ export interface EmptyRemote {
   readonly branch: string
 }
 
-/** The working copy's folder when neither `--working-copy` nor a saved one gives it. */
+/** The working copy's folder when `--working-copy` does not give it. */
 const DEFAULT_WORKING_COPY = '~/dotfiles'
 
 const COMMIT_MESSAGE = 'Start a dotfiles repository'
@@ -72,22 +72,20 @@ export function setUpCommand(url: string, workingCopy?: string): string {
  * (even when a later step fails), it writes the starter files, commits them
  * as the user, pushes them, then syncs the mirror. Without `--new-repository`
  * (`wanted`) it asks first in a terminal, and only says the repository is
- * empty without one. The folder is asked in a terminal unless `--working-copy`
- * gives it; without one, it is the saved working copy, or ~/dotfiles. `done`
+ * empty without one. The folder is `--working-copy`; otherwise it is asked in
+ * a terminal (~/dotfiles by default), and is ~/dotfiles without one. `done`
  * says what is already done, for errors. Returns whether it set it up.
  */
 export async function offerNewRepository(
   {
     wanted,
     workingCopy,
-    saved,
     mirror,
     empty,
     done,
   }: {
     wanted: boolean | undefined
     workingCopy: string | undefined
-    saved: string | null
     mirror: string
     empty: EmptyRemote
     done: string
@@ -121,10 +119,9 @@ export async function offerNewRepository(
   }
 
   const files = starterFiles(empty.url)
-  const fallback = saved ?? DEFAULT_WORKING_COPY
   let target: Target
   if (workingCopy != null || !prompts.interactive) {
-    const folder = workingCopy ?? resolveUserPath(fallback, ctx)
+    const folder = workingCopy ?? resolveUserPath(DEFAULT_WORKING_COPY, ctx)
     try {
       target = await openTarget(folder)
     } catch (error) {
@@ -179,14 +176,14 @@ export async function offerNewRepository(
       `${done}, but git has no name and email of yours to commit with (${unknown}). configfile ` +
         "never commits with one git guesses: set yours (git config --global user.name 'Your " +
         "Name', git config --global user.email you@example.com), then run " +
-        `"${setUpCommand(empty.url)}".`,
+        `"${setUpCommand(empty.url, folder)}".`,
     )
   }
 
   const { branch } = empty
   const { to, switchedFrom } = await commitStarter(folder, branch, files, {
     done,
-    retry: setUpCommand(empty.url),
+    retry: setUpCommand(empty.url, folder),
   })
   if (switchedFrom != null) {
     output.info(
@@ -235,7 +232,7 @@ export async function offerNewRepository(
     for (;;) {
       const answer = await prompts.input({
         message: 'Your working copy (the clone where you edit your dotfiles):',
-        default: fallback,
+        default: DEFAULT_WORKING_COPY,
         required: true,
       })
       try {

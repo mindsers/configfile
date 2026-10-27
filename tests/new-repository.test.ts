@@ -6,10 +6,19 @@ import path from 'node:path'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { findEmptyRemote } from '../src/commands/new-repository.ts'
 import { listModules, listScripts } from '../src/repository.ts'
 import { starterFiles } from '../src/starter.ts'
 
-import { createMirror, createSandbox, git, readHistory, runCli, type Sandbox } from './helpers.ts'
+import {
+  createMirror,
+  createSandbox,
+  git,
+  gitSetting,
+  readHistory,
+  runCli,
+  type Sandbox,
+} from './helpers.ts'
 
 function gitText(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -42,13 +51,6 @@ function forgetIdentity() {
     vi.stubEnv(`GIT_AUTHOR_${name}`, undefined)
     vi.stubEnv(`GIT_COMMITTER_${name}`, undefined)
   }
-}
-
-/** Sets a git setting for the CLI and the tests' git, as the user's settings would. */
-function gitSetting(key: string, value: string) {
-  vi.stubEnv('GIT_CONFIG_COUNT', '1')
-  vi.stubEnv('GIT_CONFIG_KEY_0', key)
-  vi.stubEnv('GIT_CONFIG_VALUE_0', value)
 }
 
 /** An empty repository that accepts pushes, in `<sandbox>/remote.git`, on branch `main`. */
@@ -179,16 +181,14 @@ describe('init with an empty repository', () => {
     expect(gitText(folder, 'rev-parse', 'HEAD')).toBe(gitText(remote, 'rev-parse', 'main'))
   })
 
-  it('sets it up in the saved working copy, when init runs again', async () => {
+  it('sets it up in the same working copy with the command it gives', async () => {
     const { sandbox, remote, work } = await setUp()
     const first = await init(sandbox, ['--repo', remote, '--working-copy', work])
-    expect(first.stderr).toContain(
-      `or set it up with "configfile init --force --repo ${remote} --new-repository ` +
-        `--working-copy ${work}".`,
-    )
+    const command = `configfile init --force --repo ${remote} --new-repository --working-copy ${work}`
+    expect(first.stderr).toContain(`or set it up with "${command}".`)
     expect((await readConfig(sandbox)).working_copy).toBe(work)
 
-    const result = await init(sandbox, ['--force', '--repo', remote, '--new-repository'])
+    const result = await init(sandbox, command.split(' ').slice(2))
 
     expect(result.code, result.stderr).toBe(0)
     expect(existsSync(path.join(work, 'README.md'))).toBe(true)
@@ -302,7 +302,7 @@ describe('init with an empty repository', () => {
     expect(existsSync(path.join(sandbox.home, 'dotfiles/README.md'))).toBe(false)
   })
 
-  it('does not offer it when the remote got commits after the mirror was cloned', async () => {
+  it('does not offer it when set up again after the remote got commits', async () => {
     const { sandbox, remote, mirror } = await setUp()
     git(sandbox.root, 'clone', '--quiet', remote, mirror)
     const other = path.join(sandbox.root, 'other')
@@ -312,18 +312,23 @@ describe('init with an empty repository', () => {
     git(other, 'commit', '--quiet', '-m', 'first')
     git(other, 'push', '--quiet', 'origin', 'main')
 
-    const result = await runCli(sandbox, ['init', '--repo', remote, '--no-hooks'])
+    const result = await runCli(sandbox, ['init', '--force', '--repo', remote, '--no-hooks'])
 
     expect(result.code, result.stderr).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.asked).toEqual([])
+    expect(gitText(mirror, 'rev-parse', 'HEAD')).toBe(gitText(remote, 'rev-parse', 'main'))
   })
 
   it('fails with --new-repository when it cannot tell whether the repository is empty', async () => {
-    const { sandbox, remote, mirror } = await setUp()
-    // Reused as it is: its remote cannot be reached.
-    execFileSync('git', ['init', '--quiet', '--initial-branch=main', mirror])
-    git(mirror, 'remote', 'add', 'origin', path.join(sandbox.root, 'gone.git'))
+    const { sandbox, remote } = await setUp()
+    // git clone does not use it; asking the remote afterwards fails.
+    const uploadPack = await sandbox.write(
+      'upload-pack',
+      "#!/bin/sh\necho 'fatal: no network' >&2\nexit 1\n",
+      0o755,
+    )
+    gitSetting('remote.origin.uploadpack', uploadPack)
 
     const asked = await init(sandbox, ['--repo', remote, '--new-repository'])
     expect(asked.code).toBe(1)
@@ -335,11 +340,14 @@ describe('init with an empty repository', () => {
     const unset = await init(sandbox, ['--force', '--repo', remote])
     expect(unset.code, unset.stderr).toBe(0)
     expect(unset.stderr).toContain('Setting up a new repository is not offered')
+  })
 
-    git(mirror, 'remote', 'remove', 'origin')
-    const noRemote = await init(sandbox, ['--force', '--repo', remote, '--new-repository'])
-    expect(noRemote.code).toBe(1)
-    expect(noRemote.stderr).toContain(`${mirror} has no remote "origin"`)
+  it('cannot tell whether a clone without a remote is empty', async () => {
+    const { sandbox } = await setUp()
+    const folder = path.join(sandbox.root, 'alone')
+    execFileSync('git', ['init', '--quiet', '--initial-branch=main', folder])
+
+    await expect(findEmptyRemote(folder)).rejects.toThrow(`${folder} has no remote "origin"`)
   })
 
   it('uses an existing clone without commits, on the branch the mirror follows', async () => {
@@ -441,7 +449,8 @@ describe('init with an empty repository', () => {
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('configfile is configured')
     expect(result.stderr).toContain('git has no name and email of yours to commit with')
-    expect(result.stderr).toContain(`then run "configfile init --force --repo ${remote}`)
+    const command = `configfile init --force --repo ${remote} --new-repository --working-copy ${work}`
+    expect(result.stderr).toContain(`then run "${command}"`)
     // Cloned and remembered, nothing written in it.
     expect(gitText(work, 'remote')).toBe('origin')
     expect(existsSync(path.join(work, 'README.md'))).toBe(false)
@@ -451,9 +460,11 @@ describe('init with an empty repository', () => {
     vi.stubEnv('GIT_AUTHOR_EMAIL', 'me@example.com')
     vi.stubEnv('GIT_COMMITTER_NAME', 'Me')
     vi.stubEnv('GIT_COMMITTER_EMAIL', 'me@example.com')
-    const again = await init(sandbox, ['--force', '--repo', remote, '--new-repository'])
+    // The command it gives sets it up in the same working copy.
+    const again = await init(sandbox, command.split(' ').slice(2))
     expect(again.code, again.stderr).toBe(0)
     expect(gitText(remote, 'log', '--format=%an', 'main')).toBe('Me')
+    expect(existsSync(path.join(work, 'README.md'))).toBe(true)
   })
 
   it('takes the identity from the settings git uses in the working copy', async () => {
@@ -517,15 +528,17 @@ describe('init with an empty repository', () => {
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('but the new repository could not be committed: git commit')
-    expect(result.stderr).toContain(`${work} is as it was: once fixed, run "configfile init`)
+    const command = `configfile init --force --repo ${remote} --new-repository --working-copy ${work}`
+    expect(result.stderr).toContain(`${work} is as it was: once fixed, run "${command}"`)
     expect(gitText(work, 'symbolic-ref', '--short', 'HEAD')).toBe('master')
     expect(gitText(work, 'status', '--porcelain', '--untracked-files=all')).toBe('')
     expect(existsSync(path.join(work, 'files'))).toBe(false)
     expect(gitText(remote, 'for-each-ref')).toBe('')
 
     await rm(hook)
-    const again = await init(sandbox, ['--force', '--repo', remote, '--new-repository'])
+    const again = await init(sandbox, command.split(' ').slice(2))
     expect(again.code, again.stderr).toBe(0)
+    expect(existsSync(path.join(work, 'README.md'))).toBe(true)
   })
 
   it.skipIf(process.getuid?.() === 0)(
@@ -579,9 +592,8 @@ describe('init with an empty repository', () => {
   })
 
   it('says the repository is pushed when only the sync fails', async () => {
-    const { sandbox, remote, work, mirror } = await setUp()
-    git(sandbox.root, 'clone', '--quiet', remote, mirror)
-    // The mirror reaches the remote once (is it empty?), then no more.
+    const { sandbox, remote, work } = await setUp()
+    // git clone does not use it: the remote is reached once (is it empty?), then no more.
     const marker = path.join(sandbox.root, 'reached')
     const uploadPack = await sandbox.write(
       'upload-pack',
@@ -589,7 +601,7 @@ describe('init with an empty repository', () => {
         `touch '${marker}'\nexec git upload-pack "$@"\n`,
       0o755,
     )
-    git(mirror, 'config', 'remote.origin.uploadpack', uploadPack)
+    gitSetting('remote.origin.uploadpack', uploadPack)
 
     const result = await init(sandbox, [
       '--repo',
@@ -607,7 +619,8 @@ describe('init with an empty repository', () => {
     expect(result.stderr).toContain('Run "configfile update".')
     expect(gitText(remote, 'log', '--format=%s', 'main')).toBe('Start a dotfiles repository')
 
-    git(mirror, 'config', '--unset', 'remote.origin.uploadpack')
+    // Only the failing upload-pack goes: the identity stays.
+    vi.stubEnv('GIT_CONFIG_COUNT', '0')
     const update = await runCli(sandbox, ['update'])
     expect(update.code, update.stderr).toBe(0)
   })
@@ -658,7 +671,7 @@ describe('update and adopt with an empty repository', () => {
   it('still says when the mirror follows no remote branch', async () => {
     const sandbox = await createSandbox()
     const { remote } = await createMirror(sandbox)
-    await rm(path.join(sandbox.home, '.configfilerc'))
+    await rm(sandbox.repo, { recursive: true })
     await runCli(sandbox, ['init', '--repo', remote, '--folder', sandbox.repo, '--force'])
     git(sandbox.repo, 'branch', '--unset-upstream')
     // Otherwise a recent git sets origin/HEAD again when it fetches.

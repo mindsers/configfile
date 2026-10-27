@@ -118,7 +118,9 @@ export async function upstreamOf(
     )
   }
   throw new CliError(
-    `${folder} follows no remote branch. Run "configfile init --force" to clone the repository again.`,
+    `${folder} follows no remote branch. Run "configfile init" to set configfile up again: it ` +
+      'undeploys the files it deployed, deletes its configuration and its folder (history and ' +
+      'saved changes included), then clones the repository again.',
   )
 }
 

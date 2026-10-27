@@ -26,7 +26,7 @@ import {
   undeployFile,
 } from '../deploy.ts'
 import { CliError, isPromptExit } from '../errors.ts'
-import { messageOf } from '../fsutil.ts'
+import { lstatOrNull, messageOf } from '../fsutil.ts'
 import { withCommandLock } from '../lock.ts'
 import {
   changesUnder,
@@ -86,6 +86,8 @@ interface Options {
   hooks: boolean
   /** Go on with the modules that come after a script that failed. */
   keepGoing: boolean
+  /** Suggest --keep-going when a script fails: `init` has no such option. */
+  suggestKeepGoing: boolean
   /** The machine to check `"when"` against instead of this one (`--os`, `--profile`). */
   preview: Partial<Machine>
 }
@@ -112,6 +114,7 @@ function normalize(options: RawOptions): Options {
     removed: options.removed === true,
     hooks: options.hooks !== false,
     keepGoing: options.keepGoing === true,
+    suggestKeepGoing: true,
   }
 }
 
@@ -938,7 +941,7 @@ async function eachModule(
       return 'failed'
     }
     leaveOut(next, units.length, reason)
-    hint = ' Use --keep-going to go on after a script that fails.'
+    if (options.suggestKeepGoing) hint = ' Use --keep-going to go on after a script that fails.'
     return 'stop'
   }
 
@@ -1166,7 +1169,13 @@ async function runHook(
   return { ok: code === 0, ...(signal != null && { signal }) }
 }
 
-async function undeploy(names: string[], options: Options, ctx: Context): Promise<void> {
+/** `kept`: gets the targets kept because they changed on this machine. */
+async function undeploy(
+  names: string[],
+  options: Options,
+  ctx: Context,
+  kept?: Set<string>,
+): Promise<void> {
   const { output } = ctx
   if (options.removed && names.length > 0) {
     throw new CliError('Give module names or --removed, not both.')
@@ -1204,6 +1213,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
         return true
       }
       const result = await undeployFile(file, context)
+      if (result.status === 'kept') kept?.add(file.target)
       output.print(`- ${file.target} ${describeUndeploy(result)}`)
       recordUndeploy(file, result, ctx)
       return true
@@ -1265,6 +1275,7 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
         if (result.status === 'kept') {
           // configfile no longer deploys it and cannot remove it safely: it is the user's now.
           await context.record.setDeployed(file.target, null)
+          kept?.add(file.target)
           output.print(
             `- ${file.target} (kept: ${describeKept(result.state)}; configfile no longer tracks it)`,
           )
@@ -1328,6 +1339,71 @@ async function undeploy(names: string[], options: Options, ctx: Context): Promis
   }
   if (count === 0 && failures === 0 && problems.length === 0) return
   finish(failures, problems, count > 0 ? 'Undeployment finished.' : '', ctx, outcome.exitCode)
+}
+
+/**
+ * For `init` setting configfile up again: undeploys every module of the
+ * configured repository with its scripts, as `undeploy --all` does. Fails when
+ * a file, a module or a script does. Returns the files kept because they
+ * changed on this machine.
+ */
+export async function undeployAllModules(ctx: Context): Promise<Set<string>> {
+  const kept = new Set<string>()
+  await undeploy([], { ...normalize({ all: true }), suggestKeepGoing: false }, ctx, kept)
+  return kept
+}
+
+/**
+ * For `init` setting configfile up again, with the lock held: undeploys the
+ * global files the record holds, from the record alone (`repository`: the
+ * folder the record names files of). Files kept because they changed on this
+ * machine, here or by `undeployAllModules` (`kept`), are no longer tracked.
+ * Fails when a file does. Local copies stay. Returns how many local copies and
+ * kept files configfile no longer tracks.
+ */
+export async function undeployRecorded(
+  { repository, kept }: { repository: string | null; kept: Set<string> },
+  ctx: Context,
+): Promise<{ local: number; kept: number }> {
+  const context = await deployContext(ctx, repository ?? configfilePaths(ctx.home).dotfiles)
+  let local = 0
+  let failures = 0
+  let announced = false
+  for (const { target, deployed } of [...context.record.targets()]) {
+    if (deployed == null) continue
+    if (deployed.strategy === 'local') {
+      local++
+      continue
+    }
+    // Kept already, or deleted by hand: nothing left to undeploy.
+    if (kept.has(target) || (await lstatOrNull(target).catch(() => true)) == null) continue
+    if (!announced) {
+      ctx.output.info('Undeploying the files configfile deployed…')
+      announced = true
+    }
+    const file: RecordedFile = {
+      source: deployed.source,
+      target,
+      strategy: 'global',
+      method: deployed.copy == null ? 'link' : 'copy',
+      ...(deployed.entry != null && { entry: deployed.entry }),
+      repository: context.view.repository,
+      module: null,
+    }
+    try {
+      const result = await undeployFile(file, context)
+      if (result.status === 'kept') kept.add(target)
+      ctx.output.print(`- ${target} ${describeUndeploy(result)}`)
+      recordUndeploy(file, result, ctx, { forgotten: result.status === 'kept' })
+    } catch (error) {
+      failures++
+      reportFileError(file, error, ctx)
+    }
+  }
+  if (failures > 0) {
+    throw new CliError(`${plural(failures, 'file')} could not be undeployed.`)
+  }
+  return { local, kept: kept.size }
 }
 
 /** Loads the record: call it after taking the lock when files are changed. */

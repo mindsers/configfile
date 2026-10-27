@@ -83,7 +83,7 @@ describe('built CLI', () => {
     const init = await exec(['init'])
     expect(init.code).toBe(1)
     expect(init.stderr).toContain(
-      'Also pass: --force (a configuration already exists), --repo <url>',
+      'Also pass: --force (configfile is already set up, and --force sets it up again), --repo <url>',
     )
   })
 

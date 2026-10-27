@@ -191,6 +191,8 @@ function describeChange(change: Change): string {
       return line('cloned', `${change.repository} into ${change.folder}`)
     case 'reused':
       return line('reused', `${change.folder} for ${change.repository}`)
+    case 'deleted':
+      return line('deleted', change.path)
     case 'configured':
       return line('saved', `configuration ${change.file}`)
     case 'adopted':

@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Breaking:** running `init` again sets *configfile* up again, as if it had never been
+  installed, instead of keeping its copy of the repository: it checks that the repository can be
+  reached, undeploys every global file it deployed (with the modules' scripts, unless
+  `--no-hooks`), deletes `~/.configfilerc` and `~/.configfile` (and a copy it cloned elsewhere),
+  then clones the repository again. It asks first in a terminal, and needs `--force` without
+  one. A new URL is now really used (the copy used to keep following the old repository), and
+  the errors that say to run `init --force` now lead somewhere. `init` no longer uses a folder
+  that already holds a repository: it only uses a clone it makes itself. Your working copy's
+  folder, local copies and a `folder_path` it did not clone are kept; the other settings of
+  `~/.configfilerc` (`working_copy`, `profiles`…), the history, and the changes saved from or
+  made in its copy are not. The history has a new change kind, `deleted`, and no longer writes
+  `reused` ([#331](https://github.com/mindsers/configfile/issues/331)).
 - **Breaking:** the settings of a module are read from `configfile.module.json` instead of
   `settings.json`, so that a module can deploy an app's own `settings.json` (Zed, VS Code…) under
   its real name. A module that still has `settings.json` cannot be used: configfile says how
