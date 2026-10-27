@@ -288,6 +288,20 @@ describe('withLock', () => {
     }
   })
 
+  it('removes a takeover guard left behind by a process still running, once it holds the lock', async () => {
+    // Put back by a process that had moved it aside, after its owner was done.
+    const { home, write } = await createSandbox()
+    await write('home/.configfile/lock.takeover', String(livingPid()))
+
+    let during: string[] = []
+    await withLock(home, async () => {
+      during = await readdir(path.join(home, '.configfile'))
+    })
+
+    expect(during).toEqual(['lock'])
+    expect(await readdir(path.join(home, '.configfile'))).toEqual([])
+  })
+
   it('never removes a lock it does not hold any more, and says so', async () => {
     const { home } = await createSandbox()
     const lock = path.join(home, '.configfile/lock')
