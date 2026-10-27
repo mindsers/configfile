@@ -58,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the configfile 0.3 format of `settings.json`, a plain list, deprecated since 1.0:
   put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
   no longer accepts either.
+
+## [1.1.0] - 2026-10-14
 ### Added
 - `init` offers to set up a repository that has no commit yet: in your working copy, which it
   clones when needed and saves as `working_copy`, it commits starter files
@@ -275,7 +277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `run` command to run custom and saved scripts. Scripts can be write in all languages.
 - The README file to give first information on the project (installation, usage, etc.).
 
-[Unreleased]: https://github.com/mindsers/configfile/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/mindsers/configfile/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/mindsers/configfile/tree/1.1.0
 [1.0.0]: https://github.com/mindsers/configfile/tree/1.0.0
 [0.3.1]: https://github.com/mindsers/configfile/tree/0.3.1
 [0.3.0]: https://github.com/mindsers/configfile/tree/0.3.0
