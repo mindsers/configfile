@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Writable } from 'node:stream'
 
-import { afterEach } from 'vitest'
+import { afterEach, vi } from 'vitest'
 
 import type { Context, Prompts } from '../src/context.ts'
 import { History, type HistoryLine } from '../src/history.ts'
@@ -167,6 +167,16 @@ export async function runCli(
  * Runs git for test setup, independent of the developer's git configuration
  * (vitest.config.ts also points GIT_CONFIG_GLOBAL to /dev/null).
  */
+/**
+ * Sets a git setting for the CLI and the tests' git, as the user's settings
+ * would. `vi.unstubAllEnvs()` removes it.
+ */
+export function gitSetting(key: string, value: string): void {
+  vi.stubEnv('GIT_CONFIG_COUNT', '1')
+  vi.stubEnv('GIT_CONFIG_KEY_0', key)
+  vi.stubEnv('GIT_CONFIG_VALUE_0', value)
+}
+
 export function git(cwd: string, ...args: string[]): void {
   execFileSync(
     'git',

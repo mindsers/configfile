@@ -23,7 +23,7 @@
       "pattern": "\\S"
     },
     "post_init": {
-      "description": "The name of a script of the repository, run by configfile init once the repository is cloned (or reused) and the configuration saved. In a terminal, configfile init asks first; without one, it runs only with --hooks.",
+      "description": "The name of a script of the repository, run by configfile init once the repository is cloned and the configuration saved. In a terminal, configfile init asks first; without one, it runs only with --hooks.",
       "type": "string",
       "pattern": "\\S"
     }

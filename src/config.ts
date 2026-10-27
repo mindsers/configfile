@@ -78,18 +78,20 @@ export class ConfigStore {
   }
 
   /** Reads the stored values without validating them, for use as prompt defaults. */
-  async readPartial(): Promise<{ repoUrl?: string; folderPath?: string }> {
+  async readPartial(): Promise<{ repoUrl?: string; folderPath?: string; workingCopy?: string }> {
     const raw = await this.#readRaw().catch(ignoreInvalid)
-    const partial: { repoUrl?: string; folderPath?: string } = {}
+    const partial: { repoUrl?: string; folderPath?: string; workingCopy?: string } = {}
+    // Resolved like `read` does: "~/dotfiles" must not become a folder named "~".
+    const folder = (value: unknown) =>
+      typeof value === 'string' && value.trim() !== ''
+        ? resolveUserPath(value.trim(), { home: this.#home, cwd: this.#home })
+        : undefined
 
     if (typeof raw?.repo_url === 'string') partial.repoUrl = raw.repo_url
-    if (typeof raw?.folder_path === 'string' && raw.folder_path.trim() !== '') {
-      // Resolved like `read` does: "~/dotfiles" must not become a folder named "~".
-      partial.folderPath = resolveUserPath(raw.folder_path.trim(), {
-        home: this.#home,
-        cwd: this.#home,
-      })
-    }
+    const folderPath = folder(raw?.folder_path)
+    if (folderPath != null) partial.folderPath = folderPath
+    const workingCopy = folder(raw?.working_copy)
+    if (workingCopy != null) partial.workingCopy = workingCopy
 
     return partial
   }

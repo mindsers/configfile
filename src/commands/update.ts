@@ -54,7 +54,11 @@ async function update({ hooks }: { hooks: boolean }, ctx: Context): Promise<void
     await lstat(path.join(folderPath, '.git'))
   } catch (error) {
     if (errnoCode(error) === 'ENOENT') {
-      throw new CliError(`${folderPath} is not a git repository. Run "configfile init --force".`)
+      throw new CliError(
+        `${folderPath} is not a git repository. Run "configfile init" to set configfile up ` +
+          'again: it undeploys the files it deployed, deletes its configuration and its folder ' +
+          '(history and saved changes included), then clones the repository again.',
+      )
     }
     throw new CliError(`Cannot read ${folderPath}: ${messageOf(error)}`, { cause: error })
   }

@@ -19,8 +19,8 @@ $ configfile modules deploy < /dev/null
 | Command | Question in a terminal | Option to pass instead |
 | --- | --- | --- |
 | `configfile init` | the repository's URL | `--repo <url>` |
-| `configfile init` | whether to replace an existing configuration | `--force` |
-| `configfile init` | whether to run the repository's `post_init` script | `--hooks` (without it, the script is not run, with a warning, and the command succeeds; `--no-hooks` never runs it) |
+| `configfile init` | whether to set *configfile* up again (it undeploys everything, then deletes its configuration and folder) | `--force` |
+| `configfile init` | whether to run the repository's `post_init` script | `--hooks` (without it, the script is not run, with a warning, and the command succeeds; `--no-hooks` never runs it, nor, when setting *configfile* up again, the undeploy scripts of the modules) |
 | `configfile modules deploy` and `undeploy` | whether to use every module | module names, or `--all` |
 | `configfile modules deploy --local` | whether to replace an existing file that differs | `--force` (without it, the file is skipped and the command fails) |
 | `configfile modules deploy` | whether to replace a copy changed both on this machine and in the repository, or a changed copy with a link | `--force` (without it, the file is kept and the command fails) |

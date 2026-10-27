@@ -80,7 +80,10 @@ export type Change =
   /** A script a module or the repository names was not run, without this being a failure. */
   | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
   | { kind: 'script-skipped'; name: string; hook: RepositoryHook; reason: string }
+  /** `reused`: written by older versions, which kept an existing clone. */
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
+  /** `init` deleted configfile's configuration, folder or clone, to set it up again. */
+  | { kind: 'deleted'; path: string }
   | { kind: 'configured'; file: string }
   /** `modules adopt` committed the file into `source`, in the working copy. */
   | { kind: 'adopted'; target: string; source: string; folder: string }
@@ -595,6 +598,8 @@ function isChange(value: unknown): value is Change {
     case 'cloned':
     case 'reused':
       return areStrings(value.repository, value.folder)
+    case 'deleted':
+      return areStrings(value.path)
     default:
       return false
   }

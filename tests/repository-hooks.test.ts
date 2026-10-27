@@ -126,8 +126,11 @@ describe('post_init', () => {
   it('asks in a terminal before running it, on every init', async () => {
     const { sandbox, remote } = await remoteWithPostInit()
 
+    // The script records next to the clone, which setting configfile up again deletes.
     const accepted = await runCli(sandbox, ['init', '--repo', remote], [true])
+    expect(await ran(sandbox, '.configfile')).toBe('post_init \n')
     const declined = await runCli(sandbox, ['init', '--force', '--repo', remote], [false])
+    expect(await ran(sandbox, '.configfile')).toBe('')
     const again = await runCli(sandbox, ['init', '--force', '--repo', remote], [true])
 
     expect(accepted.code).toBe(0)
@@ -136,8 +139,7 @@ describe('post_init', () => {
       'The post_init script was not run: run it with "configfile scripts run setup" when you want.',
     )
     expect(again.code).toBe(0)
-    // The first run, and the re-run of the reused repository.
-    expect(await ran(sandbox, '.configfile')).toBe('post_init \npost_init \n')
+    expect(await ran(sandbox, '.configfile')).toBe('post_init \n')
   })
 
   it('runs without a terminal only with --hooks, and never with --no-hooks', async () => {
@@ -260,10 +262,10 @@ describe('repository scripts, after the review', () => {
     git(remote, 'commit', '--quiet', '-m', 'post_init')
 
     const hooks = await runCli(sandbox, ['init', '--repo', remote, '--hooks'])
+    expect(await ran(sandbox, '.configfile')).toBe('post_init \n')
     const declined = await runCli(sandbox, ['init', '--force', '--repo', remote], [false])
 
     expect(hooks).toMatchObject({ code: 0, asked: [] })
-    expect(await ran(sandbox, '.configfile')).toBe('post_init \n')
     expect(declined.code).toBe(0)
     expect((await readHistory(sandbox)).at(-1)?.changes).toContainEqual({
       kind: 'script-skipped',

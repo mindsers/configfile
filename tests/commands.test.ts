@@ -26,6 +26,7 @@ import {
   createRemote,
   createSandbox,
   git,
+  gitSetting,
   readHistory,
   runCli,
   type Sandbox,
@@ -2197,7 +2198,7 @@ describe('init', () => {
     expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/.git'))).toBe(true)
   })
 
-  it('checks the folder again once it has waited: another configfile may have cloned it', async () => {
+  it('checks the folder again once it has waited: another configfile may have cloned into it', async () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
     const folder = path.join(sandbox.home, '.configfile/dotfiles')
@@ -2210,10 +2211,11 @@ describe('init', () => {
       other.kill()
     })
 
-    expect(result.code, result.stderr).toBe(0)
-    expect(result.stdout).toContain(
-      `${folder} already contains a git repository. It is used as is.`,
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      `${folder} is not empty: another configfile may have cloned into it meanwhile.`,
     )
+    expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(false)
   })
 
   it('does not replace a configuration saved while it waited, without --force', async () => {
@@ -2323,7 +2325,7 @@ describe('init', () => {
     expect(existsSync(path.join(sandbox.home, '.configfile/dotfiles/files/.gitkeep'))).toBe(true)
   })
 
-  it('reuses an existing repository without git', async () => {
+  it('refuses a folder that holds a repository, before it needs git', async () => {
     const sandbox = await createSandbox()
     await mkdir(path.join(sandbox.repo, '.git'), { recursive: true })
     vi.stubEnv('PATH', '/nonexistent')
@@ -2337,8 +2339,11 @@ describe('init', () => {
         sandbox.repo,
       ])
 
-      expect(result.code).toBe(0)
-      expect(result.stdout).toContain('already contains a git repository')
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain(
+        `${sandbox.repo} already holds a git repository: configfile only clones into an empty folder.`,
+      )
+      expect(existsSync(path.join(sandbox.home, '.configfilerc'))).toBe(false)
     } finally {
       vi.unstubAllEnvs()
     }
@@ -2354,24 +2359,7 @@ describe('init', () => {
     expect(existsSync(path.join(sandbox.repo, '.git'))).toBe(true)
   })
 
-  it('reuses an existing clone instead of failing', async () => {
-    const sandbox = await createSandbox()
-    const remote = await withRemote(sandbox)
-
-    const result = await runCli(sandbox, [
-      'init',
-      '--repo',
-      'https://example.com/unused.git',
-      '--folder',
-      remote,
-    ])
-
-    expect(result.code).toBe(0)
-    expect(result.stdout).toContain('already contains a git repository')
-    expect((await readConfig(sandbox)).folder_path).toBe(remote)
-  })
-
-  it('reuses a hand-edited folder_path starting with ~ when run again', async () => {
+  it('keeps a hand-edited folder_path starting with ~ it did not clone, when set up again', async () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
     git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
@@ -2381,9 +2369,14 @@ describe('init', () => {
       interactive: false,
     })
 
-    expect(result.code).toBe(0)
-    expect(result.stdout).toContain('already contains a git repository')
-    expect((await readConfig(sandbox)).folder_path).toBe(sandbox.repo)
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toContain(
+      `${sandbox.repo} is kept: configfile cannot tell it cloned it. Delete it if you no longer need it.`,
+    )
+    expect(existsSync(path.join(sandbox.repo, '.git'))).toBe(true)
+    expect((await readConfig(sandbox)).folder_path).toBe(
+      path.join(sandbox.home, '.configfile/dotfiles'),
+    )
     expect(existsSync(path.join(sandbox.cwd, '~'))).toBe(false)
   })
 
@@ -2437,7 +2430,7 @@ describe('init', () => {
     expect((await readConfig(sandbox)).repo_url).toBe(remote)
   })
 
-  it('offers the previous values when overwriting interactively', async () => {
+  it('offers the previous URL when set up again interactively', async () => {
     const sandbox = await createSandbox()
     const remote = await withRemote(sandbox)
     await sandbox.configure({ repo_url: 'old' })
@@ -2446,8 +2439,11 @@ describe('init', () => {
 
     expect(result.code).toBe(0)
     expect(result.asked).toHaveLength(2)
-    // The existing folder_path is kept.
-    expect(await readConfig(sandbox)).toEqual({ repo_url: remote, folder_path: sandbox.repo })
+    // Set up as on a first install: in configfile's own folder.
+    expect(await readConfig(sandbox)).toEqual({
+      repo_url: remote,
+      folder_path: path.join(sandbox.home, '.configfile/dotfiles'),
+    })
   })
 
   it.each([
@@ -2502,8 +2498,10 @@ describe('init', () => {
 
         expect(result.code).toBe(1)
         expect(result.stderr).toContain('Cannot save the configuration')
-        expect(result.stderr).toContain(`The repository is in ${folder}`)
-        expect(existsSync(path.join(folder, '.git'))).toBe(true)
+        expect(result.stderr).toContain(
+          'The clone is deleted: fix the problem and run "configfile init" again.',
+        )
+        expect(existsSync(folder)).toBe(false)
       } finally {
         await chmod(sandbox.home, 0o755)
       }
@@ -2584,12 +2582,16 @@ describe('init', () => {
 
   it('hides credentials of the repository URL and keeps the configuration private', async () => {
     const sandbox = await createSandbox()
-    await createRemote(sandbox)
-    // An existing clone is reused, so no network access is needed.
-    git(sandbox.root, 'clone', '--quiet', path.join(sandbox.root, 'remote'), sandbox.repo)
     const url = 'https://user:ghp_SECRET@github.com/acme/dotfiles.git'
+    // git fetches the URL from a local remote: no network needed.
+    gitSetting(`url.${await createRemote(sandbox)}.insteadOf`, url)
 
-    const result = await runCli(sandbox, ['init', '--repo', url, '--folder', '~/dotfiles'])
+    let result: Awaited<ReturnType<typeof runCli>>
+    try {
+      result = await runCli(sandbox, ['init', '--repo', url, '--folder', '~/dotfiles'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
 
     expect(result.code).toBe(0)
     expect(result.stdout + result.stderr).not.toContain('ghp_SECRET')
@@ -3543,23 +3545,26 @@ describe('history', () => {
 
   it('records init, with the repository URL redacted', async () => {
     const sandbox = await createSandbox()
-    const remote = await createRemote(sandbox)
-    git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+    gitSetting(`url.${await createRemote(sandbox)}.insteadOf`, 'https://me:tok@example.com/r.git')
 
-    await runCli(sandbox, [
-      'init',
-      '--repo',
-      'https://me:tok@example.com/r.git',
-      '--folder',
-      sandbox.repo,
-    ])
+    try {
+      await runCli(sandbox, [
+        'init',
+        '--repo',
+        'https://me:tok@example.com/r.git',
+        '--folder',
+        sandbox.repo,
+      ])
+    } finally {
+      vi.unstubAllEnvs()
+    }
 
     const [line] = await readHistory(sandbox)
     expect(line).toMatchObject({
       command: 'init',
       options: { repo: 'https://***:***@example.com/r.git', folder: sandbox.repo },
       changes: [
-        { kind: 'reused', repository: 'https://***:***@example.com/r.git', folder: sandbox.repo },
+        { kind: 'cloned', repository: 'https://***:***@example.com/r.git', folder: sandbox.repo },
         { kind: 'configured', file: path.join(sandbox.home, '.configfilerc') },
       ],
     })
