@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Writable } from 'node:stream'
 
-import { afterEach } from 'vitest'
+import { afterEach, vi } from 'vitest'
 
 import type { Context, Prompts } from '../src/context.ts'
 import { History, type HistoryLine } from '../src/history.ts'
@@ -167,6 +167,16 @@ export async function runCli(
  * Runs git for test setup, independent of the developer's git configuration
  * (vitest.config.ts also points GIT_CONFIG_GLOBAL to /dev/null).
  */
+/**
+ * Sets a git setting for the CLI and the tests' git, as the user's settings
+ * would. `vi.unstubAllEnvs()` removes it.
+ */
+export function gitSetting(key: string, value: string): void {
+  vi.stubEnv('GIT_CONFIG_COUNT', '1')
+  vi.stubEnv('GIT_CONFIG_KEY_0', key)
+  vi.stubEnv('GIT_CONFIG_VALUE_0', value)
+}
+
 export function git(cwd: string, ...args: string[]): void {
   execFileSync(
     'git',
@@ -195,6 +205,22 @@ export async function createRemote(sandbox: Sandbox): Promise<string> {
   return remote
 }
 
+/**
+ * A remote, configfile's mirror of it (`sandbox.repo`, configured), and a
+ * function to commit a file in the remote.
+ */
+export async function createMirror(sandbox: Sandbox) {
+  const remote = await createRemote(sandbox)
+  git(sandbox.root, 'clone', '--quiet', remote, sandbox.repo)
+  await sandbox.configure()
+  const commitInRemote = async (file: string, content: string) => {
+    await sandbox.write(`remote/${file}`, content)
+    git(remote, 'add', '.')
+    git(remote, 'commit', '--quiet', '-m', `change ${file}`)
+  }
+  return { remote, commitInRemote }
+}
+
 /** Every line of the history files (rotated file first); fails on an unreadable line. */
 export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
   const { entries, invalid, problems } = await new History(sandbox.home).read()
@@ -204,4 +230,20 @@ export async function readHistory(sandbox: Sandbox): Promise<HistoryLine[]> {
       throw new Error(`Unreadable: ${entry.raw}`)
     return entry.line
   })
+}
+
+/**
+ * A remote that accepts pushes, configfile's mirror of it, and the user's
+ * working copy (`<sandbox>/work`), both cloned from it.
+ */
+export async function createWorkingCopy(sandbox: Sandbox) {
+  const mirror = await createMirror(sandbox)
+  // A pushed branch that is checked out updates its files too.
+  git(mirror.remote, 'config', 'receive.denyCurrentBranch', 'updateInstead')
+  const work = path.join(sandbox.root, 'work')
+  git(sandbox.root, 'clone', '--quiet', mirror.remote, work)
+  git(work, 'config', 'user.name', 'test')
+  git(work, 'config', 'user.email', 'test@example.com')
+  git(work, 'config', 'commit.gpgsign', 'false')
+  return { ...mirror, work }
 }

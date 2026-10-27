@@ -17,7 +17,7 @@ The commands you ran, in order, for example:
 1. `configfile init --repo <url>`
 2. `configfile modules deploy zsh`
 
-If the bug depends on a module, add its `settings.json` (remove anything private).
+If the bug depends on a module, add its `configfile.module.json` (remove anything private).
 
 **Expected behavior**
 What you expected to happen.

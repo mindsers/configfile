@@ -19,9 +19,11 @@ $ configfile modules deploy < /dev/null
 | Command | Question in a terminal | Option to pass instead |
 | --- | --- | --- |
 | `configfile init` | the repository's URL | `--repo <url>` |
-| `configfile init` | whether to replace an existing configuration | `--force` |
+| `configfile init` | whether to set *configfile* up again (it undeploys everything, then deletes its configuration and folder) | `--force` |
+| `configfile init` | whether to run the repository's `post_init` script | `--hooks` (without it, the script is not run, with a warning, and the command succeeds; `--no-hooks` never runs it, nor, when setting *configfile* up again, the undeploy scripts of the modules) |
 | `configfile modules deploy` and `undeploy` | whether to use every module | module names, or `--all` |
 | `configfile modules deploy --local` | whether to replace an existing file that differs | `--force` (without it, the file is skipped and the command fails) |
+| `configfile modules deploy` | whether to replace a copy changed both on this machine and in the repository, or a changed copy with a link | `--force` (without it, the file is kept and the command fails) |
 
 Two more options matter in a script, although no question stands behind them: `--keep-going` deploys (or undeploys) the remaining modules when a [script named by a module](/guides/module-scripts/) fails, and `--no-hooks` runs none of these scripts.
 
@@ -34,7 +36,7 @@ Two more options matter in a script, although no question stands behind them: `-
 - `0` when the command succeeded;
 - another code when it failed, with an error message saying why: usually `1`, or git's own code when a git command fails (for example `128` when the repository can't be fetched);
 - the script's own exit code with `configfile scripts run`, so a failing setup script fails the step that runs it;
-- `1` when a [script named by a module](/guides/module-scripts/) fails during `modules deploy` or `undeploy` (its own exit code is in the [history](/reference/history/));
+- `1` when a [script named by a module](/guides/module-scripts/) fails during `modules deploy` or `undeploy`, or a [script named by the repository](/reference/modules/#run-scripts-after-update-and-init) is missing or fails after `update` or `init` (its own exit code is in the [history](/reference/history/));
 - `130` when you press Ctrl+C at a question, or while a script named by a module runs (`143` when *configfile* gets SIGTERM during such a script).
 
 In a shell script, `set -e` therefore stops at the first *configfile* command that fails.
@@ -51,7 +53,7 @@ With `configfile scripts run`, *configfile*'s own messages go to stderr and the 
 
 ## Check your dotfiles repository on every push
 
-A mistake in a `settings.json`, such as invalid JSON, a missing `target_path`, or a target *configfile* refuses, is usually found on the next machine you set up. A CI workflow can find it when you push, by deploying the repository into a throwaway home folder with `--dry-run`: *configfile* reads every module and entry, checks every target, and exits with `1` if anything can't be deployed.
+A mistake in the settings of a module, such as invalid JSON, a missing `target_path`, or a target *configfile* refuses, is usually found on the next machine you set up. A CI workflow can find it when you push, by deploying the repository into a throwaway home folder with `--dry-run`: *configfile* reads every module and entry, checks every target, and exits with `1` if anything can't be deployed.
 
 With GitHub Actions, add this workflow to your dotfiles repository:
 
@@ -97,5 +99,5 @@ To also test your setup script, add a step that runs it, on the systems it suppo
 Run it only if the script is safe to run on a fresh CI machine: it installs and changes things for real, as on your own computer.
 
 :::tip
-In your editor, the [JSON Schema of `settings.json`](/reference/modules/#completion-and-validation-in-your-editor) catches most of these mistakes before you even commit.
+In your editor, the [JSON Schema of the settings of a module](/reference/modules/#completion-and-validation-in-your-editor) catches most of these mistakes before you even commit.
 :::

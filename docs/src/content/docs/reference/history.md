@@ -3,7 +3,7 @@ title: History
 description: What configfile records about each run, and how to read it.
 ---
 
-*configfile* records what each command changed, when, and whether it failed, in `~/.configfile/history.jsonl`: one JSON line per run of `init`, `modules deploy`, `modules undeploy`, `update` and `scripts run` (dry runs and usage errors excepted), and per unexpected error of any command. Each line has the time, the *configfile* version, the command and its options, the current folder, the exit code, the error message, and the changes: files linked, copied, moved aside to `.old`, removed, restored, kept or skipped, syncs (from which commit to which, and saved patches), scripts and their exit codes (with the module and the setting, for a script a module names, and the scripts a module names that were not run on purpose).
+*configfile* records what each command changed, when, and whether it failed, in `~/.configfile/history.jsonl`: one JSON line per run of `init`, `modules deploy`, `modules undeploy`, `update` and `scripts run` (dry runs and usage errors excepted), and per unexpected error of any command. Each line has the time, the *configfile* version, the command and its options, the current folder, the exit code, the error message, and the changes: files linked, copied, updated from the repository, moved aside to `.old`, removed, restored, kept (changed on this machine, for example) or skipped, syncs (from which commit to which, and saved patches with the files they change), the configuration, folder and clone `init` deleted to set *configfile* up again, scripts and their exit codes (with the module and the setting, for a script a module names, or the setting alone, for a script the repository names, and the scripts they name that were not run on purpose). Setting *configfile* up again with `init` deletes the history: the new file starts with that run, which lists what it deleted.
 
 Script arguments, environment variables and file contents are never recorded. In URLs, user names and passwords (`https://user:token@host`) and query parameters that look like secrets (`?private_token=…`) are hidden. Paths are recorded in full, so they include your user name. When *configfile* creates the file, only its owner can read it. A run stopped by a signal (Ctrl+C outside a question) is not recorded, unless the signal comes while a script or git runs: *configfile* then leaves it to that program, and records the run with its exit code (for a deployment or undeployment stopped during a script a module names: `130` after Ctrl+C, `143` after SIGTERM, whatever the script's own exit code).
 
@@ -11,7 +11,7 @@ Script arguments, environment variables and file contents are never recorded. In
 
 ```txt
 2026-10-01 11:12  modules deploy zsh  ok
-  linked    ~/.zshrc  (previous file moved to ~/.zshrc.old)
+  copied    ~/.zshrc  (previous file moved to ~/.zshrc.old)
   2 unchanged
 
 2026-10-01 11:15  update  exit 128

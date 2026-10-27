@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { CliError } from './errors.ts'
 import {
+  type ContentHash,
   describeJsonError,
   type Identity,
   identityOf,
@@ -27,15 +28,39 @@ export interface Backup {
    * number, which some file systems do as soon as a file is deleted.
    */
   readonly modified?: number | null
+  /**
+   * A copy configfile made for another entry, moved aside when this one was
+   * deployed: it is configfile's copy again once put back.
+   */
+  readonly deployed?: Deployed
 }
+
+/** The content of a file: SHA-256 (hexadecimal) and size. */
+export type FileHash = ContentHash
+
+/**
+ * The base of a global copy: the repository's version configfile last
+ * brought it to, which tells a change made on this machine from a change
+ * made in the repository (see `RepositoryView`: not necessarily the bytes
+ * copied). A folder lists its files by path relative to it, with `/`
+ * separators.
+ */
+export type CopyManifest =
+  | ({ readonly kind: 'file' } & FileHash)
+  | { readonly kind: 'folder'; readonly files: Readonly<Record<string, FileHash>> }
 
 /** What configfile put at a target. */
 export interface Deployed {
   readonly strategy: 'global' | 'local'
   readonly source: string
   readonly identity: Identity
-  /** The settings.json entry it was deployed for (missing in records made before it was kept). */
+  /** The entry of its module's settings it was deployed for (missing in records made before it was kept). */
   readonly entry?: Entry
+  /**
+   * Global files only: it was copied, and this is its base. A global file
+   * without it is a link. configfile 1.x ignores it, and sees a file in the way.
+   */
+  readonly copy?: CopyManifest
 }
 
 /** Everything configfile knows about one target. */
@@ -158,6 +183,11 @@ export class DeploymentRecord {
       targets[key] = next
     }
 
+    // Never write what loading would refuse: one bad record would stop every command.
+    const written = targets[key]
+    if (written != null && !isTargets({ [key]: written })) {
+      throw new Error(`Refusing to record an invalid deployment of ${target}.`)
+    }
     const state = { ...this.#state, version: 2, targets }
     delete state.backups
     try {
@@ -216,7 +246,8 @@ function isTargets(value: unknown): value is Record<string, TargetRecord> {
         (backup: unknown) =>
           backup != null &&
           typeof backup === 'object' &&
-          isBackupPathOf(record.target, (backup as Backup).path),
+          isBackupPathOf(record.target, (backup as Backup).path) &&
+          ((backup as Backup).deployed === undefined || isDeployed((backup as Backup).deployed)),
       ),
   )
 }
@@ -224,9 +255,7 @@ function isTargets(value: unknown): value is Record<string, TargetRecord> {
 function isDeployed(value: unknown): boolean {
   if (value === null) return true
   if (value == null || typeof value !== 'object') return false
-  const { strategy, source, identity, entry } = value as Record<string, unknown>
-  const isObject = (item: unknown): item is Record<string, unknown> =>
-    item != null && typeof item === 'object'
+  const { strategy, source, identity, entry, copy } = value as Record<string, unknown>
   return (
     (strategy === 'global' || strategy === 'local') &&
     typeof source === 'string' &&
@@ -235,7 +264,43 @@ function isDeployed(value: unknown): boolean {
     typeof identity.ino === 'number' &&
     (entry === undefined ||
       (isObject(entry) &&
-        ['module', 'source', 'target', 'folder'].every(key => typeof entry[key] === 'string')))
+        ['module', 'source', 'target', 'folder'].every(key => typeof entry[key] === 'string'))) &&
+    (copy === undefined || (strategy === 'global' && isCopyManifest(copy)))
+  )
+}
+
+function isObject(item: unknown): item is Record<string, unknown> {
+  return item != null && typeof item === 'object' && !Array.isArray(item)
+}
+
+function isCopyManifest(value: unknown): value is CopyManifest {
+  if (!isObject(value)) return false
+  if (value.kind === 'file') return isFileHash(value)
+  if (value.kind !== 'folder' || !isObject(value.files)) return false
+  return Object.entries(value.files).every(([file, hash]) => isInnerPath(file) && isFileHash(hash))
+}
+
+function isFileHash(value: unknown): value is FileHash {
+  return (
+    isObject(value) &&
+    typeof value.sha256 === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.sha256) &&
+    Number.isSafeInteger(value.size) &&
+    (value.size as number) >= 0
+  )
+}
+
+/**
+ * A path inside a copied folder, as the record keeps it: relative, with `/`
+ * separators, without `.` or `..`. Anything else in the record (edited by
+ * hand, or planted) must never lead configfile outside the folder.
+ */
+export function isInnerPath(file: string): boolean {
+  return (
+    file !== '' &&
+    !file.includes('\0') &&
+    !file.startsWith('/') &&
+    file.split('/').every(part => part !== '' && part !== '.' && part !== '..')
   )
 }
 

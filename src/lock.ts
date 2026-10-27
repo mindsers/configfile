@@ -57,6 +57,7 @@ export async function withLock<T>(
     held.add(lock)
     try {
       await sweepDrafts(lock)
+      await removeGuard(lock)
       return await task()
     } finally {
       held.delete(lock)
@@ -203,6 +204,16 @@ async function sweepDrafts(lock: string): Promise<void> {
 }
 
 /**
+ * Removes the takeover guard, whoever it names. Called with the lock held, so
+ * no lock can be taken over meanwhile: a takeover only removes a lock that
+ * still names the process that left it behind, and this one names this
+ * process. Never fails.
+ */
+async function removeGuard(lock: string): Promise<void> {
+  await rm(`${lock}.takeover`, { force: true }).catch(() => {})
+}
+
+/**
  * The pid in a lock: `null` when it holds none (being written by configfile
  * 1.0, or damaged), `gone` when the lock no longer exists. Any other error is
  * thrown: a lock that cannot be read is never taken over.
@@ -239,6 +250,8 @@ function isLeftBehind(lock: string, owner: number): boolean {
  *
  * A guard left by a process that no longer exists is moved aside, then
  * checked: one moved by mistake (a new one, created meanwhile) is put back.
+ * Its owner may have finished meanwhile, which leaves it behind: the next
+ * process to hold the lock removes it (see `removeGuard`).
  * That leaves one rare case, a guard left behind and found by several
  * processes at the very same moment, where two of them may take over at once.
  */

@@ -8,8 +8,8 @@ description: Manage your dotfiles and setup scripts from a git repository, on ma
 - [Install configfile](/getting-started/installation/), then follow [Your first dotfiles repository](/getting-started/tutorial/), a ten-minute tutorial.
 - [How it works](/concepts/how-it-works/): your repository, the mirror configfile keeps, and what it deploys.
 - [Safety and trust](/concepts/safety/): what configfile protects, and what it refuses to touch.
-- Reference: [commands](/reference/commands/), [modules and `settings.json`](/reference/modules/), [scripts](/reference/scripts/), [configuration](/reference/configuration/), [history](/reference/history/).
-- Guides: [set up a new machine](/guides/new-machine/), [use configfile in scripts and CI](/guides/scripts-and-ci/), [run scripts when a module is deployed](/guides/module-scripts/), [upgrade from 0.3](/guides/upgrading-from-0-3/).
+- Reference: [commands](/reference/commands/), [modules and their settings](/reference/modules/), [scripts](/reference/scripts/), [configuration](/reference/configuration/), [history](/reference/history/).
+- Guides: [set up a new machine](/guides/new-machine/), [use configfile in scripts and CI](/guides/scripts-and-ci/), [run scripts when a module is deployed](/guides/module-scripts/), [upgrade from 1.x](/guides/upgrading-from-1/), [upgrade from 0.3](/guides/upgrading-from-0-3/).
 - [Changelog](https://github.com/mindsers/configfile/blob/develop/CHANGELOG.md): what changed in each version.
 
 ## Contribution

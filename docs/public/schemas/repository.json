@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.configfile.sh/schemas/repository.json",
+  "title": "configfile repository settings",
+  "description": "configfile.repository.json, at the root of a dotfiles repository: settings of the repository itself, the same on every machine. See https://docs.configfile.sh/reference/modules/#repository-settings",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The JSON Schema of this file, for editor completion and validation. configfile only checks that it is text.",
+      "type": "string"
+    },
+    "module_settings": {
+      "description": "The name of the settings file of each module, in its folder. Default: configfile.module.json. configfile 1.x used settings.json.",
+      "type": "string",
+      "pattern": "^[^/\\\\]+\\.json$",
+      "not": {
+        "const": "configfile.repository.json"
+      }
+    },
+    "post_update": {
+      "description": "The name of a script of the repository (as listed by configfile scripts list), run by configfile update once it has synced the repository, when the sync brought changes. configfile update --no-hooks skips it.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "post_init": {
+      "description": "The name of a script of the repository, run by configfile init once the repository is cloned and the configuration saved. In a terminal, configfile init asks first; without one, it runs only with --hooks.",
+      "type": "string",
+      "pattern": "\\S"
+    }
+  },
+  "additionalProperties": false
+}

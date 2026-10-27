@@ -99,3 +99,14 @@ export function redactUrl(url: string): string {
   parsed.password = parsed.password === '' ? '' : '***'
   return parsed.toString()
 }
+
+/** A path as a shell reads it: quoted when it holds anything but plain characters. */
+export function shellQuote(value: string): string {
+  return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+}
+
+/** `message` ending with a period, so that another sentence can follow it. */
+export function sentence(message: string): string {
+  const trimmed = message.trim()
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}

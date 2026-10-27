@@ -10,7 +10,7 @@ import { CliError, isPromptExit } from './errors.ts'
 import { errnoCode, lstatOrNull, messageOf } from './fsutil.ts'
 import { redactUrl } from './output.ts'
 import { configfilePaths } from './paths.ts'
-import { HOOKS, type Hook } from './repository.ts'
+import { HOOKS, type Hook, REPOSITORY_HOOKS, type RepositoryHook } from './repository.ts'
 
 /** At most this many changes are written per run; the rest are counted. */
 const MAX_CHANGES = 1000
@@ -27,6 +27,7 @@ export const COMMANDS = {
   init: 'recorded',
   'modules deploy': 'recorded',
   'modules undeploy': 'recorded',
+  'modules adopt': 'recorded',
   update: 'recorded',
   'scripts run': 'recorded',
   'modules list': 'read-only',
@@ -40,26 +41,56 @@ export type KeptReason = KeptState['kind']
 
 /** One thing configfile did (or failed to do) during a run. */
 export type Change =
-  | { kind: 'deployed'; how: 'link' | 'copy'; source: string; target: string; backup?: string }
-  | { kind: 'skipped'; target: string; reason: 'exists' }
+  /**
+   * `replaced`: configfile's own link (replaced by a copy) or copy (replaced
+   * by a link, or updated from the repository); nothing was backed up.
+   */
+  | {
+      kind: 'deployed'
+      how: 'link' | 'copy'
+      source: string
+      target: string
+      backup?: string
+      replaced?: 'link' | 'copy'
+    }
+  /** `conflict`: a copy changed both on this machine and in the repository. */
+  | { kind: 'skipped'; target: string; reason: 'exists' | 'conflict' }
+  /** `movedTo`: a file of a copy the repository deleted, changed here, moved there first. */
   | {
       kind: 'removed'
       target: string
       backup?: { path: string; status: 'restored' | 'missing' | 'changed' }
       leftover?: string
+      movedTo?: string
     }
   /** `forgotten`: configfile stopped tracking it (its entry left the repository). */
   | { kind: 'kept'; target: string; reason: KeptReason; forgotten?: true }
   | { kind: 'failed'; target: string; reason: string }
   | { kind: 'failed'; module: string; reason: string }
   | { kind: 'synced'; folder: string; upstream: string; from: string | null; to: string }
-  | { kind: 'saved-patch'; file: string }
-  /** `hook` and `module`: the script ran as that setting (`pre_deploy`, `post_undeploy`…) of that module. */
+  /** `paths`: the files of the repository whose changes the patch holds (missing in older lines). */
+  | { kind: 'saved-patch'; file: string; paths?: string[] }
+  /**
+   * `hook` and `module`: the script ran as that setting (`pre_deploy`,
+   * `post_undeploy`…) of that module. Neither: run by `configfile scripts run`.
+   */
   | { kind: 'script'; name: string; file: string; exitCode: number; hook?: Hook; module?: string }
-  /** A script a module names was not run, without this being a failure. */
+  /** The script ran as that setting of the repository (`post_update`, `post_init`). */
+  | { kind: 'script'; name: string; file: string; exitCode: number; hook: RepositoryHook }
+  /** A script a module or the repository names was not run, without this being a failure. */
   | { kind: 'script-skipped'; name: string; hook: Hook; module: string; reason: string }
+  | { kind: 'script-skipped'; name: string; hook: RepositoryHook; reason: string }
+  /** `reused`: written by older versions, which kept an existing clone. */
   | { kind: 'cloned' | 'reused'; repository: string; folder: string }
+  /** `init` deleted configfile's configuration, folder or clone, to set it up again. */
+  | { kind: 'deleted'; path: string }
   | { kind: 'configured'; file: string }
+  /** `modules adopt` committed the file into `source`, in the working copy. */
+  | { kind: 'adopted'; target: string; source: string; folder: string }
+  /** Commits of the working copy pushed to the remote (`from`: the remote's commit, as last fetched). */
+  | { kind: 'pushed'; folder: string; branch: string; from: string | null; to: string }
+  /** A target that already was the repository's version, recorded as configfile's copy. */
+  | { kind: 'recorded'; target: string; source: string }
 
 /** The command a run executed, with the options worth recording. */
 export interface Invocation {
@@ -69,8 +100,8 @@ export interface Invocation {
 }
 
 /**
- * One line of `history.jsonl`. Version 1: later 1.x releases may add change
- * kinds and optional fields (readers skip what they do not know); any other
+ * One line of `history.jsonl`. Version 1: later releases may add change kinds,
+ * values and optional fields (readers skip what they do not know); any other
  * change gets a new `v`.
  */
 export interface HistoryLine {
@@ -132,15 +163,23 @@ export function describeInvocation(action: Command): Invocation {
 
   switch (command) {
     case 'init':
-      copy('force', 'folder')
+      copy('force', 'folder', 'workingCopy', 'profile', 'hooks')
       if (typeof given.repo === 'string') options.repo = redactUrl(given.repo)
       break
     case 'modules deploy':
     case 'modules undeploy':
     case 'modules status':
       options.modules = Array.isArray(args[0]) ? args[0] : []
-      copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing')
+      copy('local', 'all', 'force', 'dryRun', 'removed', 'keepGoing', 'os', 'profile')
       // On unless turned off with --no-hooks.
+      if (given.hooks === false) options.hooks = false
+      break
+    case 'modules adopt':
+      copy('module', 'dryRun', 'os', 'profile')
+      options.paths = Array.isArray(args[0]) ? args[0].length : 0
+      if (given.push === false) options.push = false
+      break
+    case 'update':
       if (given.hooks === false) options.hooks = false
       break
     case 'scripts run':
@@ -473,6 +512,7 @@ export function parseHistoryLine(raw: string): HistoryEntry | null {
 }
 
 const KEPT_REASONS: Record<KeptReason, true> = {
+  changed: true,
   foreign: true,
   modified: true,
   identical: true,
@@ -487,10 +527,14 @@ function isChange(value: unknown): value is Change {
       return (
         (value.how === 'link' || value.how === 'copy') &&
         areStrings(value.source, value.target) &&
-        (backup === undefined || typeof backup === 'string')
+        (backup === undefined || typeof backup === 'string') &&
+        (value.replaced === undefined || value.replaced === 'link' || value.replaced === 'copy')
       )
     case 'skipped':
-      return typeof value.target === 'string' && value.reason === 'exists'
+      return (
+        typeof value.target === 'string' &&
+        (value.reason === 'exists' || value.reason === 'conflict')
+      )
     case 'removed':
       return (
         typeof value.target === 'string' &&
@@ -498,7 +542,8 @@ function isChange(value: unknown): value is Change {
           (isObject(backup) &&
             typeof backup.path === 'string' &&
             ['restored', 'missing', 'changed'].includes(backup.status as string))) &&
-        (value.leftover === undefined || typeof value.leftover === 'string')
+        (value.leftover === undefined || typeof value.leftover === 'string') &&
+        (value.movedTo === undefined || typeof value.movedTo === 'string')
       )
     case 'kept':
       return (
@@ -517,25 +562,51 @@ function isChange(value: unknown): value is Change {
         (value.from === null || typeof value.from === 'string')
       )
     case 'saved-patch':
+      return (
+        typeof value.file === 'string' &&
+        (value.paths === undefined ||
+          (Array.isArray(value.paths) && value.paths.every(item => typeof item === 'string')))
+      )
     case 'configured':
       return typeof value.file === 'string'
+    case 'adopted':
+      return areStrings(value.target, value.source, value.folder)
+    case 'pushed':
+      return (
+        areStrings(value.folder, value.branch, value.to) &&
+        (value.from === null || typeof value.from === 'string')
+      )
+    case 'recorded':
+      return areStrings(value.target, value.source)
     case 'script':
       return (
         areStrings(value.name, value.file) &&
         Number.isInteger(value.exitCode) &&
-        (value.module === undefined || typeof value.module === 'string') &&
-        (value.hook === undefined || HOOKS.includes(value.hook as Hook))
+        // A module's setting with its module (or neither), the repository's without one.
+        (isRepositoryHook(value.hook)
+          ? value.module === undefined
+          : (value.hook === undefined || HOOKS.includes(value.hook as Hook)) &&
+            (value.module === undefined || typeof value.module === 'string'))
       )
     case 'script-skipped':
       return (
-        areStrings(value.name, value.module, value.reason) && HOOKS.includes(value.hook as Hook)
+        areStrings(value.name, value.reason) &&
+        (isRepositoryHook(value.hook)
+          ? value.module === undefined
+          : HOOKS.includes(value.hook as Hook) && typeof value.module === 'string')
       )
     case 'cloned':
     case 'reused':
       return areStrings(value.repository, value.folder)
+    case 'deleted':
+      return areStrings(value.path)
     default:
       return false
   }
+}
+
+function isRepositoryHook(value: unknown): value is RepositoryHook {
+  return REPOSITORY_HOOKS.includes(value as RepositoryHook)
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

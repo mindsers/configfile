@@ -12,7 +12,7 @@ This guide takes a machine from nothing to your configuration, using a dotfiles 
 On a new machine, install the standalone binary, which needs neither a package manager nor Node.js:
 
 ```sh
-curl -fsSL https://docs.configfile.sh/install.sh | sh
+curl -fsSL https://configfile.sh/install.sh | sh
 ```
 
 It installs `~/.local/bin/configfile`, and says how to add that folder to your `PATH` when it is not there. *configfile* also needs git: on macOS, `xcode-select --install` installs it. [Installation](/getting-started/installation/) lists the other ways, such as Homebrew.
@@ -29,7 +29,7 @@ Avoid putting a token in the repository URL: *configfile* saves the URL in `~/.c
 configfile init
 ```
 
-*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`.
+*configfile* asks for the repository's URL and clones it into `~/.configfile/dotfiles`. When the repository's modules name profiles ([`when`](/reference/modules/#deploy-on-some-machines-only)), it also asks for this machine's profiles, such as `work` (without a terminal, give them with `--profile`). When the repository names a [`post_init` script](/reference/modules/#run-scripts-after-update-and-init), it asks whether to run it.
 
 ## 4. Deploy your modules
 
@@ -62,7 +62,7 @@ With a version per system (`setup.macos.sh`, `setup.linux.sh`), *configfile* pic
 
 ## 6. Copy local files into your projects
 
-Local files, such as an `.editorconfig`, are copied into the current folder rather than linked. In each project that needs them:
+Local files, such as an `.editorconfig`, are copied into the current folder rather than your home folder. In each project that needs them:
 
 ```sh
 cd ~/projects/my-project
@@ -78,15 +78,25 @@ To set up machines regularly, put the steps in a script. Without a terminal to a
 set -e
 
 # Downloaded first: in "curl ... | sh", set -e would not see a failed download.
-curl -fsSL https://docs.configfile.sh/install.sh -o /tmp/install-configfile.sh
+curl -fsSL https://configfile.sh/install.sh -o /tmp/install-configfile.sh
 sh /tmp/install-configfile.sh
 export PATH="$HOME/.local/bin:$PATH"
-configfile init --repo git@github.com:me/dotfiles.git
+configfile init --repo git@github.com:me/dotfiles.git --profile work
 configfile modules deploy --all
 configfile scripts run setup
 ```
 
-`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. On a machine that already has a configuration, `init` refuses to replace it without `--force`.
+`set -e` stops the script at the first step that fails: *configfile* exits with a non-zero code when a command fails. If your repository names a [`post_init` script](/reference/modules/#run-scripts-after-update-and-init), add `--hooks` to `init` to run it without a terminal, instead of running it by hand: it then runs before `modules deploy`, so it deploys the modules itself if it needs their files. On a machine where *configfile* is already set up, `init` stops without `--force`. With it, `init` sets *configfile* up again: it undeploys everything, and deletes its configuration and its folder. Don't add `--force` to a script that may run on a machine that is already set up.
+
+## Bring this machine's files into the repository
+
+A machine often has configuration files that aren't in your repository yet. Add them to a module with:
+
+```sh
+configfile modules adopt ~/.zshrc ~/.config/starship --module shell --into ~/src/dotfiles
+```
+
+`~/src/dotfiles` is your own working copy of the repository: *configfile* copies the files into `files/shell/`, adds them to its `configfile.module.json`, commits and pushes, then keeps them in place as its copies. Your other machines get them with `update` and `modules deploy shell`. The working copy is remembered, so `--into` can be left out next time. Add `--dry-run` to see what it would do first.
 
 ## Keep the machine in sync
 
@@ -96,4 +106,4 @@ When you push changes to your repository, bring them to the machine with:
 configfile update
 ```
 
-Linked files are up to date right away. Run `configfile modules deploy --all` again when you add files or modules, as `update` reminds you, and `configfile modules undeploy --removed` to remove what the repository no longer deploys, which `update` warns about.
+It updates the global files the repository changed, and keeps those changed on this machine. Run `configfile modules deploy --all` again when you add files or modules, as `update` reminds you, and `configfile modules undeploy --removed` to remove what the repository no longer deploys, which `update` warns about.

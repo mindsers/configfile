@@ -24,11 +24,14 @@ Scripts get these environment variables, in addition to *configfile*'s own envir
 | `CONFIGFILE_REPO` | the full path of the dotfiles repository (`folder_path`), to reach its files: `"$CONFIGFILE_REPO/Brewfile"` |
 | `CONFIGFILE_SCRIPT` | the script's name (`setup`) |
 | `CONFIGFILE_OS` | the system: `macos` or `linux`, as in the names of script versions |
+| `CONFIGFILE_PROFILES` | the profiles of this machine (`"profiles"` in `~/.configfilerc`), separated by commas: `work,client`, or empty |
 
-A module can name scripts to run each time it is deployed or undeployed, with [`pre_deploy`, `post_deploy`, `pre_undeploy` and `post_undeploy`](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) in its `settings.json`. [Run scripts when a module is deployed](/guides/module-scripts/) shows how. Their exit code is not forwarded: when one fails, `modules deploy` or `modules undeploy` exits with `1`. Such a script gets no arguments, and three more variables:
+A module can name scripts to run each time it is deployed or undeployed, with [`pre_deploy`, `post_deploy`, `pre_undeploy` and `post_undeploy`](/reference/modules/#run-scripts-when-a-module-is-deployed-or-undeployed) in its `configfile.module.json`. [Run scripts when a module is deployed](/guides/module-scripts/) shows how. Their exit code is not forwarded: when one fails, `modules deploy` or `modules undeploy` exits with `1`. Such a script gets no arguments, and three more variables:
 
 | Variable | Value |
 | --- | --- |
 | `CONFIGFILE_HOOK` | the setting that named the script: `pre_deploy`, `post_deploy`, `pre_undeploy` or `post_undeploy` |
 | `CONFIGFILE_MODULE` | the name of the module being deployed or undeployed (`tmux`) |
 | `CONFIGFILE_DEPLOY` | `global` or `local` (with `--local`) |
+
+The repository can also name scripts to run after `update` and `init`, with [`post_update` and `post_init`](/reference/modules/#run-scripts-after-update-and-init) in `configfile.repository.json`. They get no arguments, and `CONFIGFILE_HOOK` set to `post_update` or `post_init`; a failure makes the command exit with `1`.
