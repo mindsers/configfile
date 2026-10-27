@@ -157,22 +157,32 @@ describe('ensureGit', () => {
     )
   })
 
-  it('stops waiting on time even when something git started keeps its output open', async () => {
+  it('stops waiting on time even when something git started keeps its output open', async ({
+    skip,
+  }) => {
     const sandbox = await createSandbox()
     const pidFile = path.join(sandbox.root, 'escaped.pid')
-    // A child that leaves git's process group, so the group kill misses it.
+    const escapedFile = path.join(sandbox.root, 'escaped')
+    // A child that leaves git's process group, so the group kill misses it,
+    // and says so once it has.
     const command = await sandbox.write(
       'bin/git',
-      `#!/bin/sh\nperl -e 'use POSIX; setsid(); sleep 20' &\necho $! > "${pidFile}"\nsleep 30\n`,
+      `#!/bin/sh\nperl -e 'use POSIX; setsid(); open(my $f, ">", $ARGV[0]); close($f); sleep 5' "${escapedFile}" &\necho $! > "${pidFile}"\nsleep 30\n`,
       0o755,
     )
     const started = Date.now()
 
     try {
-      await expect(ensureGit({ command, timeoutMs: 300 })).rejects.toThrow(
-        'git did not answer within 0.3 seconds',
+      // Long enough for the child to leave the group even on a slow machine.
+      await expect(ensureGit({ command, timeoutMs: 1500 })).rejects.toThrow(
+        'git did not answer within 1.5 seconds',
       )
-      expect(Date.now() - started).toBeLessThan(3000)
+      expect(Date.now() - started).toBeLessThan(4000)
+      const escaped = await readFile(escapedFile).then(
+        () => true,
+        () => false,
+      )
+      skip(!escaped, 'the child had not left git process group when the timeout fired')
     } finally {
       const pid = Number(await readFile(pidFile, 'utf8').catch(() => ''))
       if (pid > 0) {
