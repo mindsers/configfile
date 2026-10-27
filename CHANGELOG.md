@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
   no longer accepts either.
 ### Added
+- `init` offers to set up a repository that has no commit yet: in your working copy, which it
+  clones when needed and saves as `working_copy`, it commits starter files
+  (`configfile.repository.json`, a README, an example module and an example script), pushes
+  them and syncs. It commits only with a git name and email you set, never with one git guesses.
+  In a terminal it asks first; without one it only says the repository is empty, unless
+  `--new-repository` is given. `--no-new-repository` never sets it up. `update` says an empty
+  repository is empty instead of suggesting to clone it again, and `modules adopt`, before the
+  first sync, says to run `update` ([#27](https://github.com/mindsers/configfile/issues/27)).
 - The repository can name scripts to run after `update` and `init`, with `"post_update"` and
   `"post_init"` in `configfile.repository.json`. `post_update` runs when `update` brought
   changes, unless `--no-hooks` is given. `post_init` runs at the end of `init`: in a terminal it

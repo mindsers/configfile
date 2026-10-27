@@ -1,6 +1,4 @@
-import { existsSync } from 'node:fs'
-import { lstat, mkdir, readdir, stat } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 
 import type { Command } from 'commander'
 
@@ -8,14 +6,20 @@ import { isProfileName } from '../conditions.ts'
 import { ConfigStore } from '../config.ts'
 import type { Context } from '../context.ts'
 import { CliError } from '../errors.ts'
-import { messageOf } from '../fsutil.ts'
+import { type FolderState, inspectFolder, messageOf } from '../fsutil.ts'
 import { checkRepositoryUrl } from '../git-url.ts'
 import { withCommandLock } from '../lock.ts'
-import { redactUrl } from '../output.ts'
+import { redactUrl, sentence } from '../output.ts'
 import { configfilePaths, resolveUserPath } from '../paths.ts'
 import { ensureGit, gitClone } from '../process.ts'
 import { knownProfiles, listModules, readRepositorySettings } from '../repository.ts'
 import { failedHook, runRepositoryHook } from '../repository-hooks.ts'
+import {
+  type EmptyRemote,
+  findEmptyRemote,
+  offerNewRepository,
+  setUpCommand,
+} from './new-repository.ts'
 
 interface InitOptions {
   force?: boolean
@@ -28,6 +32,12 @@ interface InitOptions {
    * ask in a terminal and skip it without one (unset).
    */
   hooks?: boolean
+  /**
+   * Set up an empty repository without asking first (`true`), never
+   * (`false`), or ask in a terminal and only say it is empty without one
+   * (unset).
+   */
+  newRepository?: boolean
 }
 
 export function registerInitCommand(program: Command, ctx: Context): void {
@@ -49,6 +59,13 @@ export function registerInitCommand(program: Command, ctx: Context): void {
     )
     .option('--hooks', 'run the post_init script of the repository without asking')
     .option('--no-hooks', 'do not run the post_init script of the repository')
+    .option(
+      '--new-repository',
+      'when the repository is empty, set it up in your working copy without asking first ' +
+        '(in a terminal, the folder is still asked, unless --working-copy): commit starter ' +
+        'files, and push them',
+    )
+    .option('--no-new-repository', 'when the repository is empty, do not offer to set it up')
     .action((options: InitOptions) => init(options, ctx))
 }
 
@@ -127,14 +144,62 @@ async function init(options: InitOptions, ctx: Context): Promise<void> {
   await withCommandLock(ctx, () =>
     setUp({ folderPath, repoUrl, configured, force: options.force === true }, store, ctx),
   )
-  if (options.workingCopy != null) {
-    await store.setWorkingCopy(resolveUserPath(options.workingCopy.trim(), ctx))
-  }
+  const workingCopy =
+    options.workingCopy == null ? undefined : resolveUserPath(options.workingCopy.trim(), ctx)
   const profiles = await chooseProfiles(options.profile, folderPath, store, ctx)
   if (profiles != null) await store.setProfiles(profiles)
+  // A new repository's setup saves the working copy, once it knows the folder can be used.
+  const setUpNew = await setUpIfEmpty(options, { repoUrl, workingCopy }, folderPath, store, ctx)
+  if (!setUpNew && workingCopy != null) await store.setWorkingCopy(workingCopy)
   // After the lock: the script may run configfile itself.
   await runPostInit(options.hooks, folderPath, store, ctx)
   output.success(`configfile is ready. Configuration saved to ${store.path}.`)
+}
+
+/**
+ * Offers to set up the repository when it has no commit yet (see
+ * `offerNewRepository`). Returns whether it did, which saves the working copy.
+ */
+async function setUpIfEmpty(
+  options: InitOptions,
+  { repoUrl, workingCopy }: { repoUrl: string; workingCopy: string | undefined },
+  folderPath: string,
+  store: ConfigStore,
+  ctx: Context,
+): Promise<boolean> {
+  const done = `configfile is configured (${store.path})`
+  let empty: EmptyRemote | null
+  try {
+    empty = await findEmptyRemote(folderPath)
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error
+    const why = `whether the repository is empty cannot be told: ${sentence(messageOf(error))}`
+    if (options.newRepository === true) {
+      throw new CliError(
+        `${done}, but ${why} Once fixed, run "${setUpCommand(repoUrl, workingCopy)}".`,
+        { cause: error },
+      )
+    }
+    // Not fatal: the repository is cloned and configured.
+    ctx.output.warn(`Setting up a new repository is not offered: ${why}`)
+    return false
+  }
+  if (empty == null) {
+    if (options.newRepository === true) {
+      ctx.output.info('The repository is not empty: there is no new repository to set up.')
+    }
+    return false
+  }
+  // A saved value that cannot be used is left to the question, or to ~/dotfiles.
+  const saved = await store.read().then(
+    config => config.workingCopy,
+    () => null,
+  )
+  return offerNewRepository(
+    { wanted: options.newRepository, workingCopy, saved, mirror: folderPath, empty, done },
+    store,
+    ctx,
+  )
 }
 
 /**
@@ -263,7 +328,7 @@ async function chooseProfiles(
   return [...new Set(parse(answer))]
 }
 
-function needsClone(folder: Awaited<ReturnType<typeof inspectFolder>>): boolean {
+function needsClone(folder: FolderState): boolean {
   return folder === 'missing' || folder === 'empty'
 }
 
@@ -326,28 +391,4 @@ async function setUp(
     )
   }
   ctx.history.record({ kind: 'configured', file: store.path })
-}
-
-async function inspectFolder(folderPath: string) {
-  const fail = (error: unknown): never => {
-    throw new CliError(`Cannot use ${folderPath}: ${(error as Error).message}`, { cause: error })
-  }
-
-  const link = await lstat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    return fail(error)
-  })
-  if (link == null) return 'missing'
-
-  const stats = await stat(folderPath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new CliError(`${folderPath} is a broken symbolic link.`)
-    }
-    return fail(error)
-  })
-
-  if (!stats.isDirectory()) return 'not-a-directory'
-  if (existsSync(path.join(folderPath, '.git'))) return 'git-repository'
-  if ((await readdir(folderPath).catch(fail)).length > 0) return 'not-empty'
-  return 'empty'
 }

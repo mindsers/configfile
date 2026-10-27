@@ -13,18 +13,57 @@ You need *configfile* [installed](/getting-started/installation/) and a GitHub a
 
 *configfile* doesn't store your files: they live in a git repository that you own, usually called `dotfiles`.
 
-Create an empty repository named `dotfiles` on GitHub, then clone it. This clone is your **working copy**: it's where you edit your dotfiles.
+Create an empty repository named `dotfiles` on GitHub: no README, no license, nothing in it. *configfile* fills it in the next step.
+
+## 2. Connect configfile to the repository
 
 ```sh
-git clone git@github.com:me/dotfiles.git ~/dotfiles
-cd ~/dotfiles
+configfile init --repo git@github.com:me/dotfiles.git
 ```
 
-## 2. Add a first module
+The repository is empty, so *configfile* offers to set it up, then asks where your **working copy** goes: your own clone of the repository, where you edit your dotfiles. Keep `~/dotfiles`:
 
-A **module** is a folder of `files/` that groups the configuration of one tool. Create one for zsh, with the file you want on every machine:
+```txt
+ Info  Cloning git@github.com:me/dotfiles.git into ~/.configfile/dotfiles…
+Cloning into '/Users/me/.configfile/dotfiles'...
+warning: You appear to have cloned an empty repository.
+✔ git@github.com:me/dotfiles.git is empty. Set up a new dotfiles repository in it? Yes
+✔ Your working copy (the clone where you edit your dotfiles): ~/dotfiles
+ Info  Cloning git@github.com:me/dotfiles.git into ~/dotfiles…
+Cloning into '/Users/me/dotfiles'...
+warning: You appear to have cloned an empty repository.
+ Info  Set up a new dotfiles repository in ~/dotfiles, and pushed it to git@github.com:me/dotfiles.git.
+ Info  Syncing ~/.configfile/dotfiles…
+ Done  Synced with origin/main (3c9e2a1).
+ Info  Edit your dotfiles in ~/dotfiles, push, then run "configfile update" on each machine; or add files of this machine with "configfile modules adopt".
+ Done  configfile is ready. Configuration saved to ~/.configfilerc.
+```
+
+*configfile* committed a few files to start from in `~/dotfiles`, with your git name and email, and pushed them. It remembers `~/dotfiles` as your working copy. (Set your name and email in git first: *configfile* never commits with one git would guess.)
+
+```txt
+configfile.repository.json
+README.md
+files/
+    example/
+        configfile.module.json
+        example.conf
+scripts/
+    hello.sh
+```
+
+It also keeps its own copy of the repository in `~/.configfile/dotfiles`, and deploys from it. You never edit that copy: you edit your working copy, push, and *configfile* follows. [How it works](/concepts/how-it-works/) explains why.
+
+:::note
+Your repository already has commits? Clone it as your working copy, then run `configfile init --repo git@github.com:me/dotfiles.git --working-copy ~/dotfiles`: `init` only connects to it, and remembers your working copy.
+:::
+
+## 3. Add a first module
+
+A **module** is a folder of `files/` that groups the configuration of one tool; `files/example` shows one. Create one for zsh in your working copy, with the file you want on every machine:
 
 ```sh
+cd ~/dotfiles
 mkdir -p files/zsh
 echo 'alias ll="ls -la"' > files/zsh/zshrc
 ```
@@ -33,17 +72,22 @@ Then tell *configfile* where this file goes, in the module's `configfile.module.
 
 ```json title="files/zsh/configfile.module.json"
 {
+  "$schema": "https://docs.configfile.sh/schemas/module.json",
   "files": [
     { "source_path": "zshrc", "target_path": "~/.zshrc", "deploy": "global" }
   ]
 }
 ```
 
-`"deploy": "global"` means the file is copied into your home folder, and kept up to date with the repository. The [modules reference](/reference/modules/) lists every option.
+`"deploy": "global"` means the file is copied into your home folder, and kept up to date with the repository. The `$schema` line lets your editor suggest the keys. The [modules reference](/reference/modules/) lists every option.
 
-## 3. Add a setup script
+:::tip
+`configfile modules adopt --module zsh ~/.zshrc` does all of this with the `~/.zshrc` you already have: it copies it into the module, commits, pushes and syncs, and your `~/.zshrc` becomes *configfile*'s copy, so step 5 has nothing left to deploy.
+:::
 
-Scripts go in `scripts/`. They're handy for what files alone can't do, such as installing tools:
+## 4. Add a setup script
+
+Scripts go in `scripts/`, next to the example `hello.sh`. They're handy for what files alone can't do, such as installing tools:
 
 ```sh title="scripts/setup.sh"
 #!/bin/sh
@@ -52,39 +96,22 @@ echo "Setting up $CONFIGFILE_OS from $CONFIGFILE_REPO"
 
 `CONFIGFILE_OS` and `CONFIGFILE_REPO` are set by *configfile* when it runs the script (see [Scripts](/reference/scripts/)).
 
-Commit and push:
+Commit and push, then bring the changes to *configfile*'s copy:
 
 ```sh
 git add .
 git commit -m "First module"
 git push
-```
-
-Your repository now looks like this:
-
-```txt
-files/
-    zsh/
-        configfile.module.json
-        zshrc
-scripts/
-    setup.sh
-```
-
-## 4. Connect configfile to the repository
-
-```sh
-configfile init --repo git@github.com:me/dotfiles.git
+configfile update
 ```
 
 ```txt
- Info  Cloning git@github.com:me/dotfiles.git into ~/.configfile/dotfiles…
-Cloning into '/Users/me/.configfile/dotfiles'...
-done.
- Done  configfile is ready. Configuration saved to ~/.configfilerc.
+ Info  Syncing ~/.configfile/dotfiles…
+ Done  Synced with origin/main (d33b70e). Run "configfile modules deploy --all" for new files.
+ Warn  ~/.zshrc is not the repository's version, so configfile left it as it is: "configfile modules deploy zsh" would move it to .old and copy the repository's version.
 ```
 
-*configfile* keeps its own copy of the repository in `~/.configfile/dotfiles`, and deploys from it. You never edit this copy: you edit your working copy, push, and *configfile* follows. [How it works](/concepts/how-it-works/) explains why.
+`update` never replaces a file of yours: the next step deploys the module.
 
 ## 5. Deploy the module
 
@@ -95,8 +122,10 @@ configfile modules status
 ```
 
 ```txt
+example:
+  no global file
 zsh:
-  ~/.zshrc (not deployed: a file is in the way)
+  ~/.zshrc (not deployed: a file is in the way (differs from the repository))
 ```
 
 You probably already have a `~/.zshrc`. Preview what deploying would do, without changing anything:

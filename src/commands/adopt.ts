@@ -12,6 +12,7 @@ import { plural } from '../output.ts'
 import { contains, resolveUserPath, slugify } from '../paths.ts'
 import { ensureGit, git, gitOutput } from '../process.ts'
 import { listModules, readRepositorySettings, systemName, unsafeTarget } from '../repository.ts'
+import { MODULE_SCHEMA } from '../starter.ts'
 import { DeploymentRecord } from '../state.ts'
 import {
   catchUp,
@@ -37,9 +38,6 @@ interface AdoptOptions {
 
 /** The `"when"` adopt writes, as in a module's settings. */
 type When = { os?: string; profiles?: string | string[] }
-
-/** The schema the settings of a module point to, for editors. */
-const SCHEMA = 'https://docs.configfile.sh/schemas/module.json'
 
 export function registerAdoptCommand(modules: Command, ctx: Context): void {
   modules
@@ -575,7 +573,7 @@ function withEntries(
     ...(onEntries && { when }),
   }))
   if (settings == null) {
-    const created = { $schema: SCHEMA, ...(when != null && { when }), files: entries }
+    const created = { $schema: MODULE_SCHEMA, ...(when != null && { when }), files: entries }
     return `${JSON.stringify(created, null, 2)}\n`
   }
 
