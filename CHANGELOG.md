@@ -151,6 +151,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and why, instead of reporting an unexpected error or waiting.
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
   entrys" instead of "settings entries".
+- When several commands took over a lock left behind at once, `~/.configfile/lock.takeover` could
+  be left behind, naming a process that had finished. If another process later reused that number,
+  the next takeover waited for it, then said to delete the file. The command that holds the lock
+  now removes it.
 
 ## [1.0.0] - 2026-10-05
 ### Added
