@@ -56,7 +56,7 @@ brew install mindsers/tap/configfile
 With npm, when Node.js 24.11 or later is installed:
 
 ```bash
-npm install --global https://github.com/mindsers/configfile/releases/download/2.0.0/configfile-2.0.0.tgz
+npm install --global configfile
 ```
 
 [Installation](https://docs.configfile.sh/getting-started/installation/) has the details, including how to verify a download.

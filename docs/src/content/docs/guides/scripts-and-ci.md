@@ -73,7 +73,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: npm install --global https://github.com/mindsers/configfile/releases/download/2.0.0/configfile-2.0.0.tgz
+      - run: npm install --global configfile@2
       # The following steps use a throwaway home folder, not the runner's.
       - run: |
           mkdir -p "$RUNNER_TEMP/home"
@@ -82,7 +82,7 @@ jobs:
       - run: configfile modules deploy --all --dry-run
 ```
 
-`init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included. It lists the scripts the modules name to run when they are deployed, without running them, and fails before listing anything if one of them doesn't exist. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
+`configfile@2` installs the latest 2.x version: a later major version may change what it accepts, so it is only used once you change this line. `init` accepts a local folder as the repository, here the checkout of the commit being tested. Nothing is deployed for real, and the runner's home folder isn't touched. The dry run fails if any module or entry is invalid, even when the others are fine, local files included. It lists the scripts the modules name to run when they are deployed, without running them, and fails before listing anything if one of them doesn't exist. A file whose entry has no `deploy` strategy only produces a warning, as it does on your machines.
 
 To also test your setup script, add a step that runs it, on the systems it supports:
 
