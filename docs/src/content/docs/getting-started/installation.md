@@ -53,12 +53,12 @@ brew install mindsers/tap/configfile
 When Node.js 24.11 or later is installed, from the [GitHub release](https://github.com/mindsers/configfile/releases/latest):
 
 ```bash
-npm install --global https://github.com/mindsers/configfile/releases/download/1.1.0/configfile-1.1.0.tgz
+npm install --global https://github.com/mindsers/configfile/releases/download/2.0.0/configfile-2.0.0.tgz
 ```
 
 Install it one way only: two copies would compete in your `PATH`.
 
-> Versions 1.x are not on the npm registry yet: `npm install --global configfile` still installs 0.3.1.
+> Versions 1.0 and later are not on the npm registry yet: `npm install --global configfile` still installs 0.3.1.
 
 ## Check a download
 
