@@ -5,61 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- **Breaking:** running `init` again sets *configfile* up again, as if it had never been
-  installed, instead of keeping its copy of the repository: it checks that the repository can be
-  reached, undeploys every global file it deployed (with the modules' scripts, unless
-  `--no-hooks`), deletes `~/.configfilerc` and `~/.configfile` (and a copy it cloned elsewhere),
-  then clones the repository again. It asks first in a terminal, and needs `--force` without
-  one. A new URL is now really used (the copy used to keep following the old repository), and
-  the errors that say to run `init --force` now lead somewhere. `init` no longer uses a folder
-  that already holds a repository: it only uses a clone it makes itself. Your working copy's
-  folder, local copies and a `folder_path` it did not clone are kept; the other settings of
-  `~/.configfilerc` (`working_copy`, `profiles`…), the history, and the changes saved from or
-  made in its copy are not. The history has a new change kind, `deleted`, and no longer writes
-  `reused` ([#331](https://github.com/mindsers/configfile/issues/331)).
-- **Breaking:** the settings of a module are read from `configfile.module.json` instead of
-  `settings.json`, so that a module can deploy an app's own `settings.json` (Zed, VS Code…) under
-  its real name. A module that still has `settings.json` cannot be used: configfile says how
-  to rename it, or to keep the name with `configfile.repository.json`, and warns about a
-  `settings.json` it doesn't use; see
-  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/#rename-the-settings-of-your-modules)
-  ([#299](https://github.com/mindsers/configfile/issues/299), thanks @geoggrigori).
-- **Breaking:** global files are copied into the home folder instead of linked, unless their
-  entry sets `"method": "link"`. configfile records the repository's version each copy holds:
-  `update` and `modules deploy` update a copy when the repository changed it and nothing
-  changed it on this machine, keep the files changed on this machine (by you, or by a tool
-  that writes its own configuration), and report the files changed on both sides. For those,
-  `modules deploy` asks whether to replace them (yours moved to `.old`); without a terminal it
-  keeps them and fails, and `--force` replaces them. In a copied folder, the files a tool
-  creates are never touched. `update` never moves a file aside, asks a question or runs a
-  module's scripts. Comparing copies needs git: when it fails, nothing is changed and the
-  command says why. `modules deploy` turns the links made by 1.x into copies of what they
-  showed; see
-  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/)
-  ([#297](https://github.com/mindsers/configfile/issues/297)).
-- **Breaking:** `modules status` says `copied` or `linked` for global files instead of
-  `deployed`, and `modules deploy` says `(copied)` or `(linked)`. `--force` on `modules deploy`
-  also replaces the global copies changed on this machine.
-- **Breaking:** `modules status` exits with 1, after showing every file, when some of them
-  cannot be checked.
-- `update` only saves the local changes that the remote doesn't have: a change already pushed
-  from a working copy no longer leaves a patch and a warning. The warning names the files the
-  patch changes, and suggests `git -C <your working copy> apply --3way <patch>`, which lets you
-  review the changes before committing them, instead of `git am`. The patch is now written byte
-  for byte, so files that are not UTF-8 text are saved as they are
-  ([#297](https://github.com/mindsers/configfile/issues/297)).
-- The install script is at `https://configfile.sh/install.sh`:
-  `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
-  `https://docs.configfile.sh/install.sh`, keeps working.
-### Removed
-- **Breaking:** the `"global": true | false` key of an entry, deprecated since 1.0: use
-  `"deploy": "global" | "local"`. An entry that still has it is invalid.
-- **Breaking:** the configfile 0.3 format of `settings.json`, a plain list, deprecated since 1.0:
-  put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
-  no longer accepts either.
 
-## [1.1.0] - 2026-10-14
+## [2.0.0] - 2026-10-28
 ### Added
 - `init` offers to set up a repository that has no commit yet: in your working copy, which it
   clones when needed and saves as `working_copy`, it commits starter files
@@ -114,6 +61,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created in a linked folder. The next `update` saves them in a patch, then puts the
   repository's version back and removes the new files
   ([#297](https://github.com/mindsers/configfile/issues/297)).
+
+### Changed
+- **Breaking:** running `init` again sets *configfile* up again, as if it had never been
+  installed, instead of keeping its copy of the repository: it checks that the repository can be
+  reached, undeploys every global file it deployed (with the modules' scripts, unless
+  `--no-hooks`), deletes `~/.configfilerc` and `~/.configfile` (and a copy it cloned elsewhere),
+  then clones the repository again. It asks first in a terminal, and needs `--force` without
+  one. A new URL is now really used (the copy used to keep following the old repository), and
+  the errors that say to run `init --force` now lead somewhere. `init` no longer uses a folder
+  that already holds a repository: it only uses a clone it makes itself. Your working copy's
+  folder, local copies and a `folder_path` it did not clone are kept; the other settings of
+  `~/.configfilerc` (`working_copy`, `profiles`…), the history, and the changes saved from or
+  made in its copy are not. The history has a new change kind, `deleted`, and no longer writes
+  `reused` ([#331](https://github.com/mindsers/configfile/issues/331)).
+- **Breaking:** the settings of a module are read from `configfile.module.json` instead of
+  `settings.json`, so that a module can deploy an app's own `settings.json` (Zed, VS Code…) under
+  its real name. A module that still has `settings.json` cannot be used: configfile says how
+  to rename it, or to keep the name with `configfile.repository.json`, and warns about a
+  `settings.json` it doesn't use; see
+  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/#rename-the-settings-of-your-modules)
+  ([#299](https://github.com/mindsers/configfile/issues/299), thanks @geoggrigori).
+- **Breaking:** global files are copied into the home folder instead of linked, unless their
+  entry sets `"method": "link"`. configfile records the repository's version each copy holds:
+  `update` and `modules deploy` update a copy when the repository changed it and nothing
+  changed it on this machine, keep the files changed on this machine (by you, or by a tool
+  that writes its own configuration), and report the files changed on both sides. For those,
+  `modules deploy` asks whether to replace them (yours moved to `.old`); without a terminal it
+  keeps them and fails, and `--force` replaces them. In a copied folder, the files a tool
+  creates are never touched. `update` never moves a file aside, asks a question or runs a
+  module's scripts. Comparing copies needs git: when it fails, nothing is changed and the
+  command says why. `modules deploy` turns the links made by 1.x into copies of what they
+  showed; see
+  [Upgrading from 1.x](https://docs.configfile.sh/guides/upgrading-from-1/)
+  ([#297](https://github.com/mindsers/configfile/issues/297)).
+- **Breaking:** `modules status` says `copied` or `linked` for global files instead of
+  `deployed`, and `modules deploy` says `(copied)` or `(linked)`. `--force` on `modules deploy`
+  also replaces the global copies changed on this machine.
+- **Breaking:** `modules status` exits with 1, after showing every file, when some of them
+  cannot be checked.
+- `update` only saves the local changes that the remote doesn't have: a change already pushed
+  from a working copy no longer leaves a patch and a warning. The warning names the files the
+  patch changes, and suggests `git -C <your working copy> apply --3way <patch>`, which lets you
+  review the changes before committing them, instead of `git am`. The patch is now written byte
+  for byte, so files that are not UTF-8 text are saved as they are
+  ([#297](https://github.com/mindsers/configfile/issues/297)).
+- The install script is at `https://configfile.sh/install.sh`:
+  `curl -fsSL https://configfile.sh/install.sh | sh`. The address given with 1.1.0,
+  `https://docs.configfile.sh/install.sh`, keeps working.
+
+### Removed
+- **Breaking:** the `"global": true | false` key of an entry, deprecated since 1.0: use
+  `"deploy": "global" | "local"`. An entry that still has it is invalid.
+- **Breaking:** the configfile 0.3 format of `settings.json`, a plain list, deprecated since 1.0:
+  put the list in a `"files"` key. A module that still uses it cannot be used. The JSON Schema
+  no longer accepts either.
+
+### Fixed
+- When several commands took over a lock left behind at once, `~/.configfile/lock.takeover` could
+  be left behind, naming a process that had finished. If another process later reused that number,
+  the next takeover waited for it, then said to delete the file. The command that holds the lock
+  now removes it.
+
+## [1.1.0] - 2026-10-14
+### Added
 - Standalone binaries for macOS (13.5 or later) and Linux (GNU C library 2.28 or later), on x64
   and arm64, with each release, and an install script:
   `curl -fsSL https://docs.configfile.sh/install.sh | sh` installs configfile on a new machine
@@ -153,10 +164,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and why, instead of reporting an unexpected error or waiting.
 - When more than one settings entry failed, `modules deploy` and `undeploy` reported "settings
   entrys" instead of "settings entries".
-- When several commands took over a lock left behind at once, `~/.configfile/lock.takeover` could
-  be left behind, naming a process that had finished. If another process later reused that number,
-  the next takeover waited for it, then said to delete the file. The command that holds the lock
-  now removes it.
 
 ## [1.0.0] - 2026-10-05
 ### Added
@@ -277,7 +284,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `run` command to run custom and saved scripts. Scripts can be write in all languages.
 - The README file to give first information on the project (installation, usage, etc.).
 
-[Unreleased]: https://github.com/mindsers/configfile/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/mindsers/configfile/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/mindsers/configfile/tree/2.0.0
 [1.1.0]: https://github.com/mindsers/configfile/tree/1.1.0
 [1.0.0]: https://github.com/mindsers/configfile/tree/1.0.0
 [0.3.1]: https://github.com/mindsers/configfile/tree/0.3.1
