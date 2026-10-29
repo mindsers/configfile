@@ -87,8 +87,7 @@ describe('built CLI', () => {
     )
   })
 
-  // Several processes per test: allow for slow, busy CI machines.
-  describe('signals during scripts run', { timeout: 20_000 }, () => {
+  describe('signals during scripts run', () => {
     // Each test runs in its own process group, killed afterwards: if signal
     // forwarding ever regresses, no script is left running on the machine.
     const groups: number[] = []
