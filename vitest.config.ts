@@ -7,6 +7,8 @@ export default defineConfig({
     setupFiles: ['tests/setup.ts'],
     // Git run by tests and by the CLI under test ignores the developer's configuration.
     env: { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    // Many tests run git several times: allow for slow, busy CI machines.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

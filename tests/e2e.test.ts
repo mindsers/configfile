@@ -87,8 +87,7 @@ describe('built CLI', () => {
     )
   })
 
-  // Several processes per test: allow for slow, busy CI machines.
-  describe('signals during scripts run', { timeout: 20_000 }, () => {
+  describe('signals during scripts run', () => {
     // Each test runs in its own process group, killed afterwards: if signal
     // forwarding ever regresses, no script is left running on the machine.
     const groups: number[] = []
@@ -357,6 +356,7 @@ describe('built CLI', () => {
     expect(await readFile(path.join(sandbox.home, '.shared'), 'utf8')).toBe('PRECIOUS')
   })
 
+  // Sixteen processes: allow for slow, busy CI machines.
   it('keeps one whole history line per run when many runs write at once', {
     timeout: 30_000,
   }, async () => {
@@ -391,6 +391,7 @@ describe('built CLI', () => {
     ).toBe(true)
   })
 
+  // Sixteen processes: allow for slow, busy CI machines.
   it('loses no line when many runs rotate the history at once', { timeout: 30_000 }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure({ history_max_size: '8KB' })
