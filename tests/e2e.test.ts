@@ -356,6 +356,7 @@ describe('built CLI', () => {
     expect(await readFile(path.join(sandbox.home, '.shared'), 'utf8')).toBe('PRECIOUS')
   })
 
+  // Sixteen processes: allow for slow, busy CI machines.
   it('keeps one whole history line per run when many runs write at once', {
     timeout: 30_000,
   }, async () => {
@@ -390,6 +391,7 @@ describe('built CLI', () => {
     ).toBe(true)
   })
 
+  // Sixteen processes: allow for slow, busy CI machines.
   it('loses no line when many runs rotate the history at once', { timeout: 30_000 }, async () => {
     const sandbox = await createSandbox()
     await sandbox.configure({ history_max_size: '8KB' })

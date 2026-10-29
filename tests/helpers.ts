@@ -164,10 +164,6 @@ export async function runCli(
 }
 
 /**
- * Runs git for test setup, independent of the developer's git configuration
- * (vitest.config.ts also points GIT_CONFIG_GLOBAL to /dev/null).
- */
-/**
  * Sets a git setting for the CLI and the tests' git, as the user's settings
  * would. `vi.unstubAllEnvs()` removes it.
  */
@@ -177,6 +173,10 @@ export function gitSetting(key: string, value: string): void {
   vi.stubEnv('GIT_CONFIG_VALUE_0', value)
 }
 
+/**
+ * Runs git for test setup, independent of the developer's git configuration
+ * (vitest.config.ts also points GIT_CONFIG_GLOBAL to /dev/null).
+ */
 export function git(cwd: string, ...args: string[]): void {
   execFileSync(
     'git',

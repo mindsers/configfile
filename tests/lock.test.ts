@@ -233,6 +233,7 @@ describe('withLock', () => {
     return readFile(log, 'utf8')
   }
 
+  // Eight processes: allow for slow, busy CI machines.
   it('never lets two processes hold the lock, also when they take over the same one', {
     timeout: 30_000,
   }, async () => {
@@ -249,6 +250,7 @@ describe('withLock', () => {
     expect(await readdir(path.join(home, '.configfile'))).toEqual([])
   })
 
+  // Eight processes: allow for slow, busy CI machines.
   it('never lets two processes hold the lock when the takeover guard was left behind', {
     timeout: 30_000,
   }, async () => {
